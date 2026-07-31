@@ -16,7 +16,8 @@ void ParserParse(const char *Input, PARSED_COMMAND *Output)
     }
 
 
-    while (Input[InputIndex] != '\0' && Input[InputIndex] != ' ')
+    while (Input[InputIndex] != '\0' && Input[InputIndex] != ' ' &&
+           CommandIndex < PARSER_MAX_COMMAND_LENGTH - 1U)
     {
         Output->Command[CommandIndex] = Input[InputIndex];
 
@@ -33,12 +34,13 @@ void ParserParse(const char *Input, PARSED_COMMAND *Output)
     }
 
 
-    while (Input[InputIndex] != '\0')
+    while (Input[InputIndex] != '\0' && Output->ArgCount < PARSER_MAX_ARGS)
     {
         uint32_t ArgumentIndex = 0;
 
 
-        while (Input[InputIndex] != '\0' && Input[InputIndex] != ' ')
+        while (Input[InputIndex] != '\0' && Input[InputIndex] != ' ' &&
+               ArgumentIndex < PARSER_MAX_ARG_LENGTH - 1U)
         {
             Output->Args[Output->ArgCount][ArgumentIndex] = Input[InputIndex];
 
