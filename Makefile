@@ -1,7 +1,7 @@
 CC      := gcc
 LD      := ld
 NASM    := nasm
-LIMINE  ?= /home/null/limine-binary
+LIMINE  ?= limine-binary
 
 BUILD_DIR := build
 ISO_DIR   := $(BUILD_DIR)/iso

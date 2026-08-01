@@ -95,7 +95,7 @@ static bool IDEHasFault(){
 
 bool IDEReadSector(
     uint32_t LBA,
-    uint8_t *Buffer
+    void *Buffer
 ){
     IDEWaitBusy();
     IDESelectDrive(true);
