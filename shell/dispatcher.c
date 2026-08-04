@@ -16,12 +16,30 @@ void DispatcherDispatch(const PARSED_COMMAND *Command){
         return;
     }
     if (strcmp(Command->Command, "help") == 0){
-        CmdHelp();
+        if (Command->ArgCount == 0U) { CmdHelp(0); return; }
+        if (Command->ArgCount == 1U) { CmdHelp(Command->Args[0]); return; }
+        TerminalPrintLine32("Usage: help [category]", 0x00FF0000);
         return;
     } 
     if (strcmp(Command->Command, "ls") == 0) {
         if (Command->ArgCount != 0U) { TerminalPrintLine32("Usage: ls", 0x00FF0000); return; }
         CmdLs(); return;
+    }
+    if (strcmp(Command->Command, "cd") == 0) {
+        if (Command->ArgCount > 1U) { TerminalPrintLine32("Usage: cd [dir]", 0x00FF0000); return; }
+        CmdCd(Command->ArgCount == 0U ? 0 : Command->Args[0]); return;
+    }
+    if (strcmp(Command->Command, "pwd") == 0) {
+        if (Command->ArgCount != 0U) { TerminalPrintLine32("Usage: pwd", 0x00FF0000); return; }
+        CmdPwd(); return;
+    }
+    if (strcmp(Command->Command, "mkdir") == 0) {
+        if (Command->ArgCount != 1U) { TerminalPrintLine32("Usage: mkdir <dir>", 0x00FF0000); return; }
+        CmdMkdir(Command->Args[0]); return;
+    }
+    if (strcmp(Command->Command, "rmdir") == 0) {
+        if (Command->ArgCount != 1U) { TerminalPrintLine32("Usage: rmdir <dir>", 0x00FF0000); return; }
+        CmdRmdir(Command->Args[0]); return;
     }
     if (strcmp(Command->Command, "isolist") == 0 || strcmp(Command->Command, "lsiso") == 0) {
         CmdIsoList(); return;
@@ -169,7 +187,7 @@ void DispatcherDispatch(const PARSED_COMMAND *Command){
         CmdIsoCat(Command->Args[0]); return;
     }
     if (strcmp(Command->Command, "isocopy") == 0) {
-        if (Command->ArgCount != 2U) { TerminalPrintLine32("Usage: isocopy <isopath> <vfspath>", 0x00FF0000); return; }
+        if (Command->ArgCount != 2U) { TerminalPrintLine32("Usage: isocopy <isopath> <diskpath>", 0x00FF0000); return; }
         CmdIsoCopy(Command->Args[0], Command->Args[1]); return;
     }
     if (strcmp(Command->Command, "tt") == 0){

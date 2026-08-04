@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 void CmdMsgFromNull(void); 
-void CmdHelp(void);
+void CmdHelp(const char *Category);
 void CmdAbout(void);
 void CmdFill(const PARSED_COMMAND *Command);
 void CmdNewLine(void);
@@ -22,6 +22,10 @@ void CmdTouch(const char *Path);
 void CmdCat(const char *Path);
 void CmdRm(const char *Path);
 void CmdWrite(const PARSED_COMMAND *Command);
+void CmdCd(const char *Path);
+void CmdMkdir(const char *Path);
+void CmdRmdir(const char *Path);
+void CmdPwd(void);
 void CmdSuf(const char *CommandName);
 void CmdEdit(const char *Path);
 void CmdRbt(void);
@@ -60,6 +64,6 @@ void CmdUptime(void);
 void CmdTheme(const PARSED_COMMAND *Command);
 void CmdIsoFind(const char *Name);
 void CmdIsoCat(const char *Path);
-void CmdIsoCopy(const char *IsoPath, const char *VfsPath);
+void CmdIsoCopy(const char *IsoPath, const char *DiskPath);
 
 #endif

@@ -1,5 +1,7 @@
 #include "directory.h"
 
+#include <stddef.h>
+
 #include "drivers/storage/ide/ide.h"
 #include "fs/fat32/fat/fat.h"
 #include "lib/string/string.h"
@@ -497,6 +499,78 @@ bool FAT32DirectoryCreateEntry(FAT32Directory *Directory, const char *Name,
            sizeof(NewEntry));
 
     /* A reused end marker must still be followed by an end marker. */
+    if (Slot.IsEndMarker && Slot.EntryIndex + 1U < FAT32_ENTRIES_PER_SECTOR)
+    {
+        memset(&Sector[(Slot.EntryIndex + 1U) * FAT32_DIRECTORY_ENTRY_SIZE], 0,
+               FAT32_DIRECTORY_ENTRY_SIZE);
+    }
+    if (!IDEWriteSector(Slot.LBA, Sector)) return false;
+
+    if (Entry != 0) *Entry = NewEntry;
+    return true;
+}
+
+static void DirectoryEncodeShortNameLiteral(const char *ShortName,
+                                            uint8_t Encoded[FAT32_SHORT_NAME_LENGTH])
+{
+    uint32_t Position = 0;
+
+    memset(Encoded, ' ', FAT32_SHORT_NAME_LENGTH);
+    for (uint32_t Index = 0; ShortName[Index] != '\0' && Index < 12U; Index++)
+    {
+        char Character = ShortName[Index];
+        if (Character == '.')
+        {
+            Position = 8;
+            continue;
+        }
+        if (Position < 8U)
+        {
+            Encoded[Position++] = (uint8_t)DirectoryToUpper(Character);
+        }
+        else if (Position < 11U)
+        {
+            Encoded[Position++] = (uint8_t)DirectoryToUpper(Character);
+        }
+        else
+        {
+            break;
+        }
+    }
+}
+
+bool FAT32DirectoryCreateLongFileEntry(FAT32Directory *Directory,
+                                       const char *Name,
+                                       const char *ShortName,
+                                       uint8_t Attributes,
+                                       uint32_t FirstCluster,
+                                       uint32_t FileSize,
+                                       FAT32DirectoryEntry *Entry)
+{
+    FAT32DirectoryEntry NewEntry;
+    FAT32DirectorySlot Slot;
+    uint8_t Sector[FAT32_SECTOR_SIZE];
+    bool Exists;
+
+    if (!DirectoryIsUsable(Directory) || ShortName == NULL ||
+        Attributes == FAT32_ATTRIBUTE_LONG_NAME ||
+        (Attributes & FAT32_ATTRIBUTE_VOLUME_ID) != 0 ||
+        !DirectoryNameExists(Directory, Name, &Exists) || Exists ||
+        !DirectoryGetWritableSlot(Directory, &Slot) ||
+        !IDEReadSector(Slot.LBA, Sector))
+    {
+        return false;
+    }
+
+    memset(&NewEntry, 0, sizeof(NewEntry));
+    DirectoryEncodeShortNameLiteral(ShortName, NewEntry.Name);
+    NewEntry.Attributes = Attributes;
+    NewEntry.FirstClusterHigh = (uint16_t)(FirstCluster >> 16);
+    NewEntry.FirstClusterLow = (uint16_t)FirstCluster;
+    NewEntry.FileSize = FileSize;
+    memcpy(&Sector[Slot.EntryIndex * FAT32_DIRECTORY_ENTRY_SIZE], &NewEntry,
+           sizeof(NewEntry));
+
     if (Slot.IsEndMarker && Slot.EntryIndex + 1U < FAT32_ENTRIES_PER_SECTOR)
     {
         memset(&Sector[(Slot.EntryIndex + 1U) * FAT32_DIRECTORY_ENTRY_SIZE], 0,

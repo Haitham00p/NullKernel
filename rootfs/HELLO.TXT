@@ -1,0 +1,3 @@
+Hello from NullOS!
+
+This file was installed from the live CD by the NullOS installer.

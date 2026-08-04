@@ -6,6 +6,7 @@
 uint64_t PITGetTicks(void);
 extern uint32_t PromColor;
 extern uint32_t BackspaceColor;
+
 uint64_t PITGetMilliseconds(void);
 
 void PITInitialize(uint32_t Frequency);

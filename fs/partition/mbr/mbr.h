@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-typedef struct
+typedef struct __attribute__((packed))
 {
     uint8_t  BootIndicator;
     uint8_t  StartCHS[3];
@@ -17,7 +17,7 @@ typedef struct
 
 } MBRPartitionEntry;
 
-typedef struct
+typedef struct __attribute__((packed))
 {
     uint8_t BootCode[446];
 
@@ -26,6 +26,11 @@ typedef struct
     uint16_t Signature;
 
 } MBR;
+
+_Static_assert(sizeof(MBRPartitionEntry) == 16,
+               "An MBR partition entry must occupy exactly 16 bytes");
+_Static_assert(sizeof(MBR) == 512,
+               "An MBR sector must occupy exactly 512 bytes");
 
 bool MBRIsValid(
     const MBR *Table

@@ -1,6 +1,6 @@
 #include "editor.h"
 
-#include "fs/vfs/vfs.h"
+#include "include/diskfs.h"
 #include "kernel/terminal/terminal.h"
 #include "lib/string/string.h"
 
@@ -35,7 +35,11 @@ static void EditorRender(void)
 
 static void EditorSave(void)
 {
-    if (VfsWrite(EditorPath, EditorBuffer, EditorLength))
+    if (!DiskFsIsMounted() && !DiskFsMount())
+    {
+        return;
+    }
+    if (DiskFsWrite(EditorPath, EditorBuffer, EditorLength))
     {
         EditorDirty = false;
     }
@@ -43,10 +47,13 @@ static void EditorSave(void)
 
 bool EditorOpen(const char *Path)
 {
-    const void *Data;
-    uint64_t Size;
+    uint32_t Size = 0;
 
     if (Path == 0 || Path[0] == '\0' || strlen(Path) >= EDITOR_PATH_CAPACITY)
+    {
+        return false;
+    }
+    if (!DiskFsIsMounted() && !DiskFsMount())
     {
         return false;
     }
@@ -56,14 +63,12 @@ bool EditorOpen(const char *Path)
     EditorBuffer[0] = '\0';
     EditorDirty = false;
 
-    if (VfsRead(Path, &Data, &Size))
+    if (DiskFsRead(Path, EditorBuffer, EDITOR_CAPACITY - 1U, &Size))
     {
-        if (Size >= EDITOR_CAPACITY) Size = EDITOR_CAPACITY - 1U;
-        if (Size != 0) memcpy(EditorBuffer, Data, Size);
-        EditorLength = (uint32_t)Size;
+        EditorLength = Size;
         EditorBuffer[EditorLength] = '\0';
     }
-    else if (!VfsCreate(Path))
+    else if (!DiskFsTouch(Path))
     {
         return false;
     }

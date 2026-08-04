@@ -6,6 +6,12 @@
 
 bool IDEInitialize(void);
 
+/* Switches the active IDE device to the first ATA hard disk. */
+bool IDESelectDisk(void);
+
+/* Switches the active IDE device back to the ATAPI CD-ROM. */
+bool IDESelectCD(void);
+
 bool IDEReadSector(
     uint32_t LBA,
     void *Buffer

@@ -200,7 +200,8 @@ uint32_t FATFindFreeCluster(const FAT32BootSector *Boot,
 
             Cluster = (uint32_t)ClusterNumber;
 
-            if (Cluster >= 2U && FATIsFreeCluster(
+            if (Cluster >= 2U && Cluster != Boot->RootCluster &&
+                FATIsFreeCluster(
                     FATReadLittleEndian32(&Sector[Entry * FAT32_ENTRY_SIZE])))
             {
                 return Cluster;

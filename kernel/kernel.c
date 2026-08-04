@@ -13,15 +13,17 @@
 #include <stddef.h>
 #include "mm/heap/heap.h"
 #include "kernel/panic/panic.h"
-#include "fs/vfs/vfs.h"
 #include "../fs/ISO9660/iso9660.h"
+#include "drivers/storage/ide/ide.h"
 #include "../Kernel/drivers/timer/PIT.h"
+#include "installer/installer.h"
 
 extern struct limine_memmap_request MemMapReq;
 
 
 void kernel_main(void)
 {
+    DbgSerialInit();
     FbInit32();
 
     TerminalInit32();
@@ -79,7 +81,6 @@ void kernel_main(void)
         PanicKernel("No Usable Entry Found For Heap", (uintptr_t)HeapInitialize);
     }
     HeapInitialize(HeapBase, HeapLength);
-    VfsInitialize();
     ISOInitialize();
     PITInitialize(Freq);
     DbgInfo("PIT is online", (uintptr_t)PITInitialize);
@@ -100,14 +101,12 @@ void kernel_main(void)
 
     TerminalPrintLine32("INTERRUPTS ENABLED", 0xFFFFFFFF);
 
-
-    TerminalPrintLine32("Press Any Button To Continue . . . ", 0x000000FF);
-
-    while(!KbdAvailable())
+    /* Only show the Try/Install prompt when the NullOS ISO actually mounted. */
+    if (ISOIsReady())
     {
-        __asm__ volatile("hlt");
+        InstallerRun();
     }
-    KbdFlushBuffer();
+
     TerminalClear32(BackSpaceColor);
     ShellInitialize();
 

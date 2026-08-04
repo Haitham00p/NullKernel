@@ -17,6 +17,7 @@ CFLAGS := \
 	-m64 \
 	-mcmodel=kernel \
 	-mno-red-zone \
+	-MMD -MP \
 	-Wall \
 	-Wextra \
 	-I. \
@@ -40,6 +41,7 @@ C_SOURCES := \
 	drivers/video_font/font.c \
 	drivers/video_framebuffer/framebuffer.c \
  	fs/fat32/directory/directory.c \
+	fs/fat32/file/file.c \
 	fs/fat32/fat/fat.c \
 	fs/fat32/vbr/vbr.c \
 	fs/fat32/fat_cluster.c \
@@ -49,16 +51,18 @@ C_SOURCES := \
  	fs/fat32/fat_dir.c \
 	fs/partition/mbr/mbr.c \
 	fs/ramfs/ramfs.c \
-	fs/vfs/vfs.c \
 	kernel/debug/debug.c \
 	kernel/panic/panic.c \
 	kernel/terminal/terminal.c \
 	kernel/terminal/cursor.c \
 	kernel/kernel.c \
+	installer/installer.c \
 	lib/delay/delay.c \
 	lib/string/string.c \
 	mm/heap/heap.c \
 	shell/commands/cmd.c \
+	shell/dispatcher.c \
+	shell/diskfs.c \
 	shell/editor/editor.c \
 	shell/dispatcher.c \
 	shell/parser.c \
@@ -79,6 +83,8 @@ ASM_OBJECTS := \
 	$(BUILD_DIR)/arch/x86_64/interrupts/irq_asm.o
 
 OBJECTS := $(C_SOURCES:%.c=$(BUILD_DIR)/%.o) $(ASM_OBJECTS)
+
+-include $(C_SOURCES:%.c=$(BUILD_DIR)/%.d)
 
 .PHONY: all clean
 
@@ -103,6 +109,8 @@ $(BUILD_DIR)/arch/x86_64/interrupts/irq_asm.o: arch/x86_64/interrupts/irq.asm
 $(ISO): $(KERNEL)
 	@mkdir -p $(ISO_DIR)/boot/limine $(ISO_DIR)/EFI/BOOT
 	cp $(KERNEL) $(ISO_DIR)/boot/kernel.elf
+	rm -rf $(ISO_DIR)/rootfs
+	cp -r rootfs $(ISO_DIR)/rootfs
 	cp $(LIMINE)/limine-bios-cd.bin $(ISO_DIR)/boot/limine/
 	cp $(LIMINE)/limine-bios.sys $(ISO_DIR)/boot/limine/
 	cp $(LIMINE)/limine-uefi-cd.bin $(ISO_DIR)/boot/limine/

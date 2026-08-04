@@ -81,6 +81,15 @@ bool FAT32DirectoryCreateEntry(FAT32Directory *Directory, const char *Name,
                                uint8_t Attributes, uint32_t FirstCluster,
                                uint32_t FileSize, FAT32DirectoryEntry *Entry);
 
+/* Creates an entry using an explicit short name (e.g. "LIMINE~1.SYS"). */
+bool FAT32DirectoryCreateLongFileEntry(FAT32Directory *Directory,
+                                       const char *Name,
+                                       const char *ShortName,
+                                       uint8_t Attributes,
+                                       uint32_t FirstCluster,
+                                       uint32_t FileSize,
+                                       FAT32DirectoryEntry *Entry);
+
 /* Allocates and initializes a new empty subdirectory, including . and ... */
 bool FAT32DirectoryCreateDirectory(FAT32Directory *Parent, const char *Name,
                                    FAT32Directory *CreatedDirectory);

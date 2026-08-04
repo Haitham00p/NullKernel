@@ -30,6 +30,7 @@ typedef struct
 } ISODirRecord;
 
 bool ISOInitialize(void);
+bool ISOIsReady(void);
 bool ISOReadSector(uint32_t Sector, uint8_t *Buffer);
 bool ISOReadPVDSector(ISOPVD *PVD);
 bool ISOGetRootDir(ISODirRecord *OutRoot);

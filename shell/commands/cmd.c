@@ -6,7 +6,7 @@
 #include "lib/string/string.h"
 #include "../shell.h"
 #include "fs/ramfs/ramfs.h"
-#include "fs/vfs/vfs.h"
+#include "include/diskfs.h"
 #include "shell/editor/editor.h"
 #include <stdbool.h>
 #include "../../arch/x86_64/power/pwr.h"
@@ -55,59 +55,121 @@ static bool ParseNumber(const char *str, uint64_t *val)
     return true;
 }
 
-void CmdHelp(void)
+void CmdHelp(const char *Category)
 {
+    if (Category == NULL || Category[0] == '\0' ||
+        strcasecmp(Category, "all") == 0)
+    {
+        TerminalPrintLine32("NULLOS HELP  -  type 'help <category>' for details", 0x00FFD700);
+        TerminalPrintLine32("-------------------------------------------------", 0x00314A70);
+        TerminalPrintLine32("  help system                    System & diagnostics commands", PromColor);
+        TerminalPrintLine32("  help filesystem                Disk file & directory tools", PromColor);
+        TerminalPrintLine32("  help memory                    Low-level memory & CPU commands", PromColor);
+        TerminalPrintLine32("  help iso                       ISO9660 media commands", PromColor);
+        TerminalPrintLine32("  help registry                  RAM registry database commands", PromColor);
+        TerminalPrintLine32("  help sound                     Sound & beep commands", PromColor);
+        TerminalPrintLine32("  help developer                 Developer diagnostics commands", PromColor);
+        TerminalPrintLine32("-------------------------------------------------", 0x00314A70);
+        return;
+    }
 
-    TerminalPrintLine32("SYSTEM & DIAGNOSTICS", 0x00FFD700);
-    TerminalPrintLine32("  help                            Show this epic command reference", PromColor);
-    TerminalPrintLine32("  about                           Show OS version & architecture", PromColor);
-    TerminalPrintLine32("  neofetch / sysinfo              Display full system spec logo banner", PromColor);
-    TerminalPrintLine32("  clear                           Clear terminal screen", PromColor);
-    TerminalPrintLine32("  devkit                          Show developer diagnostics", PromColor);
-    TerminalPrintLine32("  suf <command>                   Trace source implementation of ANY command", PromColor);
-    TerminalPrintLine32("  uptime                          Display CPU cycles and uptime", PromColor);
-    TerminalPrintLine32("  matrix                          Run Matrix digital rain animation", PromColor);
-    TerminalPrintLine32("  theme <name>                    Set color theme (cyberpunk/matrix/hacker/gold)", PromColor);
-    TerminalPrintLine32("  reboot                          Reboot the system", PromColor);
-    TerminalPrintLine32("  shutdown                        Shutdown the system (QEMU ACPI)", PromColor);
+    if (strcasecmp(Category, "system") == 0)
+    {
+        TerminalPrintLine32("SYSTEM & DIAGNOSTICS", 0x00FFD700);
+        TerminalPrintLine32("  help                            Show this command reference", PromColor);
+        TerminalPrintLine32("  about                           Show OS version & architecture", PromColor);
+        TerminalPrintLine32("  neofetch / sysinfo              Display full system spec logo banner", PromColor);
+        TerminalPrintLine32("  clear                           Clear terminal screen", PromColor);
+        TerminalPrintLine32("  uptime                          Display CPU cycles and uptime", PromColor);
+        TerminalPrintLine32("  matrix                          Run Matrix digital rain animation", PromColor);
+        TerminalPrintLine32("  theme <name>                    Set color theme (cyberpunk/matrix/hacker/gold)", PromColor);
+        TerminalPrintLine32("  calc <n1> <op> <n2>             Evaluate arithmetic & bitwise math", PromColor);
+        TerminalPrintLine32("  reboot                          Reboot the system", PromColor);
+        TerminalPrintLine32("  shutdown                        Shutdown the system (QEMU ACPI)", PromColor);
+        return;
+    }
 
-    TerminalPrintLine32("LOW-LEVEL MEMORY & CPU", 0x00FF00FF);
-    TerminalPrintLine32("  peek <addr>                     Read 64-bit value at memory address", PromColor);
-    TerminalPrintLine32("  poke <addr> <val>               Write 64-bit value to memory address", PromColor);
-    TerminalPrintLine32("  hexdump <addr> [bytes]          Format memory hex dump with ASCII view", PromColor);
-    TerminalPrintLine32("  inb / outb <port> [val]         Read / write 8-bit I/O port", PromColor);
-    TerminalPrintLine32("  inw / outw <port> [val]         Read / write 16-bit I/O port", PromColor);
-    TerminalPrintLine32("  ind / outd <port> [val]         Read / write 32-bit I/O port", PromColor);
-    TerminalPrintLine32("  cpuid                           Query x86_64 CPU Vendor & Feature Flags", PromColor);
-    TerminalPrintLine32("  rdtsc                           Read 64-bit CPU Time Stamp Counter", PromColor);
-    TerminalPrintLine32("  cr0 / cr3 / cr4                 Read CPU Control Registers", PromColor);
-    TerminalPrintLine32("  msr <msr_hex>                   Read 64-bit Model-Specific Register", PromColor);
-    TerminalPrintLine32("  diskread <lba>                  Read & dump raw IDE/ATAPI sector", PromColor);
-    TerminalPrintLine32("  sbep <Frequency> <Millisecond>  Let's beep together !", PromColor);
-    TerminalPrintLine32("  ebepe                           Force Stop the beep sound", PromColor);
-    TerminalPrintLine32("  nsong <F1> <L1> <F2> <L2> <F3> <L3> <F4> <L4> <F5> <L5> <F6> <L6>", PromColor);
-    TerminalPrintLine32("                                  Play a 6-tone song with frequency & duration", PromColor);
+    if (strcasecmp(Category, "filesystem") == 0)
+    {
+        TerminalPrintLine32("FILESYSTEM (FAT32 disk tools)", 0x0057DB92);
+        TerminalPrintLine32("  ls                              List files in current directory", PromColor);
+        TerminalPrintLine32("  cd <dir>                        Change directory ('..' goes up)", PromColor);
+        TerminalPrintLine32("  pwd                             Print current working directory", PromColor);
+        TerminalPrintLine32("  mkdir <dir>                     Create a directory", PromColor);
+        TerminalPrintLine32("  rmdir <dir>                     Remove a directory", PromColor);
+        TerminalPrintLine32("  touch <file>                    Create empty file", PromColor);
+        TerminalPrintLine32("  write <file> <text>             Write text to file", PromColor);
+        TerminalPrintLine32("  cat <file>                      Display file content", PromColor);
+        TerminalPrintLine32("  rm <file>                       Remove file", PromColor);
+        TerminalPrintLine32("  edit <file>                     Open NullEdit text editor", PromColor);
+        TerminalPrintLine32("  tree                            Display directory tree", PromColor);
+        return;
+    }
 
-    TerminalPrintLine32("FILESYSTEM & UTILITIES", 0x0057DB92);
-    TerminalPrintLine32("  ls                              List VFS files", PromColor);
-    TerminalPrintLine32("  touch <file>                    Create empty VFS file", PromColor);
-    TerminalPrintLine32("  write <file> <text>             Write text to VFS file", PromColor);
-    TerminalPrintLine32("  cat <file>                      Display VFS file content", PromColor);
-    TerminalPrintLine32("  rm <file>                       Remove VFS file", PromColor);
-    TerminalPrintLine32("  edit <file>                     Open NullEdit text editor", PromColor);
-    TerminalPrintLine32("  tree                            Display tree structure of VFS & ISO", PromColor);
-    TerminalPrintLine32("  calc <n1> <op> <n2>             Evaluate arithmetic & bitwise math", PromColor);
+    if (strcasecmp(Category, "memory") == 0)
+    {
+        TerminalPrintLine32("LOW-LEVEL MEMORY & CPU", 0x00FF00FF);
+        TerminalPrintLine32("  peek <addr>                     Read 64-bit value at memory address", PromColor);
+        TerminalPrintLine32("  poke <addr> <val>               Write 64-bit value to memory address", PromColor);
+        TerminalPrintLine32("  hexdump <addr> [bytes]          Format memory hex dump with ASCII view", PromColor);
+        TerminalPrintLine32("  inb / outb <port> [val]         Read / write 8-bit I/O port", PromColor);
+        TerminalPrintLine32("  inw / outw <port> [val]         Read / write 16-bit I/O port", PromColor);
+        TerminalPrintLine32("  ind / outd <port> [val]         Read / write 32-bit I/O port", PromColor);
+        TerminalPrintLine32("  cpuid                           Query x86_64 CPU Vendor & Feature Flags", PromColor);
+        TerminalPrintLine32("  rdtsc                           Read 64-bit CPU Time Stamp Counter", PromColor);
+        TerminalPrintLine32("  cr0 / cr3 / cr4                 Read CPU Control Registers", PromColor);
+        TerminalPrintLine32("  msr <msr_hex>                   Read 64-bit Model-Specific Register", PromColor);
+        TerminalPrintLine32("  diskread <lba>                  Read & dump raw IDE/ATAPI sector", PromColor);
+        return;
+    }
 
-    TerminalPrintLine32("ISO9660 FILESYSTEM", 0x0000FFFF);
-    TerminalPrintLine32("  isolist                         List files on ISO9660 media", PromColor);
-    TerminalPrintLine32("  isofind <name>                  Search ISO9660 filesystem for file", PromColor);
-    TerminalPrintLine32("  isocat <path>                   Read and print file directly from ISO", PromColor);
-    TerminalPrintLine32("  isocopy <isopath> <vfspath>     Copy file from ISO9660 into VFS", PromColor);
+    if (strcasecmp(Category, "iso") == 0)
+    {
+        TerminalPrintLine32("ISO9660 FILESYSTEM", 0x0000FFFF);
+        TerminalPrintLine32("  isolist                         List files on ISO9660 media", PromColor);
+        TerminalPrintLine32("  isofind <name>                  Search ISO9660 filesystem for file", PromColor);
+        TerminalPrintLine32("  isocat <path>                   Read and print file directly from ISO", PromColor);
+        TerminalPrintLine32("  isocopy <isopath> <diskpath>    Copy file from ISO9660 to disk", PromColor);
+        return;
+    }
 
-    TerminalPrintLine32("REGISTRY API", 0x009AA8BD);
-    TerminalPrintLine32("  where <API>                     Print kernel function memory address", PromColor);
-    TerminalPrintLine32("  regout / regfill                Legacy text and color registry output", PromColor);
-    TerminalPrintLine32("-------------------------------------------------", 0x00314A70);
+    if (strcasecmp(Category, "registry") == 0)
+    {
+        TerminalPrintLine32("REGISTRY API (RAM)", 0x009AA8BD);
+        TerminalPrintLine32("  regout <name>                   Echo a registry value", PromColor);
+        TerminalPrintLine32("  regfill <fg> <bg>               Legacy text and color registry output", PromColor);
+        TerminalPrintLine32("  regcreate <name>                Create a registry entry", PromColor);
+        TerminalPrintLine32("  regin <name> <text>             Write text into a registry entry", PromColor);
+        TerminalPrintLine32("  fregout <name>                  Print a registry file", PromColor);
+        TerminalPrintLine32("  delreg <name>                   Delete a registry entry", PromColor);
+        return;
+    }
+
+    if (strcasecmp(Category, "sound") == 0)
+    {
+        TerminalPrintLine32("SOUND & BEEP", 0x00FF8800);
+        TerminalPrintLine32("  sbep <Freq> <Ms>                Let's beep together !", PromColor);
+        TerminalPrintLine32("  ebepe                           Force Stop the beep sound", PromColor);
+        TerminalPrintLine32("  smbep <6x freq+ms pairs>        Play a 6-tone song", PromColor);
+        return;
+    }
+
+    if (strcasecmp(Category, "developer") == 0)
+    {
+        TerminalPrintLine32("DEVELOPER DIAGNOSTICS", 0x00FF5C77);
+        TerminalPrintLine32("  devkit                          Show developer diagnostics", PromColor);
+        TerminalPrintLine32("  suf <command>                   Trace source implementation of ANY command", PromColor);
+        TerminalPrintLine32("  where <API>                     Print kernel function memory address", PromColor);
+        TerminalPrintLine32("  panic                           Panic the kernel (testing)", PromColor);
+        TerminalPrintLine32("  tt                              Timer test", PromColor);
+        TerminalPrintLine32("  m5sfr0mnu11                     Hidden message", PromColor);
+        return;
+    }
+
+    TerminalWrite32("help: unknown category '", 0x00FF0000);
+    TerminalWrite32(Category, 0x00FF0000);
+    TerminalPrintLine32("'", 0x00FF0000);
+    TerminalPrintLine32("Categories: system, filesystem, memory, iso, registry, sound, developer", PromColor);
 }
 
 void CmdDevKit(void){
@@ -228,42 +290,156 @@ void CmdDelReg(const char *Name)
     RamFsDelete(File);
 }
 
-static bool CmdListVisitor(const VfsFileInfo *File, void *Context)
+typedef struct
 {
+    uint32_t Index;
+} CmdListContext;
+
+static bool CmdListVisitor(const FAT32DirectoryEntry *Entry,
+                           const char *ShortName, void *Context)
+{
+    (void)Entry;
     (void)Context;
-    TerminalWrite32(File->Name, PromColor);
+    TerminalWrite32(ShortName, PromColor);
+    if ((Entry->Attributes & FAT32_ATTRIBUTE_DIRECTORY) != 0)
+    {
+        TerminalWrite32("/", PromColor);
+    }
     TerminalWrite32("  ", PromColor);
-    TerminalPrintHex64Compact(File->Size);
+    TerminalPrintHex64Compact(Entry->FileSize);
     TerminalPutChar32('\n', PromColor);
     return true;
 }
 
 void CmdLs(void)
 {
-    VfsList(CmdListVisitor, 0);
+    const FAT32Directory *Cwd;
+
+    if (!DiskFsIsMounted() && !DiskFsMount())
+    {
+        TerminalPrintLine32("ls: no FAT32 disk mounted", 0x00FF0000);
+        return;
+    }
+    Cwd = DiskFsCwd();
+    if (Cwd == NULL || !FAT32DirectoryForEach(Cwd, CmdListVisitor, NULL))
+    {
+        TerminalPrintLine32("ls: cannot read directory", 0x00FF0000);
+    }
 }
 
 void CmdTouch(const char *Path)
 {
-    if (!VfsCreate(Path)) TerminalPrintLine32("touch: cannot create file", 0x00FF0000);
+    if (!DiskFsIsMounted() && !DiskFsMount())
+    {
+        TerminalPrintLine32("touch: no FAT32 disk mounted", 0x00FF0000);
+        return;
+    }
+    if (!DiskFsTouch(Path)) TerminalPrintLine32("touch: cannot create file", 0x00FF0000);
 }
 
 void CmdCat(const char *Path)
 {
-    const void *Data;
-    uint64_t Size;
-    if (!VfsRead(Path, &Data, &Size))
+    FAT32DirectoryEntry Entry;
+    const FAT32Directory *Cwd;
+    uint8_t *Buffer;
+    uint32_t BytesRead = 0;
+
+    if (!DiskFsIsMounted() && !DiskFsMount())
+    {
+        TerminalPrintLine32("cat: no FAT32 disk mounted", 0x00FF0000);
+        return;
+    }
+    Cwd = DiskFsCwd();
+    if (Cwd == NULL || !FAT32DirectoryFind(Cwd, Path, &Entry))
     {
         TerminalPrintLine32("cat: file not found", 0x00FF0000);
         return;
     }
-    if (Size != 0) TerminalWrite32((const char *)Data, PromColor);
+
+    Buffer = (uint8_t *)kmalloc(Entry.FileSize + 1U);
+    if (Buffer == NULL)
+    {
+        TerminalPrintLine32("cat: out of memory", 0x00FF0000);
+        return;
+    }
+    if (!DiskFsRead(Path, Buffer, Entry.FileSize, &BytesRead))
+    {
+        TerminalPrintLine32("cat: read failed", 0x00FF0000);
+        return;
+    }
+    Buffer[BytesRead] = '\0';
+    TerminalWrite32((const char *)Buffer, PromColor);
     TerminalPutChar32('\n', PromColor);
 }
 
 void CmdRm(const char *Path)
 {
-    if (!VfsRemove(Path)) TerminalPrintLine32("rm: file not found", 0x00FF0000);
+    if (!DiskFsIsMounted() && !DiskFsMount())
+    {
+        TerminalPrintLine32("rm: no FAT32 disk mounted", 0x00FF0000);
+        return;
+    }
+    if (!DiskFsRemove(Path)) TerminalPrintLine32("rm: file not found", 0x00FF0000);
+}
+
+void CmdCd(const char *Path)
+{
+    if (!DiskFsIsMounted() && !DiskFsMount())
+    {
+        TerminalPrintLine32("cd: no FAT32 disk mounted", 0x00FF0000);
+        return;
+    }
+    if (Path == NULL || Path[0] == '\0' || strcmp(Path, "~") == 0)
+    {
+        DiskFsCdRoot();
+        return;
+    }
+    if (!DiskFsCd(Path))
+    {
+        TerminalWrite32("cd: no such directory: ", 0x00FF0000);
+        TerminalPrintLine32(Path, 0x00FF0000);
+    }
+}
+
+void CmdMkdir(const char *Path)
+{
+    if (!DiskFsIsMounted() && !DiskFsMount())
+    {
+        TerminalPrintLine32("mkdir: no FAT32 disk mounted", 0x00FF0000);
+        return;
+    }
+    if (!DiskFsMkdir(Path))
+    {
+        TerminalWrite32("mkdir: cannot create directory: ", 0x00FF0000);
+        TerminalPrintLine32(Path, 0x00FF0000);
+    }
+}
+
+void CmdRmdir(const char *Path)
+{
+    if (!DiskFsIsMounted() && !DiskFsMount())
+    {
+        TerminalPrintLine32("rmdir: no FAT32 disk mounted", 0x00FF0000);
+        return;
+    }
+    if (!DiskFsRemove(Path))
+    {
+        TerminalWrite32("rmdir: cannot remove directory: ", 0x00FF0000);
+        TerminalPrintLine32(Path, 0x00FF0000);
+    }
+}
+
+void CmdPwd(void)
+{
+    char Path[256];
+
+    if (!DiskFsIsMounted() && !DiskFsMount())
+    {
+        TerminalPrintLine32("pwd: no FAT32 disk mounted", 0x00FF0000);
+        return;
+    }
+    DiskFsPwd(Path, sizeof(Path));
+    TerminalPrintLine32(Path, PromColor);
 }
 
 void CmdWrite(const PARSED_COMMAND *Command)
@@ -285,7 +461,12 @@ void CmdWrite(const PARSED_COMMAND *Command)
             Text[Position++] = ' ';
     }
     Text[Position] = '\0';
-    if (!VfsWrite(Command->Args[0], Text, Position))
+    if (!DiskFsIsMounted() && !DiskFsMount())
+    {
+        TerminalPrintLine32("write: no FAT32 disk mounted", 0x00FF0000);
+        return;
+    }
+    if (!DiskFsWrite(Command->Args[0], Text, Position))
         TerminalPrintLine32("write: cannot write file", 0x00FF0000);
 }
 
@@ -332,9 +513,11 @@ void CmdSuf(const char *CommandName)
         CmdSufLine("   drivers/storage/ide/ide.c -> IDEReadSector() (ATA PIO / ATAPI SCSI READ 10)");
     }
     else if (strcmp(CommandName, "ls") == 0 || strcmp(CommandName, "touch") == 0 || strcmp(CommandName, "cat") == 0 ||
-             strcmp(CommandName, "write") == 0 || strcmp(CommandName, "rm") == 0 || strcmp(CommandName, "edit") == 0)
+             strcmp(CommandName, "write") == 0 || strcmp(CommandName, "rm") == 0 || strcmp(CommandName, "edit") == 0 ||
+             strcmp(CommandName, "mkdir") == 0 || strcmp(CommandName, "cd") == 0 || strcmp(CommandName, "pwd") == 0 ||
+             strcmp(CommandName, "rmdir") == 0)
     {
-        CmdSufLine("   fs/vfs/vfs.c & fs/ramfs/ramfs.c -> Virtual Filesystem Engine");
+        CmdSufLine("   shell/diskfs.c & fs/fat32 -> FAT32 disk filesystem engine");
     }
     else if (strcmp(CommandName, "isolist") == 0 || strcmp(CommandName, "lsiso") == 0 || strcmp(CommandName, "isofind") == 0 || strcmp(CommandName, "isocat") == 0)
     {
@@ -359,7 +542,7 @@ void CmdSuf(const char *CommandName)
     }
     else if (strcmp(CommandName, "tree") == 0)
     {
-        CmdSufLine("   fs/vfs/vfs.c & fs/ISO9660/iso9660.c -> Hierarchical tree directory walker");
+        CmdSufLine("   shell/diskfs.c & fs/fat32/directory/directory.c -> Recursive FAT32 tree walker");
     }
     else if (strcmp(CommandName, "panic") == 0)
     {
@@ -760,7 +943,7 @@ void CmdNeofetch(void)
     TerminalWrite32("  Storage      : ", 0x0057DB92);
     if (IDEIsATAPI()) TerminalPrintLine32("IDE ATAPI CD-ROM (Active)", 0x0000FFFF);
     else TerminalPrintLine32("IDE ATA Hard Disk (Active)", 0x0057DB92);
-    TerminalWrite32("  Filesystem   : ", 0x0057DB92); TerminalPrintLine32("ISO9660 + RamFS VFS", PromColor);
+    TerminalWrite32("  Filesystem   : ", 0x0057DB92); TerminalPrintLine32("FAT32 (disk) + ISO9660 (CD)", PromColor);
     TerminalWrite32("  Shell        : ", 0x0057DB92); TerminalPrintLine32("Null Shell", 0x00FF00FF);
     TerminalPrintLine32("-------------------------------------------------", 0x00314A70);
 }
@@ -826,20 +1009,74 @@ void CmdCalc(const PARSED_COMMAND *Command)
     TerminalNewLine32(0);
 }
 
-void CmdTree(void)
+typedef struct
 {
-    TerminalPrintLine32(".", 0x0057DB92);
-    TerminalPrintLine32("├── [VFS Filesystem]", 0x005AA9FF);
-    CmdLs();
-    TerminalPrintLine32("└── [ISO9660 Media]", 0x0000FFFF);
-    ISODirRecord Root;
-    if (ISOGetRootDir(&Root))
+    const FAT32Directory *Cwd;
+    uint32_t Depth;
+} CmdTreeContext;
+
+static bool CmdTreeVisitor(const FAT32DirectoryEntry *Entry,
+                           const char *ShortName, void *Context)
+{
+    CmdTreeContext *Ctx = (CmdTreeContext *)Context;
+
+    if (strcmp(ShortName, ".") == 0 || strcmp(ShortName, "..") == 0)
     {
-        ISOReadDirectory(&Root);
+        return true;
+    }
+    for (uint32_t Index = 0; Index < Ctx->Depth; Index++)
+    {
+        TerminalWrite32("    ", PromColor);
+    }
+    TerminalWrite32("└── ", 0x005AA9FF);
+    TerminalWrite32(ShortName, PromColor);
+    if ((Entry->Attributes & FAT32_ATTRIBUTE_DIRECTORY) != 0)
+    {
+        TerminalWrite32("/\n", PromColor);
+        if (Ctx->Depth < 4U)
+        {
+            FAT32Directory Child;
+            CmdTreeContext ChildCtx;
+
+            if (FAT32DirectoryOpen(&Child, Ctx->Cwd->Boot,
+                                   Ctx->Cwd->PartitionStartLBA,
+                                   FAT32DirectoryEntryFirstCluster(Entry)))
+            {
+                ChildCtx.Cwd = &Child;
+                ChildCtx.Depth = Ctx->Depth + 1U;
+                FAT32DirectoryForEach(&Child, CmdTreeVisitor, &ChildCtx);
+            }
+        }
     }
     else
     {
-        TerminalPrintLine32("    (ISO Media Not Loaded)", 0x00555555);
+        TerminalWrite32("  ", PromColor);
+        TerminalPrintHex64Compact(Entry->FileSize);
+        TerminalPutChar32('\n', PromColor);
+    }
+    return true;
+}
+
+void CmdTree(void)
+{
+    const FAT32Directory *Cwd;
+
+    if (!DiskFsIsMounted() && !DiskFsMount())
+    {
+        TerminalPrintLine32("tree: no FAT32 disk mounted", 0x00FF0000);
+        return;
+    }
+    Cwd = DiskFsCwd();
+    if (Cwd == NULL)
+    {
+        return;
+    }
+    TerminalPrintLine32(".", 0x0057DB92);
+    {
+        CmdTreeContext Root;
+        Root.Cwd = Cwd;
+        Root.Depth = 0;
+        FAT32DirectoryForEach(Cwd, CmdTreeVisitor, &Root);
     }
 }
 
@@ -911,7 +1148,7 @@ void CmdIsoCat(const char *Path)
     TerminalPrintLine32((const char *)buf, PromColor);
 }
 
-void CmdIsoCopy(const char *IsoPath, const char *VfsPath)
+void CmdIsoCopy(const char *IsoPath, const char *DiskPath)
 {
     ISODirRecord FileRec;
     if (!ISOFindPath(IsoPath, &FileRec))
@@ -920,10 +1157,16 @@ void CmdIsoCopy(const char *IsoPath, const char *VfsPath)
         return;
     }
 
+    if (!DiskFsIsMounted() && !DiskFsMount())
+    {
+        TerminalPrintLine32("isocopy: no FAT32 disk mounted", 0xFFFF0000);
+        return;
+    }
+
     if (FileRec.DataLength == 0)
     {
-        if (VfsWrite(VfsPath, "", 0))
-            TerminalPrintLine32("isocopy: Successfully copied to VFS!", 0x0057DB92);
+        if (DiskFsTouch(DiskPath))
+            TerminalPrintLine32("isocopy: Successfully copied to disk!", 0x0057DB92);
         return;
     }
 
@@ -941,9 +1184,9 @@ void CmdIsoCopy(const char *IsoPath, const char *VfsPath)
         return;
     }
 
-    if (VfsWrite(VfsPath, buf, bytesRead))
+    if (DiskFsWrite(DiskPath, buf, bytesRead))
     {
-        TerminalPrintLine32("isocopy: Successfully copied to VFS!", 0x0057DB92);
+        TerminalPrintLine32("isocopy: Successfully copied to disk!", 0x0057DB92);
     }
 }
 

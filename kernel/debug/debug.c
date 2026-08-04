@@ -3,6 +3,52 @@
 #include <stdbool.h>
 
 #include "kernel/terminal/terminal.h"
+#include "arch/x86_64/cpu/io.h"
+
+#define COM1_BASE 0x3F8U
+
+static bool g_SerialReady = false;
+
+void DbgSerialInit(void)
+{
+    Outb(COM1_BASE + 1, 0x00);
+    Outb(COM1_BASE + 3, 0x80);
+    Outb(COM1_BASE + 0, 0x01);
+    Outb(COM1_BASE + 1, 0x00);
+    Outb(COM1_BASE + 3, 0x03);
+    Outb(COM1_BASE + 2, 0xC7);
+    Outb(COM1_BASE + 4, 0x0B);
+    g_SerialReady = true;
+}
+
+void DbgSerialPutChar(char Character)
+{
+    if (!g_SerialReady)
+    {
+        return;
+    }
+    while ((Inb(COM1_BASE + 5) & 0x20) == 0)
+    {
+    }
+    Outb(COM1_BASE, (uint8_t)Character);
+}
+
+void DbgSerialWrite(const char *String)
+{
+    if (String == NULL)
+    {
+        return;
+    }
+    while (*String != '\0')
+    {
+        DbgSerialPutChar(*String);
+        if (*String == '\n')
+        {
+            DbgSerialPutChar('\r');
+        }
+        String++;
+    }
+}
 
 #define DBG_BACKGROUND 0x00000000
 #define DBG_BORDER     0x00314A70U
@@ -33,6 +79,22 @@ static void DbgStatus(const char *Tag, uint32_t TagColor,
     TerminalWrite32("] ", DBG_BORDER);
     TerminalWrite32(Message, DBG_TEXT);
     DbgAddress(Address);
+
+    DbgSerialWrite("[");
+    DbgSerialWrite(Tag);
+    DbgSerialWrite("] ");
+    DbgSerialWrite(Message);
+    DbgSerialWrite(" @ ");
+    char Hex[32];
+    uintptr_t Tmp = Address;
+    for (int i = 15; i >= 0; i--)
+    {
+        Hex[i] = "0123456789ABCDEF"[Tmp & 0xF];
+        Tmp >>= 4;
+    }
+    Hex[16] = '\0';
+    DbgSerialWrite(Hex);
+    DbgSerialWrite("\n");
 }
 
 void DbgBoot(const char *Message, uintptr_t Address)

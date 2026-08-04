@@ -236,37 +236,26 @@ static bool ProbeIDEDevice(uint16_t io_base, uint8_t drive_sel, IDEDevice *dev)
 
     uint8_t lba1 = Inb(io_base + ATA_REG_LBA1);
     uint8_t lba2 = Inb(io_base + ATA_REG_LBA2);
-
-    if (lba1 == 0x14 && lba2 == 0xEB)
-    {
-        dev->Present = true;
-        dev->IsATAPI = true;
-        return true;
-    }
+    (void)lba1;
+    (void)lba2;
 
     if (status & ATA_STATUS_ERR)
     {
+        /* ERR after ATA IDENTIFY: could be ATAPI or an empty channel.
+           Issue ATAPI IDENTIFY and require a real data transfer; the
+           empty-channel ghost sets ERR without DRQ. */
         Outb(io_base + ATA_REG_COMMAND, ATAPI_CMD_IDENTIFY);
         IDEDelay400ns(io_base);
 
-        uint8_t atapi_status = IDEReadStatusPort(io_base);
-        if (atapi_status != 0 && atapi_status != 0xFF && !(atapi_status & ATA_STATUS_ERR))
-        {
-            if (IDEWaitDRQTimeout(io_base))
-            {
-                uint16_t buf[256];
-                for (int i = 0; i < 256; i++) buf[i] = Inw(io_base + ATA_REG_DATA);
-                (void)buf;
-                dev->Present = true;
-                dev->IsATAPI = true;
-                return true;
-            }
-        }
+        if (!IDEWaitBusyTimeout(io_base)) return false;
 
-        lba1 = Inb(io_base + ATA_REG_LBA1);
-        lba2 = Inb(io_base + ATA_REG_LBA2);
-        if (lba1 == 0x14 && lba2 == 0xEB)
+        uint8_t atapi_status = IDEReadStatusPort(io_base);
+        if (atapi_status != 0 && atapi_status != 0xFF &&
+            !(atapi_status & ATA_STATUS_ERR) && IDEWaitDRQTimeout(io_base))
         {
+            uint16_t buf[256];
+            for (int i = 0; i < 256; i++) buf[i] = Inw(io_base + ATA_REG_DATA);
+            (void)buf;
             dev->Present = true;
             dev->IsATAPI = true;
             return true;
@@ -332,4 +321,52 @@ bool IDEInitialize(void)
 bool IDEIsATAPI(void)
 {
     return g_IDEInitialized && g_ActiveDevice.IsATAPI;
+}
+
+bool IDESelectDisk(void)
+{
+    static const uint16_t io_ports[2] = { ATA_PRIMARY_IO, ATA_SECONDARY_IO };
+    static const uint8_t drive_sels[2] = { ATA_MASTER, ATA_SLAVE };
+
+    IDEDevice dev;
+    for (int p = 0; p < 2; p++)
+    {
+        for (int d = 0; d < 2; d++)
+        {
+            if (ProbeIDEDevice(io_ports[p], drive_sels[d], &dev) && !dev.IsATAPI)
+            {
+                g_ActiveDevice = dev;
+                g_IDEInitialized = true;
+                DbgInfo("IDE Driver: switched to ATA hard disk", (uintptr_t)IDESelectDisk);
+                return true;
+            }
+        }
+    }
+
+    DbgWarn("IDE Driver: no ATA hard disk found", (uintptr_t)IDESelectDisk);
+    return false;
+}
+
+bool IDESelectCD(void)
+{
+    static const uint16_t io_ports[2] = { ATA_PRIMARY_IO, ATA_SECONDARY_IO };
+    static const uint8_t drive_sels[2] = { ATA_MASTER, ATA_SLAVE };
+
+    IDEDevice dev;
+    for (int p = 0; p < 2; p++)
+    {
+        for (int d = 0; d < 2; d++)
+        {
+            if (ProbeIDEDevice(io_ports[p], drive_sels[d], &dev) && dev.IsATAPI)
+            {
+                g_ActiveDevice = dev;
+                g_IDEInitialized = true;
+                DbgInfo("IDE Driver: switched to ATAPI CD-ROM", (uintptr_t)IDESelectCD);
+                return true;
+            }
+        }
+    }
+
+    DbgWarn("IDE Driver: no ATAPI CD-ROM found", (uintptr_t)IDESelectCD);
+    return false;
 }

@@ -1,1 +1,1 @@
-qemu-system-x86_64 -cdrom build/NullOS.iso -serial stdio -m 3 -machine pcspk-audiodev=speaker -audiodev driver=pipewire,id=speaker 
+qemu-system-x86_64 -boot order=d -cdrom build/NullOS.iso -hda esp.img -serial stdio -m 3 -machine pcspk-audiodev=speaker -audiodev driver=pipewire,id=speaker 

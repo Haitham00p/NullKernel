@@ -158,6 +158,11 @@ bool ISOInitialize(void)
     return true;
 }
 
+bool ISOIsReady(void)
+{
+    return g_ISOInitialized;
+}
+
 bool ISOGetRootDir(ISODirRecord *OutRoot)
 {
     if (!g_ISOInitialized || OutRoot == NULL)
