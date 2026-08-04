@@ -53,6 +53,7 @@ C_SOURCES := \
 	kernel/debug/debug.c \
 	kernel/panic/panic.c \
 	kernel/terminal/terminal.c \
+	kernel/terminal/cursor.c \
 	kernel/kernel.c \
 	lib/delay/delay.c \
 	lib/string/string.c \
@@ -69,7 +70,8 @@ C_SOURCES := \
 	source/kchar.c \
 	source/kstring.c \
 	source/kterminal.c \
-	source/kshell.c
+	source/kshell.c \
+	lib/sound/sndbeep.c
 
 
 ASM_OBJECTS := \

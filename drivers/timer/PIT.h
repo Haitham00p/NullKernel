@@ -1,6 +1,6 @@
 #ifndef PIT_H
 #define PIT_H
-#define Freq 100
+#define Freq 1000 // Kinda over, I WILL PANIC IF U KEEP USE THIS VAL IN FUTURE, convert it to 100 later
 #include <stdint.h>
 
 uint64_t PITGetTicks(void);

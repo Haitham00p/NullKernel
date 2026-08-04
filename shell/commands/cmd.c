@@ -17,6 +17,7 @@
 #include "mm/heap/heap.h"
 #include "kernel/panic/panic.h"
 #include "../Kernel/drivers/timer/PIT.h"
+#include "../../lib/sound/sndbeep.h"
 
 static bool ParseNumber(const char *str, uint64_t *val)
 {
@@ -82,6 +83,10 @@ void CmdHelp(void)
     TerminalPrintLine32("  cr0 / cr3 / cr4                 Read CPU Control Registers", PromColor);
     TerminalPrintLine32("  msr <msr_hex>                   Read 64-bit Model-Specific Register", PromColor);
     TerminalPrintLine32("  diskread <lba>                  Read & dump raw IDE/ATAPI sector", PromColor);
+    TerminalPrintLine32("  sbep <Frequency> <Millisecond>  Let's beep together !", PromColor);
+    TerminalPrintLine32("  ebepe                           Force Stop the beep sound", PromColor);
+    TerminalPrintLine32("  nsong <F1> <L1> <F2> <L2> <F3> <L3> <F4> <L4> <F5> <L5> <F6> <L6>", PromColor);
+    TerminalPrintLine32("                                  Play a 6-tone song with frequency & duration", PromColor);
 
     TerminalPrintLine32("FILESYSTEM & UTILITIES", 0x0057DB92);
     TerminalPrintLine32("  ls                              List VFS files", PromColor);
@@ -944,4 +949,20 @@ void CmdIsoCopy(const char *IsoPath, const char *VfsPath)
 
 void CmdTickTestPIT(void){
     PITTest();
+}
+
+void CmdBep(uint64_t Frequency, uint32_t Last){
+    StartBeep(Frequency, Last);
+}
+void CmdSBepEmrg(void){
+    EndBeepEmrg();
+}
+
+void CmdNSong(uint64_t Freq1, uint32_t Last1, uint64_t Freq2, uint32_t Last2, uint64_t Freq3, uint32_t Last3, uint64_t Freq4, uint32_t Last4, uint64_t Freq5, uint32_t Last5, uint64_t Freq6, uint32_t Last6){
+    StartBeep(Freq1, Last1);
+    StartBeep(Freq2, Last2);
+    StartBeep(Freq3, Last3);
+    StartBeep(Freq4, Last4);
+    StartBeep(Freq5, Last5);
+    StartBeep(Freq6, Last6);
 }

@@ -1,7 +1,10 @@
 #ifndef TERMINAL_H
 #define TERMINAL_H
+
 #include <stdint.h>
+#include <stdbool.h>
 #include "include/kterminal.h"
+#include "include/cursor.h"
 
 void TerminalInit32(void);
 void TerminalPutChar32(char c, uint32_t color);
@@ -16,7 +19,10 @@ void TerminalBackspace32(uint32_t Color);
 void TerminalScroll32(void);
 void TerminalPrintHex64(uint64_t Value);
 void TerminalPrintHex64Compact(uintptr_t Value);
-/* Draws text at an exact pixel position using a modest integer scale. */
 void TerminalWriteScaled32(const char *str, uint32_t x, uint32_t y,
                            uint32_t scale, uint32_t color);
-#endif
+void TerminalBlinkUpdate(void);
+
+term_screen_t *TerminalGetScreen(void);
+
+#endif /* TERMINAL_H */

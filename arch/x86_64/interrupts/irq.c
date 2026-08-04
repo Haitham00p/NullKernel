@@ -10,6 +10,7 @@ void IRQHandler(uint32_t IRQ)
 {   
     if (IRQ == IRQ_TIMER){
         PITTick();
+        TerminalBlinkUpdate();
     }
     if (IRQ == IRQ_KEYBOARD)
     {

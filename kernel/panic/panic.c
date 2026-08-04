@@ -9,6 +9,9 @@
 #include "arch/x86_64/interrupts/pic.h"
 #include "arch/x86_64/interrupts/irq.h"
 
+#include "../../lib/sound/sndbeep.h"
+
+
 /* Ominous High-Tech Dark Blue / Cyan Palette */
 #define COLOR_VOID_BG        0x00020614U  /* Deep Abyssal Blue-Black */
 #define COLOR_BLUE_HEADER    0x000F2B5CU  /* Deep Cobalt Blue */
@@ -94,7 +97,12 @@ static void PanicPrintRegPair(const char *N1, uint64_t V1, const char *N2, uint6
 }
 
 void PanicKernel(const char *Reason, uintptr_t FaultAddress)
-{
+{   
+
+    StartBeep(300, 1000);
+    
+    
+
     /* Mask keyboard interrupt and enable PIT timer for sleep countdown */
     PICMaskIRQ(IRQ_KEYBOARD);
     __asm__ volatile("sti");
@@ -177,7 +185,8 @@ void PanicKernel(const char *Reason, uintptr_t FaultAddress)
 
     TerminalNewLine32(COLOR_VOID_BG);
     TerminalWrite32("AUTO-REBOOTING SYSTEM IN: ", COLOR_BLUE_GLOW);
-
+    StartBeep(100, 2000);
+    KernelSleep(200);
     /* Use KernelSleep for countdown */
     for (uint16_t i = 10; i > 0; i--)
     {

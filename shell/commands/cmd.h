@@ -47,6 +47,9 @@ void CmdCR4(void);
 void CmdMsr(const PARSED_COMMAND *Command);
 void CmdDiskRead(const PARSED_COMMAND *Command);
 void CmdTickTestPIT(void);
+void CmdBep(uint64_t Freq, uint32_t Last);
+void CmdSBepEmrg(void);
+void CmdNSong(uint64_t Freq1, uint32_t Last1, uint64_t Freq2, uint32_t Last2, uint64_t Freq3, uint32_t Last3, uint64_t Freq4, uint32_t Last4, uint64_t Freq5, uint32_t Last5, uint64_t Freq6, uint32_t Last6);
 
 // High-Level Utility & System Commands
 void CmdNeofetch(void);

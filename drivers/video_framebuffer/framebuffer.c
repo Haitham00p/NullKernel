@@ -10,13 +10,11 @@ __attribute__((used, section(".requests"))) volatile struct limine_memmap_reques
     .id = LIMINE_MEMMAP_REQUEST,
     .revision = 0};
 
-
 __attribute__((used, section(".requests"))) static volatile struct limine_framebuffer_request FrBuf32 = {
     .id = LIMINE_FRAMEBUFFER_REQUEST,
     .revision = 0};
 
 static struct limine_framebuffer *framebuffer;
-
 
 static uint32_t *fb_address;
 static uint64_t fb_width;
@@ -31,28 +29,17 @@ void FbInit32(void)
         return;
     }
     
-    framebuffer =
-        FrBuf32.response->framebuffers[0];
-
-    fb_address =
-        (uint32_t *)framebuffer->address;
-
-    fb_width =
-        framebuffer->width;
-
-    fb_height =
-        framebuffer->height;
-
-    fb_pitch =
-        framebuffer->pitch;
-
-    fb_bpp =
-        framebuffer->bpp;
+    framebuffer = FrBuf32.response->framebuffers[0];
+    fb_address = (uint32_t *)framebuffer->address;
+    fb_width = framebuffer->width;
+    fb_height = framebuffer->height;
+    fb_pitch = framebuffer->pitch;
+    fb_bpp = framebuffer->bpp;
 }
-
 
 void FbPrintPixel32(uint32_t x, uint32_t y, uint32_t color)
 {
+    if (x >= fb_width || y >= fb_height) return;
     uint32_t *pixel = (uint32_t *)((uint8_t *)fb_address + y * fb_pitch + x * BytePerPixel);
     *pixel = color;
 }
@@ -73,6 +60,7 @@ void FbDrawChar32(uint8_t c,
                   uint32_t y,
                   uint32_t color)
 {
+    if (c >= 128) return;
     for (uint32_t row = 0; row < FONT_HEIGHT; row++)
     {
         uint8_t line = font8x16[c][row];
@@ -95,7 +83,7 @@ void FbDrawCharScaled32(uint8_t c,
                         uint32_t scale,
                         uint32_t color)
 {
-    if (scale == 0) return;
+    if (scale == 0 || c >= 128) return;
 
     for (uint32_t Row = 0; Row < FONT_HEIGHT; Row++)
     {
@@ -116,7 +104,7 @@ void FbPrintString32(const char *str,
                      uint32_t y,
                      uint32_t color)
 {
-    while (*str)
+    while (str && *str)
     {
         if (*str == '\n')
         {
@@ -176,6 +164,16 @@ uint32_t FbGetHeight32(void)
     return fb_height;
 }
 
+uint32_t *FbGetAddress32(void)
+{
+    return fb_address;
+}
+
+uint32_t FbGetPitchPixels32(void)
+{
+    return (uint32_t)(fb_pitch / BytePerPixel);
+}
+
 void FbDrawRect32(uint32_t x,
                   uint32_t y,
                   uint32_t width,
@@ -197,11 +195,8 @@ void FbDrawRect32(uint32_t x,
 
 uint32_t FbReadPixel32(uint32_t x, uint32_t y)
 {
-    uint32_t *pixel =
-        (uint32_t *)((uint8_t *)fb_address +
-        y * fb_pitch +
-        x * BytePerPixel);
-
+    if (x >= fb_width || y >= fb_height) return 0;
+    uint32_t *pixel = (uint32_t *)((uint8_t *)fb_address + y * fb_pitch + x * BytePerPixel);
     return *pixel;
 }
 
@@ -216,13 +211,8 @@ void FbCopyRect32(uint32_t SrcX,
     {
         for (uint32_t Col = 0; Col < Width; Col++)
         {
-            uint32_t Color =
-                FbReadPixel32(SrcX + Col,
-                              SrcY + Row);
-
-            FbPrintPixel32(DstX + Col,
-                           DstY + Row,
-                           Color);
+            uint32_t Color = FbReadPixel32(SrcX + Col, SrcY + Row);
+            FbPrintPixel32(DstX + Col, DstY + Row, Color);
         }
     }
 }

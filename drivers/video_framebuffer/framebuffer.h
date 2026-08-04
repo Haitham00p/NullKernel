@@ -26,7 +26,7 @@ void FbPrintString32(const char *str,
                      uint32_t x,
                      uint32_t y,
                      uint32_t color);
-void FbPrintPixel32(uint32_t x, uint32_t y, uint32_t color);
+
 void FbFillRect32(uint32_t x,
                   uint32_t y,
                   uint32_t width,
@@ -34,6 +34,9 @@ void FbFillRect32(uint32_t x,
                   uint32_t color);
 uint32_t FbGetWidth32(void);
 uint32_t FbGetHeight32(void);
+uint32_t *FbGetAddress32(void);
+uint32_t FbGetPitchPixels32(void);
+
 void FbDrawRect32(uint32_t x,
                   uint32_t y,
                   uint32_t width,

@@ -1,6 +1,7 @@
 #include "shell.h"
 #include "drivers/input/keyboard/keyboard.h"
 #include "kernel/terminal/terminal.h"
+#include "include/cursor.h"
 #include "lib/string/string.h"
 #include "dispatcher.h"
 #include "parser.h"
@@ -12,25 +13,43 @@ uint32_t PromColor = 0xFFFFFFFF;
 uint32_t BackSpaceColor = 0x00000000;
 
 static char Command[SHELL_MAX_LENGTH];
-static uint32_t CommandLength;
+static uint32_t CommandLength = 0;
+static uint32_t CommandPos = 0;
 
 #define SHELL_HISTORY_SIZE 16U
 static char History[SHELL_HISTORY_SIZE][SHELL_MAX_LENGTH];
 static char HistoryDraft[SHELL_MAX_LENGTH];
-static uint32_t HistoryCount;
-static uint32_t HistoryPosition;
-static bool HistoryBrowsing;
+static uint32_t HistoryCount = 0;
+static uint32_t HistoryPosition = 0;
+static bool HistoryBrowsing = false;
+
+static void RedrawCommandPrompt(void)
+{
+    term_screen_t *scr = TerminalGetScreen();
+    uint32_t cur_x = 0, cur_y = 0;
+    TerminalGetCursor32(&cur_x, &cur_y);
+    uint32_t prompt_start_col = (uint32_t)(strlen(PROMPT));
+
+    /* Clear current prompt line content */
+    TerminalSetCursor32(0, cur_y);
+    TerminalWrite32(PROMPT, PromColor);
+    TerminalWrite32(Command, PromColor);
+    
+    /* Fill remaining line length with spaces to clean up deleted chars */
+    for (uint32_t i = (uint32_t)strlen(PROMPT) + CommandLength; i < scr->cols; i++) {
+        TerminalPutChar32(' ', PromColor);
+    }
+
+    /* Position cursor at active editing offset CommandPos */
+    TerminalSetCursor32((prompt_start_col + CommandPos) * scr->font_width, cur_y);
+}
 
 static void ShellReplaceCommand(const char *Replacement)
 {
-    while (CommandLength > 0)
-    {
-        TerminalBackspace32(BackSpaceColor);
-        CommandLength--;
-    }
     strcpy(Command, Replacement);
     CommandLength = (uint32_t)strlen(Command);
-    TerminalWrite32(Command, PromColor);
+    CommandPos = CommandLength;
+    RedrawCommandPrompt();
 }
 
 static void ShellSaveHistory(void)
@@ -77,6 +96,7 @@ static void ShellHistoryDown(void)
 void ShellInitialize(void)
 {
     CommandLength = 0;
+    CommandPos = 0;
     HistoryCount = 0;
     HistoryPosition = 0;
     HistoryBrowsing = false;
@@ -97,15 +117,59 @@ void ShellUpdate(void)
             if (!EditorIsActive())
             {
                 CommandLength = 0;
+                CommandPos = 0;
                 Command[0] = '\0';
                 TerminalWrite32(PROMPT, PromColor);
             }
             continue;
         }
 
-        if (Key == KBD_KEY_UP) { ShellHistoryUp(); continue; }
+        /* History Navigation */
+        if (Key == KBD_KEY_UP)   { ShellHistoryUp(); continue; }
         if (Key == KBD_KEY_DOWN) { ShellHistoryDown(); continue; }
 
+        /* Left / Right Arrow Cursor Movement */
+        if (Key == KBD_KEY_LEFT)
+        {
+            if (CommandPos > 0)
+            {
+                CommandPos--;
+                CursorMoveLeft(TerminalGetScreen(), 1);
+            }
+            continue;
+        }
+
+        if (Key == KBD_KEY_RIGHT)
+        {
+            if (CommandPos < CommandLength)
+            {
+                CommandPos++;
+                CursorMoveRight(TerminalGetScreen(), 1);
+            }
+            continue;
+        }
+
+        if (Key == KBD_KEY_HOME)
+        {
+            CommandPos = 0;
+            RedrawCommandPrompt();
+            continue;
+        }
+
+        if (Key == KBD_KEY_END)
+        {
+            CommandPos = CommandLength;
+            RedrawCommandPrompt();
+            continue;
+        }
+
+        /* Ignore all other extended non-printable keys (0x80-0xFF) */
+        if (Key >= 0x80U)
+        {
+            continue;
+        }
+
+        /* Enter Key */
         if (Character == '\n')
         {
             TerminalPutChar32('\n', PromColor);
@@ -117,28 +181,45 @@ void ShellUpdate(void)
             DispatcherDispatch(&Parsed);
 
             CommandLength = 0;
+            CommandPos = 0;
             Command[0] = '\0';
             TerminalWrite32(PROMPT, PromColor);
             continue;
         }
 
+        /* Backspace Key */
         if (Character == '\b')
         {
-            if (CommandLength > 0)
+            if (CommandPos > 0)
             {
+                for (uint32_t i = CommandPos - 1; i < CommandLength; i++)
+                {
+                    Command[i] = Command[i + 1];
+                }
                 CommandLength--;
-                Command[CommandLength] = '\0';
-                TerminalBackspace32(BackSpaceColor);
+                CommandPos--;
+                RedrawCommandPrompt();
             }
             continue;
         }
 
-        if (CommandLength >= SHELL_MAX_LENGTH - 1U)
+        /* Printable Characters */
+        if (Character >= ' ' && Character <= '~')
         {
-            continue;
-        }
+            if (CommandLength >= SHELL_MAX_LENGTH - 1U)
+            {
+                continue;
+            }
 
-        Command[CommandLength++] = Character;
-        TerminalPutChar32(Character, PromColor);
+            for (int32_t i = (int32_t)CommandLength; i >= (int32_t)CommandPos; i--)
+            {
+                Command[i + 1] = Command[i];
+            }
+            Command[CommandPos] = Character;
+            CommandLength++;
+            CommandPos++;
+            Command[CommandLength] = '\0';
+            RedrawCommandPrompt();
+        }
     }
 }

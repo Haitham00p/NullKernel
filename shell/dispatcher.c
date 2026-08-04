@@ -4,6 +4,7 @@
 #include "kernel/terminal/terminal.h"
 #include "kernel/panic/panic.h"
 #include "../fs/ISO9660/iso9660.h"
+#include "../include/kshell.h"
 
 void DispatcherDispatch(const PARSED_COMMAND *Command){
     if (strcmp(Command->Command, "regout") == 0 || strcmp(Command->Command, "RegOut") == 0){
@@ -173,6 +174,48 @@ void DispatcherDispatch(const PARSED_COMMAND *Command){
     }
     if (strcmp(Command->Command, "tt") == 0){
         CmdTickTestPIT();
+        return;
+    }
+    if (strcmp(Command->Command, "sbep") == 0){
+        if (Command->ArgCount != 2){
+            TerminalPrintLine32("Invalid Args", PromColor);
+            return;
+        }
+        uint64_t Frequ;
+        uint64_t Last;
+        ShellArgToUInt64(Command->Args[0], &Frequ);
+        ShellArgToUInt64(Command->Args[1], &Last);
+        CmdBep(Frequ, Last);
+        return;
+    }
+    if (strcmp(Command->Command, "ebepe") == 0){
+        if (Command->ArgCount != 0){
+            TerminalPrintLine32("No Args Needed", PromColor);
+            return;
+        }
+        CmdSBepEmrg();
+        return;
+    }
+    if (strcmp(Command->Command, "smbep") == 0){
+        if (Command->ArgCount != 12){
+            TerminalPrintLine32("Invalid Args", PromColor);
+            return;
+        }
+        uint64_t Frequ1, Frequ2, Frequ3, Frequ4, Frequ5, Frequ6;
+        uint64_t Last1, Last2, Last3, Last4, Last5, Last6;
+        ShellArgToUInt64(Command->Args[0], &Frequ1);
+        ShellArgToUInt64(Command->Args[1], &Last1);
+        ShellArgToUInt64(Command->Args[2], &Frequ2);
+        ShellArgToUInt64(Command->Args[3], &Last2);
+        ShellArgToUInt64(Command->Args[4], &Frequ3);
+        ShellArgToUInt64(Command->Args[5], &Last3);
+        ShellArgToUInt64(Command->Args[6], &Frequ4);
+        ShellArgToUInt64(Command->Args[7], &Last4);
+        ShellArgToUInt64(Command->Args[8], &Frequ5);
+        ShellArgToUInt64(Command->Args[9], &Last5);
+        ShellArgToUInt64(Command->Args[10], &Frequ6);
+        ShellArgToUInt64(Command->Args[11], &Last6);
+        CmdNSong(Frequ1, Last1, Frequ2, Last2, Frequ3, Last3, Frequ4, Last4, Frequ5, Last5, Frequ6, Last6);
         return;
     }
 

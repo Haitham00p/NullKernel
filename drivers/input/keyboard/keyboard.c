@@ -137,6 +137,12 @@ void KeyboardInterrupt(void)
         else if (Code == 0x50) KbdBufferPush(KBD_KEY_DOWN);
         else if (Code == 0x4B) KbdBufferPush(KBD_KEY_LEFT);
         else if (Code == 0x4D) KbdBufferPush(KBD_KEY_RIGHT);
+        else if (Code == 0x47) KbdBufferPush(KBD_KEY_HOME);
+        else if (Code == 0x4F) KbdBufferPush(KBD_KEY_END);
+        else if (Code == 0x53) KbdBufferPush(KBD_KEY_DELETE);
+        else if (Code == 0x49) KbdBufferPush(KBD_KEY_PAGE_UP);
+        else if (Code == 0x51) KbdBufferPush(KBD_KEY_PAGE_DN);
+        else if (Code == 0x52) KbdBufferPush(KBD_KEY_INSERT);
         return;
     }
 
