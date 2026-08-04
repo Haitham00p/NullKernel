@@ -22,14 +22,14 @@ void CursorInitialize(cursor_t *cursor, uint32_t id) {
     cursor->color = 0x0000E0FF;        /* Bright Cyan */
     cursor->accent_color = 0x00000000; /* Black contrast for glyph intersection */
     cursor->shape = CURSOR_SHAPE_WIDE_CARET;
-    cursor->render_mode = CURSOR_RENDER_GEOMETRIC_OVERLAY;
+    cursor->render_mode = CURSOR_RENDER_INVERT_COLORS;
 
     cursor->visible = true;
     cursor->blink_state = true;
     cursor->blink_enabled = true;
     cursor->overwrite_mode = false;
 
-    cursor->blink_period_ms = 500;     /* Toggle every half second (500 ms) */
+    cursor->blink_period_ms = 500;     /* Toggle every 500ms (0.5 sec) */
     cursor->last_activity_ms = 0;
 
     cursor->next_cursor = NULL;
@@ -99,7 +99,7 @@ void CursorMoveTo(term_screen_t *screen, uint32_t col, uint32_t row) {
     cursor->pixel_x = col * screen->font_width;
     cursor->pixel_y = row * screen->font_height;
 
-    /* Reset blink phase on movement and restart timer */
+    /* Reset blink phase on movement */
     cursor->blink_state = true;
     cursor->last_activity_ms = PITGetMilliseconds();
 
@@ -211,6 +211,10 @@ static inline void RenderSingleCell(term_screen_t *screen, uint32_t col, uint32_
     uint32_t fg = (cell->attributes & TERM_ATTR_INVERSE) ? cell->bg_color : cell->fg_color;
     uint32_t bg = (cell->attributes & TERM_ATTR_INVERSE) ? cell->fg_color : cell->bg_color;
 
+    /* Dynamic color inversion using bitwise NOT (~) read from cell background and letter colors */
+    uint32_t fg_inverted = (~fg) | 0xFF000000U;
+    uint32_t bg_inverted = (~bg) | 0xFF000000U;
+
     const uint8_t *glyph_ptr = NULL;
     if (screen->font_glyph_data && cell->codepoint < 256) {
         glyph_ptr = &screen->font_glyph_data[cell->codepoint * fh];
@@ -250,12 +254,10 @@ static inline void RenderSingleCell(term_screen_t *screen, uint32_t col, uint32_
 
             uint32_t final_pixel;
             if (is_cursor && is_caret) {
-                if (cursor->render_mode == CURSOR_RENDER_INVERT_COLORS) {
-                    final_pixel = is_glyph ? bg : fg;
-                } else {
-                    final_pixel = is_glyph ? cursor->accent_color : cursor->color;
-                }
+                /* Invert both background and letter color when cursor appears */
+                final_pixel = is_glyph ? fg_inverted : bg_inverted;
             } else {
+                /* Normal rendering when cursor disappears or off cursor */
                 final_pixel = is_glyph ? fg : bg;
             }
 

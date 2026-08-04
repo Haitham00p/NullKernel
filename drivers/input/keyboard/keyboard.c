@@ -2,6 +2,7 @@
 #include "keyboard_layout.h"
 #include "arch/x86_64/cpu/io.h"
 #include "kernel/terminal/terminal.h"
+#include "drivers/timer/PIT.h"
 
 static uint32_t KbdHead = 0;
 static uint32_t KbdTail = 0;
@@ -13,7 +14,9 @@ static bool ExtendedKey;
 
 static KB_STATE KbdState;
 
-
+static uint8_t  LastScanCode = 0;
+static uint64_t KeyHoldStartTime = 0;
+static uint64_t LastRepeatTime = 0;
 
 void KbdInitialize(void)
 {
@@ -29,39 +32,25 @@ void KbdInitialize(void)
     KbdState.ScrollLock = false;
     ExtendedKey = false;
 
+    LastScanCode = 0;
+    KeyHoldStartTime = 0;
+    LastRepeatTime = 0;
+
     for (uint32_t i = 0; i < KB_BUFFER_SIZE; i++)
     {
         KbdBuffer[i] = 0;
     }
     for (uint32_t i = 0; i < 128; i++)
     {
-    KeyPressed[i] = false;
+        KeyPressed[i] = false;
     }   
 
-
-    /*
-     * Clear keyboard controller buffer
-     */
     while (Inb(0x64) & 0x01)
     {
         Inb(0x60);
     }
 
-
-    /*
-     * Enable keyboard device
-     * Command port: 0x64
-     * Data port:    0x60
-     */
     Outb(0x64, 0xAE);
-
-
-    /*
-     * Enable keyboard interrupt (IRQ1)
-     *
-     * This requires PIC already initialized.
-     */
-    //PIC_EnableIRQ(1);
 }
 
 static void KbdBufferPush(uint8_t Character)
@@ -117,7 +106,6 @@ KB_STATE KbdGetState(void)
     return KbdState;
 }
 
-
 void KeyboardInterrupt(void)
 {
     uint8_t ScanCode = Inb(0x60);
@@ -132,7 +120,23 @@ void KeyboardInterrupt(void)
         uint8_t Code = ScanCode & 0x7FU;
         bool Released = (ScanCode & 0x80U) != 0;
         ExtendedKey = false;
-        if (Released) return;
+        if (Released) {
+            if (Code == LastScanCode) LastScanCode = 0;
+            return;
+        }
+        
+        uint64_t now = PITGetMilliseconds();
+        if (Code == LastScanCode) {
+            if (now - KeyHoldStartTime < 500 || now - LastRepeatTime < 35) {
+                return;
+            }
+            LastRepeatTime = now;
+        } else {
+            LastScanCode = Code;
+            KeyHoldStartTime = now;
+            LastRepeatTime = now;
+        }
+
         if (Code == 0x48) KbdBufferPush(KBD_KEY_UP);
         else if (Code == 0x50) KbdBufferPush(KBD_KEY_DOWN);
         else if (Code == 0x4B) KbdBufferPush(KBD_KEY_LEFT);
@@ -154,9 +158,11 @@ void KeyboardInterrupt(void)
         uint8_t ReleasedCode = ScanCode & 0x7F;
 
         KeyPressed[ReleasedCode] = false;
+        if (ReleasedCode == LastScanCode)
+        {
+            LastScanCode = 0;
+        }
 
-
-        // Shift release
         if (ReleasedCode == 0x2A || ReleasedCode == 0x36)
         {
             KbdState.Shift = false;
@@ -170,34 +176,34 @@ void KeyboardInterrupt(void)
         return;
     }
 
-
-
     /*
-     * Ignore key repeat
+     * Typematic Key Repeat Handling
      */
+    uint64_t now = PITGetMilliseconds();
     if (KeyPressed[ScanCode])
     {
-        return;
+        if (ScanCode == LastScanCode)
+        {
+            if (now - KeyHoldStartTime < 500 || now - LastRepeatTime < 35)
+            {
+                return;
+            }
+            LastRepeatTime = now;
+        }
+        else
+        {
+            return;
+        }
     }
-
-    KeyPressed[ScanCode] = true;
-
-
-
-    /*
-     * Left Shift
-     */
-    if (ScanCode == 0x2A)
+    else
     {
-        KbdState.Shift = true;
-        return;
+        KeyPressed[ScanCode] = true;
+        LastScanCode = ScanCode;
+        KeyHoldStartTime = now;
+        LastRepeatTime = now;
     }
 
-
-    /*
-     * Right Shift
-     */
-    if (ScanCode == 0x36)
+    if (ScanCode == 0x2A || ScanCode == 0x36)
     {
         KbdState.Shift = true;
         return;
@@ -209,36 +215,18 @@ void KeyboardInterrupt(void)
         return;
     }
 
-
-
-    /*
-     * Caps Lock
-     */
     if (ScanCode == 0x3A)
     {
         KbdState.CapsLock = !KbdState.CapsLock;
         return;
     }
 
-
-
-    /*
-     * Convert ScanCode -> Character
-     */
     char Character = KeyboardLayoutNormal[ScanCode];
-
-
     if (Character == 0)
     {
         return;
     }
 
-
-
-    /*
-     * Letters:
-     * Shift XOR CapsLock
-     */
     if (Character >= 'a' && Character <= 'z')
     {
         if (KbdState.Shift ^ KbdState.CapsLock)
@@ -248,18 +236,11 @@ void KeyboardInterrupt(void)
     }
     else
     {
-        /*
-         * Symbols and numbers:
-         * Shift only
-         */
         if (KbdState.Shift)
         {
             Character = KeyboardLayoutShift[ScanCode];
         }
     }
 
-
-
     KbdBufferPush((uint8_t)Character);
-
 }

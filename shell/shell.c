@@ -23,6 +23,29 @@ static uint32_t HistoryCount = 0;
 static uint32_t HistoryPosition = 0;
 static bool HistoryBrowsing = false;
 
+/**
+ * @brief Reads base text color and applies channel math to generate
+ * a harmonized, slightly shifted single color for the whole prompt.
+ */
+static uint32_t ComputePromptColor(uint32_t base) {
+    uint32_t a = (base >> 24) ? ((base >> 24) & 0xFF) : 0xFF;
+    uint32_t r = (base >> 16) & 0xFF;
+    uint32_t g = (base >> 8) & 0xFF;
+    uint32_t b = base & 0xFF;
+
+    /* Channel math: scale R slightly, boost G/B channels to give sleek cyan/soft tint */
+    uint32_t r_prompt = (r * 3) / 4;
+    uint32_t g_prompt = ((g * 9) / 10) > 0xDF ? 0xFF : (((g * 9) / 10) + 0x20);
+    uint32_t b_prompt = (b > 0xBF) ? 0xFF : (b + 0x40);
+
+    return (a << 24) | (r_prompt << 16) | (g_prompt << 8) | b_prompt;
+}
+
+static void WritePrompt(void) {
+    uint32_t prompt_color = ComputePromptColor(PromColor);
+    TerminalWrite32(PROMPT, prompt_color);
+}
+
 static void RedrawCommandPrompt(void)
 {
     term_screen_t *scr = TerminalGetScreen();
@@ -32,7 +55,7 @@ static void RedrawCommandPrompt(void)
 
     /* Clear current prompt line content */
     TerminalSetCursor32(0, cur_y);
-    TerminalWrite32(PROMPT, PromColor);
+    WritePrompt();
     TerminalWrite32(Command, PromColor);
     
     /* Fill remaining line length with spaces to clean up deleted chars */
@@ -101,7 +124,7 @@ void ShellInitialize(void)
     HistoryPosition = 0;
     HistoryBrowsing = false;
     Command[0] = '\0';
-    TerminalWrite32(PROMPT, PromColor);
+    WritePrompt();
 }
 
 void ShellUpdate(void)
@@ -119,7 +142,7 @@ void ShellUpdate(void)
                 CommandLength = 0;
                 CommandPos = 0;
                 Command[0] = '\0';
-                TerminalWrite32(PROMPT, PromColor);
+                WritePrompt();
             }
             continue;
         }
@@ -163,6 +186,20 @@ void ShellUpdate(void)
             continue;
         }
 
+        if (Key == KBD_KEY_DELETE)
+        {
+            if (CommandPos < CommandLength)
+            {
+                for (uint32_t i = CommandPos; i < CommandLength; i++)
+                {
+                    Command[i] = Command[i + 1];
+                }
+                CommandLength--;
+                RedrawCommandPrompt();
+            }
+            continue;
+        }
+
         /* Ignore all other extended non-printable keys (0x80-0xFF) */
         if (Key >= 0x80U)
         {
@@ -183,7 +220,7 @@ void ShellUpdate(void)
             CommandLength = 0;
             CommandPos = 0;
             Command[0] = '\0';
-            TerminalWrite32(PROMPT, PromColor);
+            WritePrompt();
             continue;
         }
 
