@@ -1,4 +1,5 @@
 #include "cursor.h"
+#include "drivers/timer/PIT.h"
 
 static inline void update_dirty_range(term_line_t *line, uint32_t col) {
     line->is_dirty = true;
@@ -15,7 +16,7 @@ void CursorInitialize(cursor_t *cursor, uint32_t id) {
 
     cursor->pixel_x = 0;
     cursor->pixel_y = 0;
-    cursor->width_px = 3;
+    cursor->width_px = 8;
     cursor->height_px = 16;
 
     cursor->color = 0x0000E0FF;        /* Bright Cyan */
@@ -28,7 +29,7 @@ void CursorInitialize(cursor_t *cursor, uint32_t id) {
     cursor->blink_enabled = true;
     cursor->overwrite_mode = false;
 
-    cursor->blink_period_ms = 500;
+    cursor->blink_period_ms = 500;     /* Toggle every half second (500 ms) */
     cursor->last_activity_ms = 0;
 
     cursor->next_cursor = NULL;
@@ -52,6 +53,7 @@ bool TerminalInitialize(term_screen_t *screen, uint32_t cols, uint32_t rows,
     screen->font_height = font_h;
 
     CursorInitialize(&screen->primary_cursor, 0);
+    screen->primary_cursor.width_px = font_w;  /* Wide enough to fit whole letter */
     screen->primary_cursor.height_px = font_h;
 
     return true;
@@ -86,7 +88,6 @@ void CursorMoveTo(term_screen_t *screen, uint32_t col, uint32_t row) {
     if (row >= screen->rows) row = screen->rows - 1;
 
     cursor_t *cursor = &screen->primary_cursor;
-    if (cursor->col == col && cursor->row == row) return;
 
     /* Invalidate previous position */
     TerminalInvalidateCell(screen, cursor->col, cursor->row);
@@ -98,8 +99,9 @@ void CursorMoveTo(term_screen_t *screen, uint32_t col, uint32_t row) {
     cursor->pixel_x = col * screen->font_width;
     cursor->pixel_y = row * screen->font_height;
 
-    /* Reset blink phase on movement */
+    /* Reset blink phase on movement and restart timer */
     cursor->blink_state = true;
+    cursor->last_activity_ms = PITGetMilliseconds();
 
     /* Invalidate new position */
     TerminalInvalidateCell(screen, cursor->col, cursor->row);
@@ -132,6 +134,7 @@ void CursorMoveUp(term_screen_t *screen, uint32_t delta) {
     c->pixel_x = c->col * screen->font_width;
     c->pixel_y = c->row * screen->font_height;
     c->blink_state = true;
+    c->last_activity_ms = PITGetMilliseconds();
     TerminalInvalidateCell(screen, c->col, c->row);
 }
 
@@ -148,6 +151,7 @@ void CursorMoveDown(term_screen_t *screen, uint32_t delta) {
     c->pixel_x = c->col * screen->font_width;
     c->pixel_y = c->row * screen->font_height;
     c->blink_state = true;
+    c->last_activity_ms = PITGetMilliseconds();
     TerminalInvalidateCell(screen, c->col, c->row);
 }
 
@@ -185,14 +189,6 @@ void CursorBlinkTick(term_screen_t *screen, uint64_t current_time_ms) {
     if (!screen) return;
     cursor_t *c = &screen->primary_cursor;
     if (!c->visible || !c->blink_enabled) return;
-
-    if (current_time_ms - c->last_activity_ms < c->blink_period_ms) {
-        if (!c->blink_state) {
-            c->blink_state = true;
-            TerminalInvalidateCell(screen, c->col, c->row);
-        }
-        return;
-    }
 
     if (current_time_ms - c->last_activity_ms >= c->blink_period_ms) {
         c->blink_state = !c->blink_state;
@@ -234,13 +230,11 @@ static inline void RenderSingleCell(term_screen_t *screen, uint32_t col, uint32_
             if (is_cursor) {
                 switch (cursor->shape) {
                     case CURSOR_SHAPE_WIDE_CARET:
+                    case CURSOR_SHAPE_BLOCK:
                         is_caret = (px < cursor->width_px);
                         break;
                     case CURSOR_SHAPE_THIN_CARET:
                         is_caret = (px < 2);
-                        break;
-                    case CURSOR_SHAPE_BLOCK:
-                        is_caret = true;
                         break;
                     case CURSOR_SHAPE_HOLLOW_BLOCK:
                         is_caret = (px == 0 || px == (fw - 1) || py == 0 || py == (fh - 1));
