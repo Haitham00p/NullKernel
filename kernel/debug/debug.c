@@ -5,6 +5,75 @@
 #include "kernel/terminal/terminal.h"
 #include "arch/x86_64/cpu/io.h"
 
+/* Per-category ring buffers of boot telemetry, flushed to /jor/<name>.log so
+   the last boot's diagnostics survive into the running OS. */
+#define DBG_LOG_MAX 16384U
+
+static const char *g_CatFile[DBG_CAT_COUNT] = {
+    "boot.log",
+    "nccBoot.log",
+    "intr.log",
+    "reg.log"
+};
+
+static char g_Log[DBG_CAT_COUNT][DBG_LOG_MAX];
+static uint32_t g_LogLen[DBG_CAT_COUNT];
+
+static void DbgCatAppend(DBG_CATEGORY Cat, const char *S)
+{
+    uint32_t Len;
+    char *Buf;
+
+    if (S == NULL || (uint32_t)Cat >= (uint32_t)DBG_CAT_COUNT)
+    {
+        return;
+    }
+    Len = g_LogLen[Cat];
+    Buf = g_Log[Cat];
+    while (*S != '\0' && Len < (DBG_LOG_MAX - 1U))
+    {
+        Buf[Len++] = *S++;
+    }
+    g_LogLen[Cat] = Len;
+}
+
+const char *DbgCatName(DBG_CATEGORY Cat)
+{
+    if ((uint32_t)Cat >= (uint32_t)DBG_CAT_COUNT)
+    {
+        return "boot.log";
+    }
+    return g_CatFile[Cat];
+}
+
+const char *DbgCatBuffer(DBG_CATEGORY Cat)
+{
+    if ((uint32_t)Cat >= (uint32_t)DBG_CAT_COUNT)
+    {
+        return g_Log[DBG_CAT_BOOT];
+    }
+    return g_Log[Cat];
+}
+
+uint32_t DbgCatLength(DBG_CATEGORY Cat)
+{
+    if ((uint32_t)Cat >= (uint32_t)DBG_CAT_COUNT)
+    {
+        return g_LogLen[DBG_CAT_BOOT];
+    }
+    return g_LogLen[Cat];
+}
+
+const char *DbgBootLogBuffer(void)
+{
+    return g_Log[DBG_CAT_BOOT];
+}
+
+uint32_t DbgBootLogLength(void)
+{
+    return g_LogLen[DBG_CAT_BOOT];
+}
+
 #define COM1_BASE 0x3F8U
 
 static bool g_SerialReady = false;
@@ -71,30 +140,49 @@ static void DbgAddress(uintptr_t Address)
     TerminalPutChar32('\n', DBG_TEXT);
 }
 
-static void DbgStatus(const char *Tag, uint32_t TagColor,
-                      const char *Message, uintptr_t Address)
+static void DbgEmit(DBG_CATEGORY Cat, uint32_t TagColor,
+                    const char *Tag, const char *Message, uintptr_t Address)
 {
-    TerminalWrite32("[", DBG_BORDER);
-    TerminalWrite32(Tag, TagColor);
-    TerminalWrite32("] ", DBG_BORDER);
-    TerminalWrite32(Message, DBG_TEXT);
-    DbgAddress(Address);
-
-    DbgSerialWrite("[");
-    DbgSerialWrite(Tag);
-    DbgSerialWrite("] ");
-    DbgSerialWrite(Message);
-    DbgSerialWrite(" @ ");
-    char Hex[32];
+    char Hex[17];
     uintptr_t Tmp = Address;
+
     for (int i = 15; i >= 0; i--)
     {
         Hex[i] = "0123456789ABCDEF"[Tmp & 0xF];
         Tmp >>= 4;
     }
     Hex[16] = '\0';
+
+    DbgCatAppend(Cat, "[");
+    DbgCatAppend(Cat, Tag);
+    DbgCatAppend(Cat, "] ");
+    DbgCatAppend(Cat, Message);
+    DbgCatAppend(Cat, " @ ");
+    DbgCatAppend(Cat, Hex);
+    DbgCatAppend(Cat, "\n");
+
+    DbgSerialWrite("[");
+    DbgSerialWrite(Tag);
+    DbgSerialWrite("] ");
+    DbgSerialWrite(Message);
+    DbgSerialWrite(" @ ");
     DbgSerialWrite(Hex);
     DbgSerialWrite("\n");
+
+    if (Cat == DBG_CAT_BOOT)
+    {
+        TerminalWrite32("[", DBG_BORDER);
+        TerminalWrite32(Tag, TagColor);
+        TerminalWrite32("] ", DBG_BORDER);
+        TerminalWrite32(Message, DBG_TEXT);
+        DbgAddress(Address);
+    }
+}
+
+static void DbgStatus(const char *Tag, uint32_t TagColor,
+                      const char *Message, uintptr_t Address)
+{
+    DbgEmit(DBG_CAT_BOOT, TagColor, Tag, Message, Address);
 }
 
 void DbgBoot(const char *Message, uintptr_t Address)
@@ -133,4 +221,24 @@ void DbgErr(const char *Message, uintptr_t Address)
 void DbgWarn(const char *Message, uintptr_t Address)
 {
     DbgStatus("WARN", DBG_WARN, Message, Address);
+}
+
+void DbgLogCat(DBG_CATEGORY Cat, const char *Tag, const char *Message, uintptr_t Address)
+{
+    DbgEmit(Cat, 0U, Tag, Message, Address);
+}
+
+void DbgNcc(const char *Message, uintptr_t Address)
+{
+    DbgEmit(DBG_CAT_NCC, 0U, "NCC", Message, Address);
+}
+
+void DbgIntr(const char *Message, uintptr_t Address)
+{
+    DbgEmit(DBG_CAT_INTR, 0U, "INTR", Message, Address);
+}
+
+void DbgReg(const char *Message, uintptr_t Address)
+{
+    DbgEmit(DBG_CAT_REG, 0U, "REG", Message, Address);
 }

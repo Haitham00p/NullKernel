@@ -1,0 +1,13 @@
+NullOS terminal  (include <terminal.h>)
+
+  TerminalWrite32(str, color)        print a string in the given color
+  TerminalPrintLine32(str, color)    print a string followed by a newline
+  TerminalClear32(color)             clear the whole screen to a color
+  TerminalGetScreen()                raw screen struct (advanced)
+  TerminalBlinkUpdate()              advance the cursor blink (advanced)
+
+Colors are 32-bit ARGB (0xAARRGGBB), for example:
+  0xFFFFFFFF = white       0xFF000000 = black
+  0xFFFF0000 = red         0xFF00FF00 = green
+  0xFF0000FF = blue        0xFFFFFF00 = yellow
+Use PromColor / BackSpaceColor (set by "regfill") for the active theme.

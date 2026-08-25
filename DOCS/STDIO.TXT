@@ -1,0 +1,17 @@
+NullOS stdio  (include <stdio.h>)
+
+  putchar(c)          write a single character to the screen
+  puts(s)             write a string followed by a newline
+  printf(fmt, ...)    formatted output (specifiers below)
+
+Format specifiers understood by printf:
+  %%   literal '%'
+  %d   signed decimal integer
+  %u   unsigned decimal integer
+  %x   hexadecimal (lowercase)
+  %c   single character
+  %s   NUL-terminated string
+  %p   pointer (hexadecimal)
+
+For colored output, most programs use the terminal functions in
+TERMINAL.TXT (TerminalWrite32 / TerminalPrintLine32 / TerminalClear32).

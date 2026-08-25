@@ -38,8 +38,10 @@ typedef struct __attribute__((packed))
     uint32_t FileSize;
 } FAT32DirectoryEntry;
 
+#ifndef __NCC__
 _Static_assert(sizeof(FAT32DirectoryEntry) == FAT32_DIRECTORY_ENTRY_SIZE,
                "A FAT32 directory entry must occupy exactly 32 bytes");
+#endif
 
 typedef struct
 {
@@ -48,9 +50,11 @@ typedef struct
     uint32_t FirstCluster;
 } FAT32Directory;
 
+#ifndef __NCC__
 typedef bool (*FAT32DirectoryVisitor)(const FAT32DirectoryEntry *Entry,
                                       const char *ShortName,
                                       void *Context);
+#endif
 
 bool FAT32DirectoryOpenRoot(FAT32Directory *Directory,
                             const FAT32BootSector *Boot,
@@ -70,8 +74,10 @@ void FAT32DirectoryDecodeShortName(const FAT32DirectoryEntry *Entry,
 
 uint32_t FAT32DirectoryEntryFirstCluster(const FAT32DirectoryEntry *Entry);
 
+#ifndef __NCC__
 bool FAT32DirectoryForEach(const FAT32Directory *Directory,
                            FAT32DirectoryVisitor Visitor, void *Context);
+#endif
 
 bool FAT32DirectoryFind(const FAT32Directory *Directory, const char *Name,
                         FAT32DirectoryEntry *Entry);

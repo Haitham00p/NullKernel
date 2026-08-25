@@ -1,0 +1,15 @@
+NullOS string  (include <string.h>)
+
+  strlen(s)                  length of a string (excluding NUL)
+  strcpy(dst, src)
+  strncpy(dst, src, n)
+  memcpy(dst, src, size)
+  memset(dst, value, size)
+  strcmp(a, b)               compare (0 when equal)
+  strcasecmp(a, b)           case-insensitive compare
+  strncasecmp(a, b, n)       case-insensitive compare, n chars
+  tolower_c(c) / toupper_c(c)
+  StringHexToUInt32(s, *v)  parse "0xRRGGBB" style text into a value
+
+Also available: memmove, memcmp, strchr, strstr, strcat, strtok,
+strspn, strcspn, strlcpy, strnlen.

@@ -3,15 +3,19 @@
 
 #include <stdint.h>
 
-#define SHELL_MAX_LENGTH 64
-#define PROMPT "Developer@NullOS ~> "
-#define PROMPT_LENGTH 19
+#define PROMPT_PREFIX "Developer@NullOS"
+#define PROMPT_SUFFIX "> "
 
 void ShellInitialize(void);
 
 void ShellUpdate(void);
 
+/* Writes the captured boot telemetry to /jor/boot.log on the disk. */
+void DbgBootLogFlush(void);
+
 extern uint32_t PromColor;
 extern uint32_t BackSpaceColor;
+extern uint32_t OutColor;
+extern uint32_t PromptColor;
 
 #endif

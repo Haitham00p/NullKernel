@@ -7,15 +7,22 @@
 #include "fs/fat32/file/file.h"
 #include "fs/partition/mbr/mbr.h"
 #include "lib/string/string.h"
+#include "kernel/debug/debug.h"
 
 #define DISKFS_SECTOR_SIZE 512U
-#define DISKFS_PATH_MAX    256U
 
 static FAT32BootSector g_Boot;
 static FAT32Directory g_Cwd;
 static uint32_t g_PartitionStartLBA;
 static char g_Path[DISKFS_PATH_MAX];
 static bool g_Mounted;
+
+static bool DiskFsWalk(const char *Path, bool CreateMissing);
+
+static bool DiskFsReadChain(const FAT32Directory *Dir,
+                            const FAT32DirectoryEntry *Entry,
+                            void *Buffer, uint32_t MaxSize,
+                            uint32_t *BytesRead);
 
 static bool DiskFsReadSector(uint32_t LBA, void *Buffer)
 {
@@ -193,12 +200,10 @@ bool DiskFsCd(const char *Name)
                     {
                         return false;
                     }
-                    if (DotDot->Name[0] == '.' &&
-                        DotDot->Name[1] == '.')
+                    if (DotDot->Name[0] == '.' && DotDot->Name[1] == '.')
                     {
                         uint32_t ParentCluster =
                             FAT32DirectoryEntryFirstCluster(DotDot);
-
                         DiskFsPathPop();
                         return FAT32DirectoryOpen(&g_Cwd, g_Cwd.Boot,
                                                   g_Cwd.PartitionStartLBA,
@@ -307,23 +312,92 @@ bool DiskFsWrite(const char *Name, const void *Data, uint32_t Size)
     return FAT32FileWriteFromReader(&g_Cwd, Name, Size, DiskFsRamReader,
                                     (void *)Data);
 }
+bool DiskFsFileSizeInPath(const char *DirPath, const char *Name,
+                          uint32_t *Size)
+{
+    FAT32DirectoryEntry Entry;
+
+    if (!g_Mounted || DirPath == NULL || Name == NULL || Size == NULL)
+    {
+        return false;
+    }
+    if (!DiskFsFindInPath(DirPath, Name, &Entry))
+    {
+        return false;
+    }
+    *Size = Entry.FileSize;
+    return true;
+}
+
+bool DiskFsWriteInPath(const char *DirPath, const char *Name,
+                       const void *Data, uint32_t Size)
+{
+    FAT32Directory Saved;
+    char SavedPath[DISKFS_PATH_MAX];
+    bool Ok;
+
+    if (DirPath == NULL || Name == NULL || Data == NULL)
+    {
+        return false;
+    }
+    memcpy(&Saved, &g_Cwd, sizeof(Saved));
+    strncpy(SavedPath, g_Path, sizeof(SavedPath) - 1U);
+    SavedPath[sizeof(SavedPath) - 1U] = '\0';
+
+    if (!DiskFsWalk(DirPath, false))
+    {
+        return false;
+    }
+    Ok = DiskFsWrite(Name, Data, Size);
+    memcpy(&g_Cwd, &Saved, sizeof(g_Cwd));
+    strncpy(g_Path, SavedPath, sizeof(g_Path) - 1U);
+    g_Path[sizeof(g_Path) - 1U] = '\0';
+    return Ok;
+}
 
 bool DiskFsRead(const char *Name, void *Buffer, uint32_t MaxSize,
                 uint32_t *BytesRead)
 {
     FAT32DirectoryEntry Entry;
-    uint8_t Sector[DISKFS_SECTOR_SIZE];
-    uint32_t Cluster;
-    uint32_t Offset = 0;
-    uint32_t Size;
 
     if (!g_Mounted || Name == NULL || Buffer == NULL || BytesRead == NULL ||
         !FAT32DirectoryFind(&g_Cwd, Name, &Entry))
     {
         return false;
     }
+    return DiskFsReadChain(&g_Cwd, &Entry, Buffer, MaxSize, BytesRead);
+}
 
-    Size = Entry.FileSize;
+bool DiskFsFileSize(const char *Name, uint32_t *Size)
+{
+    FAT32DirectoryEntry Entry;
+
+    if (!g_Mounted || Name == NULL || Size == NULL ||
+        !FAT32DirectoryFind(&g_Cwd, Name, &Entry))
+    {
+        return false;
+    }
+    *Size = Entry.FileSize;
+    return true;
+}
+
+static bool DiskFsReadChain(const FAT32Directory *Dir,
+                            const FAT32DirectoryEntry *Entry,
+                            void *Buffer, uint32_t MaxSize,
+                            uint32_t *BytesRead)
+{
+    uint8_t Sector[DISKFS_SECTOR_SIZE];
+    uint32_t Cluster;
+    uint32_t Offset = 0;
+    uint32_t Size;
+
+    if (Dir == NULL || Entry == NULL || Buffer == NULL ||
+        BytesRead == NULL)
+    {
+        return false;
+    }
+
+    Size = Entry->FileSize;
     if (Size > MaxSize)
     {
         Size = MaxSize;
@@ -334,20 +408,20 @@ bool DiskFsRead(const char *Name, void *Buffer, uint32_t MaxSize,
         return true;
     }
 
-    Cluster = FAT32DirectoryEntryFirstCluster(&Entry);
+    Cluster = FAT32DirectoryEntryFirstCluster(Entry);
     while (Offset < Size)
     {
         uint64_t ClusterLBA =
-            (uint64_t)FAT32GetFirstDataSector(g_Cwd.Boot,
-                                              g_Cwd.PartitionStartLBA) +
-            (uint64_t)(Cluster - 2U) * g_Cwd.Boot->SectorsPerCluster;
+            (uint64_t)FAT32GetFirstDataSector(Dir->Boot,
+                                              Dir->PartitionStartLBA) +
+            (uint64_t)(Cluster - 2U) * Dir->Boot->SectorsPerCluster;
 
         if (Cluster < 2U || ClusterLBA > UINT32_MAX)
         {
             return false;
         }
         for (uint32_t SectorIndex = 0;
-             SectorIndex < g_Cwd.Boot->SectorsPerCluster && Offset < Size;
+             SectorIndex < Dir->Boot->SectorsPerCluster && Offset < Size;
              SectorIndex++)
         {
             uint32_t Bytes = Size - Offset;
@@ -364,7 +438,7 @@ bool DiskFsRead(const char *Name, void *Buffer, uint32_t MaxSize,
             Offset += Bytes;
         }
         if (Offset < Size &&
-            (!FATReadEntry(g_Cwd.Boot, g_Cwd.PartitionStartLBA, Cluster,
+            (!FATReadEntry(Dir->Boot, Dir->PartitionStartLBA, Cluster,
                            &Cluster) ||
              FATIsEndOfChain(Cluster) || Cluster < 2U))
         {
@@ -466,4 +540,309 @@ bool DiskFsMkdir(const char *Name)
         return false;
     }
     return FAT32DirectoryCreateDirectory(&g_Cwd, Name, &Child);
+}
+
+bool DiskFsFindInRoot(const char *Name, FAT32DirectoryEntry *Entry)
+{
+    FAT32Directory Root;
+
+    if (!g_Mounted || Name == NULL || Entry == NULL)
+    {
+        return false;
+    }
+    if (!FAT32DirectoryOpen(&Root, &g_Boot, g_PartitionStartLBA,
+                            g_Boot.RootCluster))
+    {
+        return false;
+    }
+    return FAT32DirectoryFind(&Root, Name, Entry);
+}
+
+bool DiskFsReadFromRoot(const char *Name, void *Buffer, uint32_t MaxSize,
+                        uint32_t *BytesRead)
+{
+    FAT32Directory Root;
+    FAT32DirectoryEntry Entry;
+
+    if (!g_Mounted || Name == NULL || Buffer == NULL || BytesRead == NULL)
+    {
+        return false;
+    }
+    if (!FAT32DirectoryOpen(&Root, &g_Boot, g_PartitionStartLBA,
+                            g_Boot.RootCluster))
+    {
+        return false;
+    }
+    if (!FAT32DirectoryFind(&Root, Name, &Entry))
+    {
+        return false;
+    }
+    return DiskFsReadChain(&Root, &Entry, Buffer, MaxSize, BytesRead);
+}
+
+static bool DiskFsEntryExists(const char *Name, FAT32DirectoryEntry *Entry)
+{
+    return FAT32DirectoryFind(&g_Cwd, Name, Entry);
+}
+
+/* Enters a single path component.  "." stays put, ".." walks to the parent
+   via DiskFsCd, and any other name is looked up (created when CreateMissing
+   is set) and entered.  Returns false when the component cannot be entered. */
+static bool DiskFsEnterComponent(const char *Component, bool CreateMissing)
+{
+    FAT32DirectoryEntry Entry;
+
+    if (strcmp(Component, ".") == 0)
+    {
+        return true;
+    }
+    if (strcmp(Component, "..") == 0)
+    {
+        return DiskFsCd("..");
+    }
+    if (!DiskFsEntryExists(Component, &Entry))
+    {
+        if (!CreateMissing || !DiskFsMkdir(Component))
+        {
+            return false;
+        }
+    }
+    else if ((Entry.Attributes & FAT32_ATTRIBUTE_DIRECTORY) == 0)
+    {
+        return false;
+    }
+    return DiskFsCd(Component);
+}
+
+/* Walks every '/'-separated component of Path, entering existing
+   directories. When CreateMissing is true, missing components are created
+   with DiskFsMkdir first. An absolute Path (leading '/') starts from the
+   root. Trailing slashes and empty components are ignored. */
+static bool DiskFsWalk(const char *Path, bool CreateMissing)
+{
+    char Copy[DISKFS_PATH_MAX];
+    char Component[FAT32_SHORT_NAME_MAX + 1U];
+    uint32_t Start = 0;
+    uint32_t Index = 0;
+
+    if (Path == NULL || Path[0] == '\0' || strlen(Path) >= DISKFS_PATH_MAX)
+    {
+        return false;
+    }
+    if (Path[0] == '/' && !DiskFsCdRoot())
+    {
+        return false;
+    }
+
+    strcpy(Copy, Path);
+    while (Copy[Index] != '\0')
+    {
+        if (Copy[Index] == '/')
+        {
+            Copy[Index] = '\0';
+            if (Index > Start)
+            {
+                if (strlen(&Copy[Start]) > FAT32_SHORT_NAME_MAX)
+                {
+                    return false;
+                }
+                strcpy(Component, &Copy[Start]);
+                if (!DiskFsEnterComponent(Component, CreateMissing))
+                {
+                    return false;
+                }
+            }
+            Start = Index + 1U;
+        }
+        Index++;
+    }
+    if (Index > Start)
+    {
+        if (strlen(&Copy[Start]) > FAT32_SHORT_NAME_MAX)
+        {
+            return false;
+        }
+        strcpy(Component, &Copy[Start]);
+        if (!DiskFsEnterComponent(Component, CreateMissing))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool DiskFsChdirPath(const char *Path)
+{
+    if (!g_Mounted)
+    {
+        return false;
+    }
+    return DiskFsWalk(Path, false);
+}
+
+bool DiskFsMkdirAll(const char *Path)
+{
+    FAT32Directory Saved;
+    char SavedPath[DISKFS_PATH_MAX];
+    bool Result;
+
+    if (!g_Mounted)
+    {
+        return false;
+    }
+    memcpy(&Saved, &g_Cwd, sizeof(Saved));
+    strncpy(SavedPath, g_Path, sizeof(SavedPath) - 1U);
+    SavedPath[sizeof(SavedPath) - 1U] = '\0';
+    Result = DiskFsWalk(Path, true);
+    memcpy(&g_Cwd, &Saved, sizeof(g_Cwd));
+    strncpy(g_Path, SavedPath, sizeof(g_Path) - 1U);
+    g_Path[sizeof(g_Path) - 1U] = '\0';
+    return Result;
+}
+
+bool DiskFsFindInPath(const char *DirPath, const char *Name,
+                      FAT32DirectoryEntry *Out)
+{
+    FAT32Directory Saved;
+    char SavedPath[DISKFS_PATH_MAX];
+    bool Found;
+
+    if (!g_Mounted || DirPath == NULL || Name == NULL || Out == NULL)
+    {
+        return false;
+    }
+
+    Saved = g_Cwd;
+    strcpy(SavedPath, g_Path);
+    if (!DiskFsWalk(DirPath, false))
+    {
+        return false;
+    }
+    Found = FAT32DirectoryFind(&g_Cwd, Name, Out);
+    g_Cwd = Saved;
+    strcpy(g_Path, SavedPath);
+    return Found;
+}
+
+bool DiskFsReadInPath(const char *DirPath, const char *Name, void *Buffer,
+                      uint32_t MaxSize, uint32_t *BytesRead)
+{
+    FAT32Directory Saved;
+    char SavedPath[DISKFS_PATH_MAX];
+    FAT32DirectoryEntry Entry;
+    bool Ok;
+
+    if (!g_Mounted || DirPath == NULL || Name == NULL || Buffer == NULL ||
+        BytesRead == NULL)
+    {
+        return false;
+    }
+    if (!DiskFsFindInPath(DirPath, Name, &Entry))
+    {
+        return false;
+    }
+
+    Saved = g_Cwd;
+    strcpy(SavedPath, g_Path);
+    if (!DiskFsWalk(DirPath, false))
+    {
+        return false;
+    }
+    Ok = DiskFsReadChain(&g_Cwd, &Entry, Buffer, MaxSize, BytesRead);
+    g_Cwd = Saved;
+    strcpy(g_Path, SavedPath);
+    return Ok;
+}
+
+typedef struct
+{
+    uint32_t Used;
+    uint32_t OutSize;
+    uintptr_t Out;
+    uint32_t Count;
+} DiskFsListState;
+
+static bool DiskFsListVisitor(const FAT32DirectoryEntry *Entry,
+                              const char *ShortName, void *Context)
+{
+    DiskFsListState *State = (DiskFsListState *)Context;
+    uint32_t Length = strlen(ShortName) + 1U;
+
+    (void)Entry;
+    if (State->Used + Length + 1U > State->OutSize)
+    {
+        return false;
+    }
+    strcpy((char *)State->Out + State->Used, ShortName);
+    *(char *)(State->Out + State->Used + Length - 1U) = '\n';
+    *(char *)(State->Out + State->Used + Length) = '\0';
+    State->Used += Length;
+    State->Count++;
+    return true;
+}
+
+uint32_t DiskFsListNames(char *Out, uint32_t OutSize)
+{
+    DiskFsListState State;
+
+    if (!g_Mounted || Out == NULL || OutSize == 0)
+    {
+        return 0;
+    }
+    State.Used = 0;
+    State.OutSize = OutSize;
+    State.Out = (uintptr_t)Out;
+    State.Count = 0;
+    FAT32DirectoryForEach(&g_Cwd, DiskFsListVisitor, &State);
+    if (State.Used == 0)
+    {
+        Out[0] = '\0';
+    }
+    return State.Count;
+}
+
+bool DiskFsIsDirectory(const char *Name)
+{
+    FAT32DirectoryEntry Entry;
+    char Copy[DISKFS_PATH_MAX];
+    char *Slash;
+
+    if (!g_Mounted || Name == NULL || Name[0] == '\0')
+    {
+        return false;
+    }
+
+    if (Name[0] == '/')
+    {
+        if (strlen(Name) >= DISKFS_PATH_MAX)
+        {
+            return false;
+        }
+        strcpy(Copy, Name);
+        Slash = Copy + strlen(Copy) - 1U;
+        while (Slash > Copy && *Slash == '/')
+        {
+            *Slash-- = '\0';
+        }
+        if (*Slash == '/')
+        {
+            return true;
+        }
+        Slash = Copy + 1U;
+        while (*Slash != '\0' && *Slash != '/')
+        {
+            Slash++;
+        }
+        if (*Slash == '\0')
+        {
+            return DiskFsFindInRoot(Copy + 1U, &Entry) &&
+                   (Entry.Attributes & FAT32_ATTRIBUTE_DIRECTORY) != 0;
+        }
+        *Slash = '\0';
+        return DiskFsFindInPath(Copy, Slash + 1U, &Entry) &&
+               (Entry.Attributes & FAT32_ATTRIBUTE_DIRECTORY) != 0;
+    }
+
+    return FAT32DirectoryFind(&g_Cwd, Name, &Entry) &&
+           (Entry.Attributes & FAT32_ATTRIBUTE_DIRECTORY) != 0;
 }

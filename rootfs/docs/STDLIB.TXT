@@ -1,0 +1,37 @@
+NullOS stdlib  (include <stdlib.h>)
+
+This is the guest standard library (changed from selfhost.h to stdlib.h by the king null). Every function
+below is resolved through the ncc vault, so a guest program just calls it
+by name after "#include <stdlib.h>".
+
+Boot / shell integration (provided by the kernel):
+  ShellBootBuild()        recompile every /BIN/*.C into /BIN/*.EXE
+  ShellApplyRegistry()    apply saved theme (fg.v / bg.v) at boot
+  ShellBootRunRAB()       run every .EXE in /REG/NULLOS/RAB once
+  ShellArgCount()         number of arguments passed to this program
+  ShellArgGet(i,out,n)    copy argument i into out (true/false)
+  SelfHostExeName(s,o)    "HELLO.C" -> "HELLO.EXE"
+
+Simple file + process API (the disk IS the registry):
+  n = readv(path, buf)      read the WHOLE file into buf; returns the
+                            number of bytes read (0 on failure). The buffer
+                            must be large enough to hold the file.
+  writev(path, str)         write the NUL-terminated string to path,
+                            creating the file if needed; 1 = ok, 0 = fail.
+  createK(path)             create an empty file; 1 = ok, 0 = fail.
+  editv(path, str)          overwrite an EXISTING file's content with the
+                            string; 1 = ok, 0 = fail (fails if not present).
+  exec(path)                run another .EXE; if path has no '/', it runs
+                            /BIN/<path>, otherwise dir + name from path.
+                            If no /BIN program matches a bare command name,
+                            it falls back to the built-in command dispatcher,
+                            so kernel commands like "regfill" or "ls" also run.
+  execl(fmt, ...)           printf-style variant of exec(): build the command
+                            line then run it, e.g.
+                            execl("regfill %x %x", fg, bg);
+
+Registry "value" files use the .v extension, e.g.:
+  /REG/fg.v    foreground color (default 0xFFFFFFFF)
+  /REG/bg.v    background color (default 0x00000000)
+Use "regfill <fghex> <bghex>" to change them; they persist across reboot.
+Read them with readv(), edit them with editv().

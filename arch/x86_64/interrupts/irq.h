@@ -32,10 +32,22 @@
 */
 void IRQInitialize(void);
 
+/* Layout of the iret frame the CPU pushed for the interrupted context:
+   RIP, CS, RFLAGS, RSP, SS. Passed to IRQHandler by the IRQ stubs. */
+typedef struct
+{
+    uint64_t RIP;
+    uint64_t CS;
+    uint64_t RFLAGS;
+    uint64_t RSP;
+    uint64_t SS;
+} IRQFrame;
+
 /*
-    Called from Assembly IRQ Stubs
+    Called from Assembly IRQ Stubs (second argument is the pointer to the
+    interrupted iret frame)
 */
-void IRQHandler(uint32_t IRQNumber);
+void IRQHandler(uint32_t IRQNumber, IRQFrame *Frame);
 
 /*
     Assembly IRQ Entry Points

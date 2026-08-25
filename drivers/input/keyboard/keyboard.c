@@ -18,6 +18,18 @@ static uint8_t  LastScanCode = 0;
 static uint64_t KeyHoldStartTime = 0;
 static uint64_t LastRepeatTime = 0;
 
+static bool KbdAbortFlag = false;
+
+bool KbdAbortRequested(void)
+{
+    return KbdAbortFlag;
+}
+
+void KbdAbortClear(void)
+{
+    KbdAbortFlag = false;
+}
+
 void KbdInitialize(void)
 {
     KbdHead = 0;
@@ -173,6 +185,11 @@ void KeyboardInterrupt(void)
             KbdState.Ctrl = false;
         }
 
+        if (ReleasedCode == 0x38)
+        {
+            KbdState.Alt = false;
+        }
+
         return;
     }
 
@@ -215,6 +232,12 @@ void KeyboardInterrupt(void)
         return;
     }
 
+    if (ScanCode == 0x38)
+    {
+        KbdState.Alt = true;
+        return;
+    }
+
     if (ScanCode == 0x3A)
     {
         KbdState.CapsLock = !KbdState.CapsLock;
@@ -223,6 +246,20 @@ void KeyboardInterrupt(void)
 
     char Character = KeyboardLayoutNormal[ScanCode];
     if (Character == 0)
+    {
+        return;
+    }
+
+    /* Ctrl+C requests an abort of the currently running guest program. */
+    if (KbdState.Ctrl && (Character == 'c' || Character == 'C'))
+    {
+        KbdAbortFlag = true;
+        return;
+    }
+
+    /* Ctrl+Alt is a reserved chord (e.g. console switching): swallow the
+     * character so pressing e.g. Ctrl+Alt+F types nothing at all. */
+    if (KbdState.Ctrl && KbdState.Alt)
     {
         return;
     }

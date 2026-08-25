@@ -17,5 +17,5 @@ if [ ! -f "$IMG" ]; then
 fi
 
 echo "[*] booting NullOS from disk: $IMG"
-exec qemu-system-x86_64 -m 3 -boot order=c \
-    -drive "file=$IMG,format=raw,if=ide,index=0" -serial stdio -machine pcspk-audiodev=speaker -audiodev driver=pipewire,id=speaker
+exec qemu-system-x86_64 -m 256 -boot order=c \
+    -drive "file=$IMG,format=raw,if=ide,index=0" -serial stdio

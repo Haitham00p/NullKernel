@@ -48,9 +48,11 @@ IRQ1:
 
     mov rdi, 1
 
-
     ; align stack for C function call
     sub rsp, 8
+
+    ; rsi = pointer to the iret frame (RIP, CS, RFLAGS, RSP, SS)
+    lea rsi, [rsp + 128]
 
     call IRQHandler
 
@@ -113,6 +115,9 @@ IRQ%1:
 
 
     sub rsp, 8
+
+    ; rsi = pointer to the iret frame (RIP, CS, RFLAGS, RSP, SS)
+    lea rsi, [rsp + 128]
 
     call IRQHandler
 

@@ -7,4 +7,6 @@ void HeapInitialize(uintptr_t Base, uint64_t Length);
 
 void *kmalloc(uint64_t Size);
 
+void kfree(void *Ptr);
+
 #endif

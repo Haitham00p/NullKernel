@@ -3,6 +3,7 @@
 #include "drivers/video_font/font.h"
 #include "drivers/timer/PIT.h"
 #include "include/cursor.h"
+#include "kernel/debug/debug.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -63,8 +64,37 @@ void TerminalInit32(void) {
     TerminalRender(&g_screen);
 }
 
+static uint32_t TerminalContrastColor(uint32_t fg, uint32_t bg)
+{
+    uint32_t fr = (fg >> 16) & 0xFFU;
+    uint32_t fg2 = (fg >> 8) & 0xFFU;
+    uint32_t fb = fg & 0xFFU;
+    uint32_t br = (bg >> 16) & 0xFFU;
+    uint32_t bg2 = (bg >> 8) & 0xFFU;
+    uint32_t bb = bg & 0xFFU;
+    int32_t dr = (int32_t)fr - (int32_t)br;
+    int32_t dg = (int32_t)fg2 - (int32_t)bg2;
+    int32_t db = (int32_t)fb - (int32_t)bb;
+    int32_t dist = dr * dr + dg * dg + db * db;
+
+    if (dist < (56 * 56 * 3)) {
+        uint32_t lum = br * 30U + bg2 * 59U + bb * 11U;
+        return (lum > 14000U) ? 0x00000000U : 0x00FFFFFFU;
+    }
+    return fg;
+}
+
 void TerminalPutChar32(char c, uint32_t color) {
     if (!g_initialized) return;
+
+    /* Mirror the console to the serial port so output is observable over
+       a serial connection as well as on the framebuffer. */
+    if (c == '\n') {
+        DbgSerialWrite("\r\n");
+    } else if (c != '\b') {
+        char sc[2] = { c, '\0' };
+        DbgSerialWrite(sc);
+    }
 
     if (c == '\n') {
         TerminalNewLine32(color);
@@ -82,18 +112,14 @@ void TerminalPutChar32(char c, uint32_t color) {
 
     term_cell_t *cell = &g_screen.lines[CurRow].cells[CurCol];
     cell->codepoint = (uint8_t)c;
-    cell->fg_color = color;
+    cell->fg_color = TerminalContrastColor(color, CurBGColor);
     cell->bg_color = CurBGColor;
     cell->attributes |= TERM_ATTR_DIRTY;
 
     TerminalInvalidateCell(&g_screen, CurCol, CurRow);
 
     CurCol++;
-    if (CurCol >= g_screen.cols) {
-        TerminalNewLine32(color);
-    } else {
-        CursorMoveTo(&g_screen, CurCol, CurRow);
-    }
+    CursorMoveTo(&g_screen, CurCol, CurRow);
 
     TerminalRender(&g_screen);
 }

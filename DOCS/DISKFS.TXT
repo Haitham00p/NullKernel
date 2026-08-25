@@ -1,0 +1,17 @@
+NullOS diskfs  (include <diskfs.h>)
+
+Low-level disk access. For most programs prefer the simpler stdlib
+helpers readv / writev / createK / editv (see STDLIB.TXT).
+
+  DiskFsIsMounted()              true when the hard disk is mounted
+  DiskFsMkdir(name)             create a subdirectory in the cwd
+  DiskFsMkdirAll(path)          create a path of directories
+  DiskFsTouch(name)             create an empty file
+  DiskFsWrite(name, data, size) replace file contents
+  DiskFsRead(name, buf, max, *bytes)  read file into buf
+  DiskFsRemove(name)            delete a file or directory entry
+  DiskFsCd(name) / DiskFsCdRoot()    change working directory
+  DiskFsPwd(out, max)           get current working directory
+  DiskFsListNames(out, max)     list cwd entries, one per line
+  DiskFsFindInPath(dir, name, *entry)  locate a file in a directory
+  DiskFsReadInPath(dir, name, buf, max, *bytes)  read from a directory

@@ -1,0 +1,4 @@
+[REG] registry scan started @ FFFFFFFF8002000C
+[REG] fg.v missing -> default 0xFFFFFFFF @ 0000000000000000
+[REG] bg.v missing -> default 0x00000000 @ 0000000000000000
+[REG] applied console theme @ 0000000000000000

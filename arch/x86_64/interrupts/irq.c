@@ -5,12 +5,20 @@
 #include "drivers/input/keyboard/keyboard.h"
 #include "../../../drivers/timer/PIT.h"
 #include "../Kernel/kernel/terminal/terminal.h"
+#include "../program/run.h"
 
-void IRQHandler(uint32_t IRQ)
-{   
-    if (IRQ == IRQ_TIMER){
+void IRQHandler(uint32_t IRQ, IRQFrame *Frame)
+{
+    if (IRQ == IRQ_TIMER)
+    {
         PITTick();
         TerminalBlinkUpdate();
+        if (RunGuestActive && KbdAbortRequested())
+        {
+            Frame->RIP = (uint64_t)RunAbortResume;
+            Frame->RSP = RunSavedRsp;
+            KbdAbortClear();
+        }
     }
     if (IRQ == IRQ_KEYBOARD)
     {
@@ -63,4 +71,3 @@ void IRQInitialize(void)
     PICUnmaskIRQ(IRQ_TIMER);
     PICUnmaskIRQ(IRQ_KEYBOARD);
 }
-

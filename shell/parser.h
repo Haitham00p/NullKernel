@@ -3,23 +3,24 @@
 
 #include <stdint.h>
 
-#define PARSER_MAX_COMMAND_LENGTH 32
-#define PARSER_MAX_ARGS           16
-#define PARSER_MAX_ARG_LENGTH     64
-
+/* Parsed command: a command name plus an argv-style argument vector.  Every
+   string is heap-allocated by ParserParse() and must be released with
+   ParserFree().  Using pointers (instead of fixed-size arrays) keeps the
+   shell line length unbounded -- limited only by available kernel memory. */
 typedef struct
 {
-    char Command[PARSER_MAX_COMMAND_LENGTH];
-
-    char Args[PARSER_MAX_ARGS][PARSER_MAX_ARG_LENGTH];
-
+    char    *Command;   /* heap string, NUL-terminated (may be empty) */
+    char   **Args;      /* heap array of heap strings, ArgCount entries */
     uint32_t ArgCount;
-
 } PARSED_COMMAND;
 
 void ParserParse(
     const char *Input,
     PARSED_COMMAND *Output
+);
+
+void ParserFree(
+    PARSED_COMMAND *Cmd
 );
 
 #endif

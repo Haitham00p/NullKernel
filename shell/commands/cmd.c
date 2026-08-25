@@ -4,10 +4,13 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "lib/string/string.h"
+#include "mm/heap/heap.h"
 #include "../shell.h"
 #include "fs/ramfs/ramfs.h"
 #include "include/diskfs.h"
 #include "shell/editor/editor.h"
+#include "libc/stdlib.h"
+#include "ncc/ncc.h"
 #include <stdbool.h>
 #include "../../arch/x86_64/power/pwr.h"
 #include "fs/ISO9660/iso9660.h"
@@ -135,13 +138,8 @@ void CmdHelp(const char *Category)
 
     if (strcasecmp(Category, "registry") == 0)
     {
-        TerminalPrintLine32("REGISTRY API (RAM)", 0x009AA8BD);
-        TerminalPrintLine32("  regout <name>                   Echo a registry value", PromColor);
-        TerminalPrintLine32("  regfill <fg> <bg>               Legacy text and color registry output", PromColor);
-        TerminalPrintLine32("  regcreate <name>                Create a registry entry", PromColor);
-        TerminalPrintLine32("  regin <name> <text>             Write text into a registry entry", PromColor);
-        TerminalPrintLine32("  fregout <name>                  Print a registry file", PromColor);
-        TerminalPrintLine32("  delreg <name>                   Delete a registry entry", PromColor);
+        TerminalPrintLine32("REGISTRY API (COLOR)", 0x009AA8BD);
+        TerminalPrintLine32("  regfill <fg> <bg>               Set terminal FG/BG color (saves /REG/color)", PromColor);
         return;
     }
 
@@ -195,6 +193,18 @@ void CmdAbout(void){
     TerminalPrintLine32("Limine BIOS/UEFI", 0x00FF00FF);
 }
 
+static void RegFormatHex(char *Out, uint32_t V)
+{
+    static const char *H = "0123456789ABCDEF";
+    Out[0] = '0';
+    Out[1] = 'x';
+    for (int i = 0; i < 8; i++)
+    {
+        Out[2 + i] = H[(V >> ((7 - i) * 4U)) & 0xFU];
+    }
+    Out[10] = '\0';
+}
+
 void CmdFill(const PARSED_COMMAND *Command)
 {
     if (Command->ArgCount != 2)
@@ -223,6 +233,21 @@ void CmdFill(const PARSED_COMMAND *Command)
     TerminalClear32(ColorBG);
     PromColor = ColorFG;
     BackSpaceColor = ColorBG;
+
+    if (DiskFsIsMounted())
+    {
+        char Hex[16];
+        char SavedCwd[64];
+        DiskFsPwd(SavedCwd, sizeof(SavedCwd));
+        DiskFsMkdirAll("/REG");
+        DiskFsMkdirAll("/REG/color");
+        DiskFsChdirPath(SavedCwd);
+        RegFormatHex(Hex, ColorFG);
+        DiskFsWriteInPath("/REG/color", "fg.v", Hex, 10);
+        RegFormatHex(Hex, ColorBG);
+        DiskFsWriteInPath("/REG/color", "bg.v", Hex, 10);
+        TerminalWrite32("regfill: saved /REG/color/fg.v and /REG/color/bg.v (persists across reboot)\n", PromColor);
+    }
 }
 
 void CmdNewLine(void){
@@ -249,65 +274,63 @@ void CmdEcho(const PARSED_COMMAND *command)
     TerminalNewLine32(0);
 }
 
-void CmdfRegOut(const char *Name)
-{
-    RamFile *File = RamFsFind(Name);
-    if (File == NULL)
-    {
-        TerminalPrintLine32("File Not Found", PromColor);
-        return;
-    }
-    TerminalPrintLine32(File->Data, PromColor);
-}
-
-void CmdRegTo(const char *Name){
-    RamFsCreate(Name);
-}
-
-void CmdRegIn(const char *Name, const void *Data, uint64_t Size)
-{
-    RamFile *File = RamFsFind(Name);
-    if (File == NULL)
-    {
-        File = RamFsCreate(Name);
-    }
-    if (File == NULL)
-    {
-        TerminalPrintLine32("Cannot Create File", PromColor);
-        return;
-    }
-    RamFsWrite(File, Data, Size);
-}
-
-void CmdDelReg(const char *Name)
-{
-    RamFile *File = RamFsFind(Name);
-    if (File == NULL)
-    {
-        TerminalPrintLine32("File Not Found", PromColor);
-        return;
-    }
-    RamFsDelete(File);
-}
-
 typedef struct
 {
     uint32_t Index;
 } CmdListContext;
 
+#define LS_COLOR_DIRECTORY 0x0040A0FFU
+#define LS_COLOR_ELF       0x0037D67AU
+#define LS_COLOR_FILE      0xFFFFFFFFU
+
+static bool CmdNameIsElf(const char *Name)
+{
+    uint32_t Len = (uint32_t)strlen(Name);
+    const char *Ext;
+
+    if (Len < 4U) return false;
+    Ext = Name + Len - 4U;
+    return Ext[0] == '.' &&
+           (Ext[1] == 'E' || Ext[1] == 'e') &&
+           (Ext[2] == 'L' || Ext[2] == 'l') &&
+           (Ext[3] == 'F' || Ext[3] == 'f');
+}
+
+static uint32_t LsColumnPos;
+
 static bool CmdListVisitor(const FAT32DirectoryEntry *Entry,
                            const char *ShortName, void *Context)
 {
-    (void)Entry;
+    uint32_t Color;
+    uint32_t Len;
+
     (void)Context;
-    TerminalWrite32(ShortName, PromColor);
     if ((Entry->Attributes & FAT32_ATTRIBUTE_DIRECTORY) != 0)
     {
-        TerminalWrite32("/", PromColor);
+        Color = LS_COLOR_DIRECTORY;
     }
-    TerminalWrite32("  ", PromColor);
-    TerminalPrintHex64Compact(Entry->FileSize);
-    TerminalPutChar32('\n', PromColor);
+    else if (CmdNameIsElf(ShortName))
+    {
+        Color = LS_COLOR_ELF;
+    }
+    else
+    {
+        Color = LS_COLOR_FILE;
+    }
+
+    Len = (uint32_t)strlen(ShortName);
+    if (LsColumnPos + Len + 4U >= 80U)
+    {
+        TerminalPutChar32('\n', PromColor);
+        LsColumnPos = 0U;
+    }
+    TerminalWrite32(ShortName, Color);
+    LsColumnPos += Len;
+    for (uint32_t i = 0; i < 4U; i++)
+    {
+        TerminalPutChar32(' ', PromColor);
+    }
+    LsColumnPos += 4U;
     return true;
 }
 
@@ -324,6 +347,12 @@ void CmdLs(void)
     if (Cwd == NULL || !FAT32DirectoryForEach(Cwd, CmdListVisitor, NULL))
     {
         TerminalPrintLine32("ls: cannot read directory", 0x00FF0000);
+        return;
+    }
+    if (LsColumnPos != 0U)
+    {
+        TerminalPutChar32('\n', PromColor);
+        LsColumnPos = 0U;
     }
 }
 
@@ -368,7 +397,7 @@ void CmdCat(const char *Path)
         return;
     }
     Buffer[BytesRead] = '\0';
-    TerminalWrite32((const char *)Buffer, PromColor);
+    HighlightPrintFile(Path, (const char *)Buffer);
     TerminalPutChar32('\n', PromColor);
 }
 
@@ -444,30 +473,51 @@ void CmdPwd(void)
 
 void CmdWrite(const PARSED_COMMAND *Command)
 {
-    char Text[PARSER_MAX_ARGS * PARSER_MAX_ARG_LENGTH];
-    uint32_t Position = 0;
-
     if (Command->ArgCount < 2U)
     {
         TerminalPrintLine32("Usage: write <file> <text>", 0x00FF0000);
         return;
     }
+
+    /* Total bytes needed: every argument plus a separating space. */
+    uint32_t Total = 0;
+    for (uint32_t Argument = 1; Argument < Command->ArgCount; Argument++)
+    {
+        Total += (uint32_t)strlen(Command->Args[Argument]);
+        if (Argument + 1U < Command->ArgCount) Total += 1U;
+    }
+
+    char *Text = (char *)kmalloc((uint64_t)Total + 1U);
+    if (Text == NULL)
+    {
+        TerminalPrintLine32("write: out of memory", 0x00FF0000);
+        return;
+    }
+
+    uint32_t Position = 0;
     for (uint32_t Argument = 1; Argument < Command->ArgCount; Argument++)
     {
         const char *Part = Command->Args[Argument];
-        for (uint32_t Index = 0; Part[Index] != '\0' && Position < sizeof(Text) - 1U; Index++)
+        for (uint32_t Index = 0; Part[Index] != '\0'; Index++)
             Text[Position++] = Part[Index];
-        if (Argument + 1U < Command->ArgCount && Position < sizeof(Text) - 1U)
+        if (Argument + 1U < Command->ArgCount)
             Text[Position++] = ' ';
     }
     Text[Position] = '\0';
+
     if (!DiskFsIsMounted() && !DiskFsMount())
     {
+        kfree(Text);
         TerminalPrintLine32("write: no FAT32 disk mounted", 0x00FF0000);
         return;
     }
     if (!DiskFsWrite(Command->Args[0], Text, Position))
+    {
+        kfree(Text);
         TerminalPrintLine32("write: cannot write file", 0x00FF0000);
+        return;
+    }
+    kfree(Text);
 }
 
 static void CmdSufLine(const char *Line)
@@ -552,10 +602,7 @@ void CmdSuf(const char *CommandName)
     {
         CmdSufLine("   shell/commands/cmd.c -> CmdShowAddr() Dynamic symbol address tracer");
     }
-    else if (strcmp(CommandName, "regout") == 0 || strcmp(CommandName, "RegOut") == 0 ||
-             strcmp(CommandName, "regfill") == 0 || strcmp(CommandName, "RegFill") == 0 ||
-             strcmp(CommandName, "regcreate") == 0 || strcmp(CommandName, "delreg") == 0 ||
-             strcmp(CommandName, "fregout") == 0 || strcmp(CommandName, "regin") == 0)
+    else if (strcmp(CommandName, "regfill") == 0 || strcmp(CommandName, "RegFill") == 0)
     {
         CmdSufLine("   fs/ramfs/ramfs.c & shell/commands/cmd.c -> RamFS registry database & API");
     }
@@ -577,6 +624,225 @@ void CmdEdit(const char *Path)
     {
         TerminalPrintLine32("edit: cannot open file", 0x00FF5C77);
     }
+}
+
+void CmdNcc(const PARSED_COMMAND *Command)
+{
+    const char *Src = NULL;
+    const char *Out = NULL;
+    char Source[32768];
+    uint8_t *Image = NULL;
+    uint32_t Bytes = 0;
+    uint32_t ImageSize = 0;
+
+    if (Command == NULL || Command->ArgCount == 0U)
+    {
+        TerminalPrintLine32("Usage: ncc [-o <out.exe>] <file.c>", 0x00FF0000);
+        return;
+    }
+    for (uint32_t i = 0; i < Command->ArgCount; i++)
+    {
+        if (strcasecmp(Command->Args[i], "-o") == 0)
+        {
+            if (i + 1U >= Command->ArgCount)
+            {
+                TerminalPrintLine32("ncc: -o needs a path", 0x00FF0000);
+                return;
+            }
+            Out = Command->Args[i + 1U];
+            i++;
+        }
+        else if (Src == NULL)
+        {
+            Src = Command->Args[i];
+        }
+    }
+    if (Src == NULL)
+    {
+        TerminalPrintLine32("Usage: ncc [-o <out.exe>] <file.c>", 0x00FF0000);
+        return;
+    }
+    if (!DiskFsIsMounted())
+    {
+        TerminalPrintLine32("ncc: no disk mounted", 0x00FF5C77);
+        return;
+    }
+    if (!DiskFsRead(Src, Source, sizeof(Source) - 1U, &Bytes))
+    {
+        TerminalPrintLine32("ncc: cannot read file", 0x00FF5C77);
+        return;
+    }
+    Source[Bytes] = '\0';
+    TerminalWrite32("ncc: compiling ", PromColor);
+    TerminalPrintLine32(Src, PromColor);
+    if (!NccCompile(Src, Source, Bytes, &Image, &ImageSize))
+    {
+        TerminalPrintLine32("ncc: compile failed", 0x00FF5C77);
+        return;
+    }
+    if (Out != NULL)
+    {
+        char Dir[64];
+        uint32_t i2 = 0, last = 0;
+        while (Out[i2] != '\0')
+        {
+            if (Out[i2] == '/')
+            {
+                last = i2;
+            }
+            i2++;
+        }
+        if (last > 0)
+        {
+            uint32_t dlen = (last < sizeof(Dir) - 1U) ? last : (sizeof(Dir) - 1U);
+            char SavedCwd[64];
+            memcpy(Dir, Out, dlen);
+            Dir[dlen] = '\0';
+            DiskFsPwd(SavedCwd, sizeof(SavedCwd));
+            DiskFsMkdirAll(Dir);
+            DiskFsChdirPath(SavedCwd);
+        }
+        if (!DiskFsWrite(Out, Image, ImageSize))
+        {
+            TerminalPrintLine32("ncc: cannot write output", 0x00FF5C77);
+            kfree(Image);
+            return;
+        }
+        TerminalWrite32("ncc: wrote ", PromColor);
+        TerminalPrintLine32(Out, PromColor);
+    }
+    else
+    {
+        char ExeName[13];
+        SelfHostExeName(Src, ExeName);
+        if (!DiskFsWrite(ExeName, Image, ImageSize))
+        {
+            TerminalPrintLine32("ncc: cannot write output", 0x00FF5C77);
+            kfree(Image);
+            return;
+        }
+        TerminalWrite32("ncc: wrote ", PromColor);
+        TerminalPrintLine32(ExeName, PromColor);
+    }
+    kfree(Image);
+}
+
+/* n64a <file.asm> [-o <out.obj>] — the NullOS x86-64 assembler. */
+void CmdN64a(const PARSED_COMMAND *Command)
+{
+    const char *Src = NULL;
+    const char *Out = NULL;
+    char DefaultOut[16];
+    char ExeName[16];
+    uint32_t b;
+
+    if (Command == NULL || Command->ArgCount == 0U)
+    {
+        TerminalPrintLine32("Usage: n64a <file.asm> [-o <out.obj>]",
+                            0x00FF0000);
+        return;
+    }
+    for (uint32_t i = 0; i < Command->ArgCount; i++)
+    {
+        if (strcasecmp(Command->Args[i], "-o") == 0)
+        {
+            if (i + 1U >= Command->ArgCount)
+            {
+                TerminalPrintLine32("n64a: -o needs a path", 0x00FF0000);
+                return;
+            }
+            Out = Command->Args[i + 1U];
+            i++;
+        }
+        else if (Src == NULL)
+        {
+            Src = Command->Args[i];
+        }
+    }
+    if (Src == NULL)
+    {
+        TerminalPrintLine32("Usage: n64a <file.asm> [-o <out.obj>]",
+                            0x00FF0000);
+        return;
+    }
+    if (Out == NULL)
+    {
+        uint32_t b = 0;
+        while (Src[b] != '\0' && Src[b] != '.' && b < 8U)
+        {
+            DefaultOut[b] = Src[b];
+            b++;
+        }
+        strcpy(DefaultOut + b, ".OBJ");
+        Out = DefaultOut;
+    }
+    if (!SelfHostAssembleFile(Src, Out))
+    {
+        return;
+    }
+
+    /* auto-link: assemble + link in one step so no separate nld run is
+     * needed for single-object programs (nld stays for multi-object). */
+    b = 0;
+    while (Out[b] != '\0' && Out[b] != '.' && b < 8U)
+    {
+        ExeName[b] = Out[b];
+        b++;
+    }
+    strcpy(ExeName + b, ".EXE");
+    {
+        const char *Objects[1];
+        Objects[0] = Out;
+        if (!SelfHostLinkFiles(Objects, 1U, ExeName))
+        {
+            return;
+        }
+    }
+    TerminalWrite32("n64a: linked ", 0xFF88FF88);
+    TerminalPrintLine32(ExeName, 0xFF88FF88);
+}
+
+/* nld <out.exe> <a.obj> [b.obj ...] — links n64a/NCC objects. */
+void CmdNld(const PARSED_COMMAND *Command)
+{
+    const char *Objects[16];
+    const char *Out = NULL;
+    uint32_t Count = 0;
+
+    if (Command == NULL || Command->ArgCount < 2U)
+    {
+        TerminalPrintLine32("Usage: nld <out.exe> <a.obj> [b.obj ...]",
+                            0x00FF0000);
+        return;
+    }
+    for (uint32_t i = 0; i < Command->ArgCount; i++)
+    {
+        if (strcasecmp(Command->Args[i], "-o") == 0)
+        {
+            if (i + 1U >= Command->ArgCount)
+            {
+                TerminalPrintLine32("nld: -o needs a path", 0x00FF0000);
+                return;
+            }
+            Out = Command->Args[i + 1U];
+            i++;
+        }
+        else if (Out == NULL && Count == 0U)
+        {
+            Out = Command->Args[i];
+        }
+        else if (Count < 16U)
+        {
+            Objects[Count++] = Command->Args[i];
+        }
+    }
+    if (Out == NULL || Count == 0U)
+    {
+        TerminalPrintLine32("Usage: nld <out.exe> <a.obj> [b.obj ...]",
+                            0x00FF0000);
+        return;
+    }
+    SelfHostLinkFiles(Objects, Count, Out);
 }
 
 void CmdRbt(void){
@@ -884,8 +1150,21 @@ void CmdMsr(const PARSED_COMMAND *Command)
     TerminalNewLine32(0);
 }
 
+static void CmdPrintHexByte(uint8_t Byte)
+{
+    static const char HEX[] = "0123456789ABCDEF";
+    char Out[3];
+
+    Out[0] = HEX[(Byte >> 4) & 0x0F];
+    Out[1] = HEX[Byte & 0x0F];
+    Out[2] = '\0';
+    TerminalWrite32(Out, PromColor);
+}
+
 void CmdDiskRead(const PARSED_COMMAND *Command)
 {
+    uint8_t buf[512];
+
     if (Command->ArgCount < 1)
     {
         TerminalPrintLine32("Usage: diskread <lba_hex>", 0xFFFF0000);
@@ -898,7 +1177,6 @@ void CmdDiskRead(const PARSED_COMMAND *Command)
         return;
     }
 
-    uint8_t buf[2048];
     memset(buf, 0, sizeof(buf));
     if (!IDEReadSector((uint32_t)lba, buf))
     {
@@ -908,16 +1186,31 @@ void CmdDiskRead(const PARSED_COMMAND *Command)
 
     TerminalWrite32("Sector LBA ", 0x0057DB92);
     TerminalPrintHex64Compact(lba);
-    TerminalPrintLine32(" Raw Header:", 0x0057DB92);
-    for (int i = 0; i < 64; i += 16)
+    TerminalPrintLine32(" - full 512 bytes:", 0x0057DB92);
+    for (uint32_t i = 0; i < 512; i += 16)
     {
-        TerminalPrintHex64Compact((uint64_t)i);
-        TerminalWrite32(": ", 0x00314A70);
-        for (int j = 0; j < 16; j++)
+        char Off[6];
+
+        Off[0] = "0123456789ABCDEF"[(i >> 12) & 0xF];
+        Off[1] = "0123456789ABCDEF"[(i >> 8) & 0xF];
+        Off[2] = "0123456789ABCDEF"[(i >> 4) & 0xF];
+        Off[3] = "0123456789ABCDEF"[i & 0xF];
+        Off[4] = ':';
+        Off[5] = '\0';
+        TerminalWrite32(Off, 0x0057DB92);
+        TerminalWrite32(" ", PromColor);
+        for (uint32_t j = 0; j < 16; j++)
         {
-            TerminalPrintHex64Compact(buf[i + j]);
-            TerminalWrite32(" ", PromColor);
+            CmdPrintHexByte(buf[i + j]);
+            TerminalPutChar32(' ', PromColor);
         }
+        TerminalWrite32("|", 0x00314A70);
+        for (uint32_t j = 0; j < 16; j++)
+        {
+            uint8_t c = buf[i + j];
+            TerminalPutChar32((c >= 32 && c <= 126) ? (char)c : '.', PromColor);
+        }
+        TerminalWrite32("|", 0x00314A70);
         TerminalNewLine32(0);
     }
 }

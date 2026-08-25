@@ -1,0 +1,7 @@
+NullOS time  (include <time.h>)
+
+  KernelSleep(milliseconds)   pause the running program for the given
+                             number of milliseconds.
+
+For a free-running counter and the boot timestamp, see the kernel's
+PIT / time support exposed through the stdlib where needed.

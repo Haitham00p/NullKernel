@@ -1,0 +1,10 @@
+[BOOT] Kernel entry point reached @ FFFFFFFF80007251
+[ OK ] Interrupt descriptor table online @ FFFFFFFF8000016C
+[ OK ] Exception handlers installed @ FFFFFFFF800001BF
+[ OK ] Hardware IRQ routing armed @ FFFFFFFF80000273
+[ OK ] Keyboard driver ready @ FFFFFFFF80000654
+[ OK ] IDE Driver: ATAPI CD-ROM drive detected and active @ FFFFFFFF80001572
+[WARN] ISO9660 : Invalid PVD Sector @ FFFFFFFF8002150A
+[ OK ] PIT is online @ FFFFFFFF8002214F
+[ OK ] Kernel heap online @ FFFFFFFF8000D1E1
+[ OK ] IDE Driver: switched to ATA hard disk @ FFFFFFFF800016E5

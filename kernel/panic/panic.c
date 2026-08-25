@@ -8,6 +8,7 @@
 #include "arch/x86_64/power/pwr.h"
 #include "arch/x86_64/interrupts/pic.h"
 #include "arch/x86_64/interrupts/irq.h"
+#include "kernel/debug/debug.h"
 
 #include "../../lib/sound/sndbeep.h"
 
@@ -98,6 +99,26 @@ static void PanicPrintRegPair(const char *N1, uint64_t V1, const char *N2, uint6
 
 void PanicKernel(const char *Reason, uintptr_t FaultAddress)
 {   
+    DbgSerialWrite("PANIC: ");
+    DbgSerialWrite(Reason ? Reason : "(null)");
+    DbgSerialWrite(" @ ");
+    /* minimal hex print for FaultAddress */
+    {
+        char Hex[32];
+        uint32_t Idx = 0;
+        uintptr_t V = FaultAddress;
+        static const char Digits[] = "0123456789ABCDEF";
+        do
+        {
+            Hex[Idx++] = Digits[V & 0xF];
+            V >>= 4;
+        } while (V != 0 && Idx < sizeof(Hex) - 1U);
+        while (Idx > 0)
+        {
+            DbgSerialPutChar(Hex[--Idx]);
+        }
+    }
+    DbgSerialWrite("\n");
 
     StartBeep(300, 1000);
     

@@ -59,11 +59,46 @@ echo "[*] installing Limine BIOS bootloader on $IMG"
 
 if [ "$AUTO" = 1 ]; then
     echo "[*] booting NullOS live CD, disk: $IMG (auto-pressing I to install)"
-    exec qemu-system-x86_64 -m 3 -boot order=d -cdrom "$ISO" \
-        -hda "$IMG" -serial stdio -display none \
-        -monitor unix:/tmp/nullos-mon.sock,server,nowait
+    qemu-system-x86_64 -m 256 -boot order=d -cdrom "$ISO" \
+        -hda "$IMG" \
+        -serial file:/tmp/nullos-install-serial.log -display none \
+        -monitor unix:/tmp/nullos-mon.sock,server,nowait &
+    QEMU_PID=$!
+    for _ in $(seq 1 60); do
+        [ -S /tmp/nullos-mon.sock ] && break
+        sleep 1
+    done
+    python3 - <<'EOF'
+import socket, time
+for _ in range(60):
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.connect("/tmp/nullos-mon.sock")
+        break
+    except OSError:
+        time.sleep(1)
+else:
+        raise SystemExit("monitor socket never appeared")
+time.sleep(4)
+s.sendall(b"sendkey i\n")
+time.sleep(1)
+s.sendall(b"sendkey ret\n")
+s.close()
+EOF
+    for _ in $(seq 1 90); do
+        grep -q "INSTALL RESULT" /tmp/nullos-install-serial.log 2>/dev/null && break
+        sleep 1
+    done
+    kill "$QEMU_PID" 2>/dev/null
+    wait "$QEMU_PID" 2>/dev/null
+    grep "INSTALL RESULT" /tmp/nullos-install-serial.log || {
+        echo "error: installer did not complete" >&2
+        exit 1
+    }
+    echo "[*] install finished, boot the disk with ./run-boot.sh $IMG"
+    exit 0
 fi
 
 echo "[*] booting NullOS live CD, disk: $IMG (press I in the VM to install)"
-exec qemu-system-x86_64 -m 3 -boot order=d -cdrom "$ISO" \
+exec qemu-system-x86_64 -m 256 -boot order=d -cdrom "$ISO" \
     -hda "$IMG" -serial stdio

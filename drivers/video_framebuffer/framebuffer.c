@@ -26,7 +26,7 @@ void FbInit32(void)
 {
     if (FrBuf32.response == NULL)
     {
-        return;
+        return; // It means that This OS has failed to init Fb (FrameBuffer).
     }
     
     framebuffer = FrBuf32.response->framebuffers[0];

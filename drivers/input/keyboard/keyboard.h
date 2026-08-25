@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define KB_BUFFER_SIZE  128
+#define KB_BUFFER_SIZE  4096
 
 #define KBD_KEY_LEFT     0x80U
 #define KBD_KEY_RIGHT    0x81U
@@ -35,5 +35,10 @@ uint8_t KbdReadKey(void);
 void KbdFlushBuffer(void);
 KB_STATE KbdGetState(void);
 void KeyboardInterrupt(void);
+
+/* Ctrl+C abort request consumed by the PIT IRQ while a guest program
+   (a disk /BIN EXE) is running. */
+bool KbdAbortRequested(void);
+void KbdAbortClear(void);
 
 #endif /* KEYBOARD_H */
