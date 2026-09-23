@@ -1859,8 +1859,10 @@ static bool CpMakeAbsolute(const char *path, char *out, uint32_t outN)
 static bool CpSameOrChild(const char *src, const char *dst)
 {
     uint32_t n = strlen(src);
+    uint32_t dstLen = strlen(dst);
+
     if (strcmp(src, dst) == 0) return true;
-    if (n == 0U || dst[n] != '/') return false;
+    if (n == 0U || dstLen <= n || dst[n] != '/') return false;
     for (uint32_t i = 0U; i < n; i++)
     {
         if (src[i] != dst[i]) return false;
