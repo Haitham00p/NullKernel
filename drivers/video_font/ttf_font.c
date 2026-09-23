@@ -4,8 +4,8 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-extern const unsigned char _binary_IBMPlexMono_Regular_ttf_start[];
-extern const unsigned char _binary_IBMPlexMono_Regular_ttf_end[];
+extern const unsigned char _binary_drivers_video_font_IBMPlexMono_Regular_ttf_start[];
+extern const unsigned char _binary_drivers_video_font_IBMPlexMono_Regular_ttf_end[];
 
 typedef struct {
     uint32_t off;
