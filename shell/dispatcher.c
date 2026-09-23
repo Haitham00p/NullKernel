@@ -41,8 +41,16 @@ void DispatcherDispatch(const PARSED_COMMAND *Command){
         CmdNcc(Command); return;
     }
     if (strcmp(Command->Command, "cat") == 0) {
-        if (Command->ArgCount != 1U) { TerminalPrintLine32("Usage: cat <file>", 0x00FF0000); return; }
-        CmdCat(Command->Args[0]); return;
+        if (Command->ArgCount == 1U) {
+            CmdCat(Command->Args[0], NULL); return;
+        }
+        if (Command->ArgCount == 3U &&
+            (strcasecmp(Command->Args[1], "-gl") == 0 ||
+             strcasecmp(Command->Args[1], "--GetLine") == 0)) {
+            CmdCat(Command->Args[0], Command->Args[2]); return;
+        }
+        TerminalPrintLine32("Usage: cat <file> [-gl <line> | --GetLine <line>]", 0x00FF0000);
+        return;
     }
     if (strcmp(Command->Command, "n64a") == 0) {
         CmdN64a(Command); return;
@@ -118,6 +126,10 @@ void DispatcherDispatch(const PARSED_COMMAND *Command){
     if (strcmp(Command->Command, "isocopy") == 0) {
         if (Command->ArgCount != 2U) { TerminalPrintLine32("Usage: isocopy <isopath> <diskpath>", 0x00FF0000); return; }
         CmdIsoCopy(Command->Args[0], Command->Args[1]); return;
+    }
+    if (strcmp(Command->Command, "cp") == 0) {
+        if (Command->ArgCount != 2U) { TerminalPrintLine32("Usage: cp <source> <dest>", 0x00FF0000); return; }
+        CmdCp(Command->Args[0], Command->Args[1]); return;
     }
     if (strcmp(Command->Command, "tt") == 0){
         CmdTickTestPIT();

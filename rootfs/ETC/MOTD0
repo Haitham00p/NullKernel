@@ -1,0 +1,9 @@
+Welcome to NullOS 1.0 - self hosted inside itself.
+Everything below / is yours: /bin sources compile at boot.
+
+    things to try:
+      cd /home/Root    ls    cat hello-world.txt
+      cat /etc/*       fizzbuzz 36
+      bf ++++++++++[>++++++++++<-]>.
+      edit hello.c     -> save with Ctrl+S, quit Ctrl+Q, reboot
+      help             more commands

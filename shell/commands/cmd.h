@@ -15,7 +15,7 @@ void CmdPurge(void);
 void CmdDevKit(void);
 void CmdLs(void);
 void CmdTouch(const char *Path);
-void CmdCat(const char *Path);
+void CmdCat(const char *Path, const char *LineArg);
 void CmdRm(const char *Path);
 void CmdWrite(const PARSED_COMMAND *Command);
 void CmdCd(const char *Path);
@@ -31,6 +31,7 @@ void CmdRbt(void);
 void CmdShdn(void);
 void CmdShowAddr(const char *API);
 void CmdIsoList(void);
+void CmdCp(const char *Src, const char *Dst);
 
 // Low-Level Memory & CPU Commands
 void CmdPeek(const PARSED_COMMAND *Command);

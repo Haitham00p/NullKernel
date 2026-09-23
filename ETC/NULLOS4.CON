@@ -1,0 +1,5 @@
+autostart=off
+colorscheme=cyan
+default_shell=/bin/sh
+hostname_file=/etc/hostname
+motd_file=/etc/motd

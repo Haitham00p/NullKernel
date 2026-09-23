@@ -19,152 +19,97 @@ global IRQ15
 
 extern IRQHandler
 
-
 ; =====================================================
-; IRQ1 Keyboard
-; =====================================================
-
-IRQ1:
-
-    cli
-
-    push rax
-    push rbx
-    push rcx
-    push rdx
-    push rsi
-    push rdi
-    push rbp
-
-    push r8
-    push r9
-    push r10
-    push r11
-    push r12
-    push r13
-    push r14
-    push r15
-
-
-    mov rdi, 1
-
-    ; align stack for C function call
-    sub rsp, 8
-
-    ; rsi = pointer to the iret frame (RIP, CS, RFLAGS, RSP, SS)
-    lea rsi, [rsp + 128]
-
-    call IRQHandler
-
-    add rsp, 8
-
-
-    pop r15
-    pop r14
-    pop r13
-    pop r12
-    pop r11
-    pop r10
-    pop r9
-    pop r8
-
-    pop rbp
-    pop rdi
-    pop rsi
-    pop rdx
-    pop rcx
-    pop rbx
-    pop rax
-
-
-    sti
-    iretq
-
-
-
-; =====================================================
-; Empty IRQs
+; Common IRQ stub
+;
+; The CPU pushed (ring-0 interrupt, no privilege change) RFLAGS, CS, RIP
+; onto the *currently active* stack. We switch to a dedicated kernel IRQ
+; stack, save ALL volatile (caller-saved) registers plus the XMM state, call
+; the C handler, then restore everything and resume the interrupted thread.
+;
+; Without saving the volatile registers the C handler would clobber them and
+; the resumed thread would observe corrupted values (e.g. a pointer argument
+; passed in rdi), which is exactly what caused the installer's NULL-pointer
+; faults. r12 (callee-saved) carries the guest iret-frame pointer across the
+; call because C functions preserve it.
 ; =====================================================
 
-%macro IRQ_EMPTY 1
-
+%macro IRQ_STUB 1
 IRQ%1:
-
     cli
 
+    mov r12, rsp
+    mov rsp, IrqStackTop
 
     push rax
-    push rbx
     push rcx
     push rdx
     push rsi
     push rdi
-    push rbp
-
     push r8
     push r9
     push r10
     push r11
-    push r12
-    push r13
-    push r14
-    push r15
 
+    fxsave [IrqFxSave]
 
+    push qword 0
+    push qword [r12 + 24]
+    push qword [r12 + 16]
+    push qword [r12 + 8]
+    push qword [r12 + 0]
+
+    mov rsi, rsp
     mov rdi, %1
-
-
-    sub rsp, 8
-
-    ; rsi = pointer to the iret frame (RIP, CS, RFLAGS, RSP, SS)
-    lea rsi, [rsp + 128]
-
     call IRQHandler
 
-    add rsp, 8
+    mov rax, [rsp + 0]
+    mov [r12 + 0],  rax
+    mov rax, [rsp + 8]
+    mov [r12 + 8],  rax
+    mov rax, [rsp + 16]
+    mov [r12 + 16], rax
 
+    add rsp, 40
 
+    fxrstor [IrqFxSave]
 
-    pop r15
-    pop r14
-    pop r13
-    pop r12
     pop r11
     pop r10
     pop r9
     pop r8
-
-
-    pop rbp
     pop rdi
     pop rsi
     pop rdx
     pop rcx
-    pop rbx
     pop rax
 
-
-    sti
+    mov rsp, r12
     iretq
-
-
 %endmacro
 
+IRQ_STUB 0
+IRQ_STUB 1
+IRQ_STUB 2
+IRQ_STUB 3
+IRQ_STUB 4
+IRQ_STUB 5
+IRQ_STUB 6
+IRQ_STUB 7
+IRQ_STUB 8
+IRQ_STUB 9
+IRQ_STUB 10
+IRQ_STUB 11
+IRQ_STUB 12
+IRQ_STUB 13
+IRQ_STUB 14
+IRQ_STUB 15
 
 
-IRQ_EMPTY 0
-IRQ_EMPTY 2
-IRQ_EMPTY 3
-IRQ_EMPTY 4
-IRQ_EMPTY 5
-IRQ_EMPTY 6
-IRQ_EMPTY 7
-
-IRQ_EMPTY 8
-IRQ_EMPTY 9
-IRQ_EMPTY 10
-IRQ_EMPTY 11
-IRQ_EMPTY 12
-IRQ_EMPTY 13
-IRQ_EMPTY 14
-IRQ_EMPTY 15
+section .bss
+align 16
+IrqFxSave:
+    resb 512
+IrqStack:
+    resb 65536
+IrqStackTop:

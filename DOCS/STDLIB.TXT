@@ -1,6 +1,6 @@
 NullOS stdlib  (include <stdlib.h>)
 
-This is the guest standard library (formerly selfhost.h). Every function
+This is the guest standard library (changed from selfhost.h to stdlib.h by the king null). Every function
 below is resolved through the ncc vault, so a guest program just calls it
 by name after "#include <stdlib.h>".
 
@@ -23,7 +23,12 @@ Simple file + process API (the disk IS the registry):
                             string; 1 = ok, 0 = fail (fails if not present).
   exec(path)                run another .EXE; if path has no '/', it runs
                             /BIN/<path>, otherwise dir + name from path.
-                            Returns the program's exit value.
+                            If no /BIN program matches a bare command name,
+                            it falls back to the built-in command dispatcher,
+                            so kernel commands like "regfill" or "ls" also run.
+  execl(fmt, ...)           printf-style variant of exec(): build the command
+                            line then run it, e.g.
+                            execl("regfill %x %x", fg, bg);
 
 Registry "value" files use the .v extension, e.g.:
   /REG/fg.v    foreground color (default 0xFFFFFFFF)

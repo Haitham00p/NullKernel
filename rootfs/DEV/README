@@ -1,0 +1,2 @@
+/dev - NullOS has no device nodes with majors yet.
+later: /dev/sda (disk), /dev/keyboard, /dev/terminal, /dev/tty0

@@ -47,23 +47,60 @@ global RunSavedRsp
 RunSavedRsp:
     resq 1
 
+; Dedicated guest stack.  Lives inside the kernel image (higher-half,
+; always mapped and writable), so a guest program can never depend on the
+; low flat identity-map window reaching 0x300000.  Using a kernel-resident
+; buffer guarantees the stack is valid on every machine regardless of how
+; much low RAM the bootloader identity-maps.  Aligned to 16 so the ABI
+; 16-byte stack alignment holds at the guest entry point.
+align 16
+GuestStack:
+    resb 0x8000
+GuestStackEnd:
+
 section .text
 
 RunProgramOnStack:
+    ; Save the caller's (shell's) callee-saved registers on the shell stack
+    ; before we switch to the guest stack. A guest that returns normally
+    ; restores these itself (per the C ABI), but an aborted guest never runs
+    ; its epilogue, so without stashing them here its live values would leak
+    ; back into the shell and corrupt cursor/prompt state after Ctrl+C.
+    push rbx
+    push rbp
+    push r12
+    push r13
+    push r14
+    push r15
     mov qword [RunSavedRsp], rsp
     mov qword [RunAbortArmed], 0
     mov qword [RunGuestActive], 1
-    mov rsp, rsi
+    mov rsp, GuestStackEnd
     sti
     call rdi
 full_switchless:
     mov qword [RunAbortArmed], 0
     mov qword [RunGuestActive], 0
-    mov rsp, [RunSavedRsp]
-    ret
+    jmp restore_and_return
 
 RunAbortResume:
     mov qword [RunAbortArmed], 0
     mov qword [RunGuestActive], 0
     mov rax, 0x2BAD0B5E
+    ; The Ctrl+C abort resumes here instead of at full_switchless. The guest's
+    ; own stack and registers are abandoned; restore the kernel/shell stack and
+    ; the shell's callee-saved registers so the aborted program can never
+    ; resume on (or return to) its own stale RIP/RSP/registers.
+    jmp restore_and_return
+
+restore_and_return:
+    ; A ring-0 iretq does not reload RSP, so restore the saved shell RSP
+    ; explicitly, then pop the callee-saved registers the guest never restored.
+    mov rsp, [RunSavedRsp]
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbp
+    pop rbx
     ret

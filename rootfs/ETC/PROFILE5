@@ -1,0 +1,3 @@
+# /etc/profile - sourced at boot by /bin/sh
+Welcome to NullOS!  cd /home/Root for your private files.
+Hotkeys: Ctrl+S save (edit)  Ctrl+Q quit (edit)  Ctrl+X abort (blocked cmds)  Ctrl+U clear line  (shell history: up/down)

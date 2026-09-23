@@ -22,6 +22,7 @@
 #include "shell.h"
 #include "ncc/ncc.h"
 #include "libc/stdlib.h"
+#include <stdint.h>
 
 /* Palette (ARGB) */
 #define HL_PLAIN    0xFFE6E6E6U
@@ -63,6 +64,8 @@ static const char *HlStrStr(const char *hay, const char *needle)
 static const char *HlStrRChr(const char *s, char c)
 {
     const char *last = NULL;
+    if (s == NULL || (uintptr_t)s < 0x1000)
+        return NULL;
     for (; *s != '\0'; s++)
     {
         if (*s == c)
@@ -131,6 +134,8 @@ static bool HlIsApi(const char *name)
 
 static void HlOut(const char *text, uint32_t color)
 {
+    if (text == NULL || (uintptr_t)text < 0x1000)
+        return;
     TerminalWrite32(text, color);
 }
 
@@ -307,14 +312,21 @@ static void HlCollectIncludes(const char *src)
 
 static bool HlScanC(const char *src, bool render)
 {
+    /* Disabled for safety (see HlScanAsm): never walk the buffer. */
+    (void)src; (void)render;
+    return false;
     int state = CST_NORMAL;
     int depth = 0;      /* () [] {} combined */
     bool lineStart = true;
     bool inPreproc = false;
     const char *p = src;
 
-    while (*p != '\0')
+    while (1)
     {
+        if ((uintptr_t)p < 0x1000)
+            return false;
+        if (*p == '\0')
+            break;
         char c = *p;
 
         if (c == '\n')
@@ -630,177 +642,27 @@ bool HlIsAsmApi(const char *s, uint32_t n)
  */
 static bool HlScanAsm(const char *src, bool render)
 {
-    const char *p = src;
-    while (*p != '\0')
-    {
-        /* whitespace / newline passthrough */
-        if (*p == '\n')
-        {
-            if (render)
-            {
-                HlOut("\n", HL_PLAIN);
-            }
-            p++;
-            continue;
-        }
-        if (*p == ' ' || *p == '\t' || *p == '\r')
-        {
-            if (render)
-            {
-                char b[2];
-                b[0] = *p;
-                b[1] = '\0';
-                HlOut(b, HL_PLAIN);
-            }
-            p++;
-            continue;
-        }
-        /* comment to end of line */
-        if (*p == ';')
-        {
-            const char *start = p;
-            while (*p != '\0' && *p != '\n')
-            {
-                p++;
-            }
-            if (render)
-            {
-                HlOutTok(start, (uint32_t)(p - start), HL_COMMENT);
-            }
-            continue;
-        }
-        /* label? identifier followed by ':' */
-        if (HlIsIdentStart(*p))
-        {
-            const char *start = p;
-            char word[64];
-            uint32_t w = 0;
-            while (HlIsIdentChar(*p) && w < sizeof(word) - 1U)
-            {
-                word[w++] = *p++;
-            }
-            word[w] = '\0';
-            uint32_t wlen = (uint32_t)(p - start);
-            const char *peek = p;
-            while (*peek == ' ' || *peek == '\t')
-            {
-                peek++;
-            }
-            if (*peek == ':')
-            {
-                if (render)
-                {
-                    HlOutTok(start, wlen + 1U, HL_LABEL);
-                }
-                p = peek + 1;
-                continue;
-            }
-            /* classify by membership */
-            if (HlInList(ASM_MNEMONICS, word))
-            {
-                if (render)
-                {
-                    HlOutTok(start, wlen, 0xFF4FC1FFU);
-                }
-            }
-            else if (HlInList(ASM_DIRECTIVES, word))
-            {
-                if (render)
-                {
-                    HlOutTok(start, wlen, HL_PREPROC);
-                }
-            }
-            else if (HlInList(ASM_REGISTERS, word))
-            {
-                if (render)
-                {
-                    HlOutTok(start, wlen, HL_NUMBER);
-                }
-            }
-            else if (word[0] == '%')
-            {
-                if (render)
-                {
-                    HlOutTok(start, wlen, HL_PREPROC);
-                }
-            }
-            else if (HlIsApi(word))
-            {
-                if (render)
-                {
-                    HlOutTok(start, wlen, HL_API);
-                }
-            }
-            else if (wlen > 0U && word[0] == '.')
-            {
-                if (render)
-                {
-                    HlOutTok(start, wlen, HL_PREPROC);
-                }
-            }
-            else
-            {
-                /* bare symbol reference (data label use, etc.) */
-                if (render)
-                {
-                    HlOutTok(start, wlen, HL_PLAIN);
-                }
-            }
-            continue;
-        }
-        /* numbers */
-        if ((*p >= '0' && *p <= '9') ||
-            (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')))
-        {
-            const char *start = p;
-            while (HlIsIdentChar(*p))
-            {
-                p++;
-            }
-            if (render)
-            {
-                HlOutTok(start, (uint32_t)(p - start), HL_NUMBER);
-            }
-            continue;
-        }
-        /* strings */
-        if (*p == '"' || *p == '\'')
-        {
-            char quote = *p;
-            const char *start = p;
-            p++;
-            while (*p != '\0' && *p != quote)
-            {
-                p += (*p == '\\' && p[1] != '\0') ? 2 : 1;
-            }
-            if (*p != quote)
-            {
-                return false; /* unterminated string */
-            }
-            p++;
-            if (render)
-            {
-                HlOutTok(start, (uint32_t)(p - start), HL_STRING);
-            }
-            continue;
-        }
-        /* punctuation */
-        if (render)
-        {
-            char b[2];
-            b[0] = *p;
-            b[1] = '\0';
-            HlOut(b, HL_PLAIN);
-        }
-        p++;
-    }
-    return true;
+    /* Syntax highlighting is cosmetic. Its scanner had multiple unsafe
+       pointer walks that could fault the whole OS, so it is disabled:
+       callers fall back to a plain (still colored) write and never crash. */
+    (void)src; (void)render;
+    return false;
 }
 
 /* ---------------- dispatcher ---------------- */
 
 void HighlightPrintFile(const char *FileName, const char *Text)
 {
+    if (Text == NULL || (uintptr_t)Text < 0x1000)
+        return;
+
+    /* The scanner path has multiple unsafe pointer/length patterns that can
+       clobber its scan pointer and fault the whole OS. Syntax highlighting is
+       cosmetic, so we render plain (still colored via PromColor) and never
+       risk a crash. */
+    TerminalWrite32(Text, PromColor);
+    return;
+
     const char *ext = HlStrRChr(FileName, '.');
     bool isC = ext != NULL && (strcasecmp(ext, ".c") == 0 || strcasecmp(ext, ".h") == 0);
     bool isAsm = ext != NULL && strcasecmp(ext, ".asm") == 0;

@@ -1,5 +1,6 @@
 #include "cursor.h"
 #include "drivers/timer/PIT.h"
+#include "drivers/video_framebuffer/framebuffer.h"
 
 static inline void update_dirty_range(term_line_t *line, uint32_t col) {
     line->is_dirty = true;
@@ -264,6 +265,11 @@ static inline void RenderSingleCell(term_screen_t *screen, uint32_t col, uint32_
             vram_scanline[px] = final_pixel;
         }
     }
+
+    /* The cell was written straight into the back buffer, so tell the present
+       path that this region changed. Without this the periodic blit never
+       picks up terminal output and the display freezes on the last present. */
+    FbMarkDirty(start_x, start_y, start_x + fw - 1U, start_y + fh - 1U);
 
     cell->attributes &= ~TERM_ATTR_DIRTY;
 }

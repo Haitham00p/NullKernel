@@ -5,6 +5,7 @@
 #include "kernel/terminal/terminal.h"
 #include "include/cursor.h"
 #include "drivers/input/keyboard/keyboard.h"
+#include "drivers/video_framebuffer/framebuffer.h"
 #include "lib/string/string.h"
 
 #define EDITOR_CAPACITY 4096U
@@ -56,6 +57,41 @@ static bool EditorIsAsmFile;
 static char EditorDir[64];
 static char EditorName[64];
 static bool EditorHasDir;
+
+/* Selection / clipboard state for shift-arrow word selection, Ctrl+Shift+C
+   (copy) and Ctrl+Shift+V (paste).  A selection runs from EditorSelAnchor
+   to EditorPos; when EditorSelecting is false there is no selection. */
+static uint32_t EditorSelAnchor;
+static bool     EditorSelecting;
+static char     EditorClipboard[EDITOR_CAPACITY];
+static uint32_t EditorClipLen;
+
+static uint32_t EditorSelMin(void)
+{
+    return EditorSelecting ? (EditorSelAnchor < EditorPos ? EditorSelAnchor : EditorPos)
+                           : EditorPos;
+}
+static uint32_t EditorSelMax(void)
+{
+    return EditorSelecting ? (EditorSelAnchor > EditorPos ? EditorSelAnchor : EditorPos)
+                           : EditorPos;
+}
+static void EditorClearSelection(void)
+{
+    EditorSelecting = false;
+}
+static uint32_t EditorPrevWord(uint32_t Pos)
+{
+    while (Pos > 0U && !EditorIsIdent(EditorBuffer[Pos - 1U])) Pos--;
+    while (Pos > 0U && EditorIsIdent(EditorBuffer[Pos - 1U])) Pos--;
+    return Pos;
+}
+static uint32_t EditorNextWord(uint32_t Pos)
+{
+    while (Pos < EditorLength && !EditorIsIdent(EditorBuffer[Pos])) Pos++;
+    while (Pos < EditorLength && EditorIsIdent(EditorBuffer[Pos])) Pos++;
+    return Pos;
+}
 
 static uint32_t EditorLineStart(uint32_t Pos)
 {
@@ -611,6 +647,42 @@ static bool EditorBlockStateAtLine(uint32_t Line)
     return inBlock;
 }
 
+static void EditorPaintSelection(void)
+{
+    term_screen_t *scr = TerminalGetScreen();
+    uint32_t textRows = scr->rows >= 2U ? scr->rows - 1U : 1U;
+    uint32_t a = EditorSelMin();
+    uint32_t b = EditorSelMax();
+    uint32_t i;
+
+    if (a >= b)
+    {
+        return;
+    }
+    for (i = a; i < b; i++)
+    {
+        uint32_t Line = 0;
+        uint32_t Col = 0;
+        uint32_t Row;
+        uint32_t X;
+        uint32_t Y;
+
+        EditorLineCol(i, &Line, &Col);
+        if (Line < EditorTopLine || Line >= EditorTopLine + textRows)
+        {
+            continue;
+        }
+        Row = Line - EditorTopLine;
+        X = Col * scr->font_width;
+        Y = Row * scr->font_height;
+        FbFillRect32(X, Y, scr->font_width, scr->font_height, 0x004060A0U);
+        if (EditorBuffer[i] != '\n')
+        {
+            FbDrawChar32((uint8_t)EditorBuffer[i], X, Y, 0x00FFFFFFU);
+        }
+    }
+}
+
 static void EditorPaintText(void)
 {
     term_screen_t *scr = TerminalGetScreen();
@@ -625,6 +697,7 @@ static void EditorPaintText(void)
     {
         EditorPaintLine(EditorTopLine + r, &inBlock);
     }
+    EditorPaintSelection();
     EditorDrawStatus();
     EditorCursorTo();
     CursorSetVisible(scr, true);
@@ -901,7 +974,7 @@ bool EditorIsActive(void)
     return EditorRunning;
 }
 
-void EditorHandleKey(uint8_t Key, bool ControlHeld)
+void EditorHandleKey(uint8_t Key, bool ControlHeld, bool ShiftHeld)
 {
     if (!EditorRunning)
     {
@@ -934,31 +1007,88 @@ void EditorHandleKey(uint8_t Key, bool ControlHeld)
         return;
     }
 
+    /* Copy / paste with Ctrl+Shift+C / Ctrl+Shift+V */
+    if (ControlHeld && ShiftHeld && (Key == 'c' || Key == 'C'))
+    {
+        uint32_t a = EditorSelMin();
+        uint32_t b = EditorSelMax();
+        if (a < b && (b - a) < EDITOR_CAPACITY)
+        {
+            uint32_t k = 0;
+            for (uint32_t i = a; i < b && k < EDITOR_CAPACITY - 1U; i++)
+            {
+                EditorClipboard[k++] = EditorBuffer[i];
+            }
+            EditorClipLen = k;
+        }
+        return;
+    }
+    if (ControlHeld && ShiftHeld && (Key == 'v' || Key == 'V'))
+    {
+        for (uint32_t i = 0; i < EditorClipLen; i++)
+        {
+            EditorInsertChar(EditorClipboard[i]);
+        }
+        EditorClearSelection();
+        EditorPaintText();
+        return;
+    }
+
     switch (Key)
     {
         case KBD_KEY_LEFT:
-            if (EditorPos > 0U)
+            if (ShiftHeld)
             {
-                EditorPos--;
+                if (!EditorSelecting) { EditorSelAnchor = EditorPos; EditorSelecting = true; }
+                if (EditorPos > 0U) EditorPos--;
             }
-            if (EditorClampScroll()) { EditorPaintText(); }
-            else { EditorRefresh(); }
+            else
+            {
+                EditorClearSelection();
+                if (EditorPos > 0U) EditorPos--;
+            }
+            EditorClampScroll();
+            EditorPaintText();
             return;
         case KBD_KEY_RIGHT:
-            if (EditorPos < EditorLength)
+            if (ShiftHeld)
             {
-                EditorPos++;
+                if (!EditorSelecting) { EditorSelAnchor = EditorPos; EditorSelecting = true; }
+                if (EditorPos < EditorLength) EditorPos++;
             }
-            if (EditorClampScroll()) { EditorPaintText(); }
-            else { EditorRefresh(); }
+            else
+            {
+                EditorClearSelection();
+                if (EditorPos < EditorLength) EditorPos++;
+            }
+            EditorClampScroll();
+            EditorPaintText();
             return;
         case KBD_KEY_HOME:
+            if (ShiftHeld)
+            {
+                if (!EditorSelecting) { EditorSelAnchor = EditorPos; EditorSelecting = true; }
+            }
+            else
+            {
+                EditorClearSelection();
+            }
             EditorPos = EditorLineStart(EditorPos);
-            EditorRefresh();
+            EditorClampScroll();
+            EditorPaintText();
             return;
         case KBD_KEY_END:
+            if (ShiftHeld)
+            {
+                if (!EditorSelecting) { EditorSelAnchor = EditorPos; EditorSelecting = true; }
+            }
+            else
+            {
+                EditorClearSelection();
+            }
             EditorPos = EditorLineEnd(EditorPos);
-            EditorRefresh();
+            EditorClampScroll();
+            EditorPaintText();
             return;
         case KBD_KEY_UP:
         {
@@ -967,6 +1097,14 @@ void EditorHandleKey(uint8_t Key, bool ControlHeld)
             uint32_t Start;
             uint32_t End;
 
+            if (ShiftHeld)
+            {
+                if (!EditorSelecting) { EditorSelAnchor = EditorPos; EditorSelecting = true; }
+            }
+            else
+            {
+                EditorClearSelection();
+            }
             EditorLineCol(EditorPos, &Line, &Col);
             if (Line > 0U)
             {
@@ -978,8 +1116,8 @@ void EditorHandleKey(uint8_t Key, bool ControlHeld)
             {
                 EditorPos = 0U;
             }
-            if (EditorClampScroll()) { EditorPaintText(); }
-            else { EditorRefresh(); }
+            EditorClampScroll();
+            EditorPaintText();
             return;
         }
         case KBD_KEY_DOWN:
@@ -990,6 +1128,14 @@ void EditorHandleKey(uint8_t Key, bool ControlHeld)
             uint32_t End;
             uint32_t Next;
 
+            if (ShiftHeld)
+            {
+                if (!EditorSelecting) { EditorSelAnchor = EditorPos; EditorSelecting = true; }
+            }
+            else
+            {
+                EditorClearSelection();
+            }
             EditorLineCol(EditorPos, &Line, &Col);
             Start = EditorLineStart(EditorPos);
             End = EditorLineEnd(EditorPos);
@@ -1003,8 +1149,8 @@ void EditorHandleKey(uint8_t Key, bool ControlHeld)
                 End = EditorLineEnd(Next);
                 EditorPos = Next + (Col < End - Next ? Col : End - Next);
             }
-            if (EditorClampScroll()) { EditorPaintText(); }
-            else { EditorRefresh(); }
+            EditorClampScroll();
+            EditorPaintText();
             return;
         }
         case KBD_KEY_DELETE:
@@ -1012,7 +1158,20 @@ void EditorHandleKey(uint8_t Key, bool ControlHeld)
             uint32_t Line = 0;
             uint32_t Col = 0;
             char Deleted;
+            uint32_t sa = EditorSelMin();
+            uint32_t sb = EditorSelMax();
 
+            if (EditorSelecting && sa < sb)
+            {
+                for (uint32_t i = sa; i < sb; i++)
+                {
+                    EditorDeleteAt(sa);
+                }
+                EditorPos = sa;
+                EditorClearSelection();
+                EditorPaintText();
+                return;
+            }
             if (ControlHeld)
             {
                 EditorLineCol(EditorPos, &Line, &Col);
@@ -1054,7 +1213,21 @@ void EditorHandleKey(uint8_t Key, bool ControlHeld)
         uint32_t Line = 0;
         uint32_t Col = 0;
         char Deleted;
+        uint32_t sa = EditorSelMin();
+        uint32_t sb = EditorSelMax();
 
+        if (EditorSelecting && sa < sb)
+        {
+            for (uint32_t i = sa; i < sb; i++)
+            {
+                EditorDeleteAt(sa);
+            }
+            EditorPos = sa;
+            EditorClearSelection();
+            EditorPaintText();
+            return;
+        }
+        EditorClearSelection();
         if (EditorPos == 0U)
         {
             return;
@@ -1079,7 +1252,18 @@ void EditorHandleKey(uint8_t Key, bool ControlHeld)
     {
         uint32_t Line = 0;
         uint32_t Col = 0;
+        uint32_t sa = EditorSelMin();
+        uint32_t sb = EditorSelMax();
 
+        if (EditorSelecting && sa < sb)
+        {
+            for (uint32_t i = sa; i < sb; i++)
+            {
+                EditorDeleteAt(sa);
+            }
+            EditorPos = sa;
+            EditorClearSelection();
+        }
         EditorLineCol(EditorPos, &Line, &Col);
         for (uint32_t i = 0; i < 4U; i++)
         {
@@ -1094,7 +1278,18 @@ void EditorHandleKey(uint8_t Key, bool ControlHeld)
     {
         uint32_t Line = 0;
         uint32_t Col = 0;
+        uint32_t sa = EditorSelMin();
+        uint32_t sb = EditorSelMax();
 
+        if (EditorSelecting && sa < sb)
+        {
+            for (uint32_t i = sa; i < sb; i++)
+            {
+                EditorDeleteAt(sa);
+            }
+            EditorPos = sa;
+            EditorClearSelection();
+        }
         EditorLineCol(EditorPos, &Line, &Col);
         if (Key == '\n' || Key == '\r')
         {

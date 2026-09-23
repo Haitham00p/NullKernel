@@ -20,7 +20,6 @@
 #define IRQ_FREE1 9
 #define IRQ_FREE2 10
 #define IRQ_FREE3 11
-#define IRQ_MOUSE 12
 #define IRQ_FPU 13
 #define IRQ_ATA1 14
 #define IRQ_ATA2 15

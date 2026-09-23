@@ -1,4 +1,5 @@
 #include "ncc.h"
+#include "n64a/n64a.h"
 #include "kernel/debug/debug.h"
 #include "ncc/vault_gen.h"
 #include "lib/string/string.h"
@@ -967,7 +968,7 @@ typedef enum
     TK_IDENT, TK_NUM, TK_STR, TK_CHR,
     TK_IF, TK_ELSE, TK_WHILE, TK_FOR, TK_DO, TK_RETURN, TK_BREAK, TK_CONTINUE,
     TK_TYPEDEF, TK_STRUCT, TK_ENUM, TK_SIZEOF,
-    TK_CONST, TK_VOLATILE, TK_STATIC, TK_EXTERN, TK_INLINE,
+    TK_CONST, TK_VOLATILE, TK_STATIC, TK_EXTERN, TK_INLINE, TK_ASM,
     TK_INT, TK_CHAR, TK_VOID, TK_LONG, TK_SHORT, TK_UNSIGNED, TK_SIGNED,
     TK_PLUS, TK_MINUS, TK_STAR, TK_SLASH, TK_PERCENT,
     TK_EQEQ, TK_NEQ, TK_LT, TK_GT, TK_LE, TK_GE,
@@ -1105,6 +1106,7 @@ static int NccKw(const char *s)
     if (strcmp(s, "static") == 0) return TK_STATIC;
     if (strcmp(s, "extern") == 0) return TK_EXTERN;
     if (strcmp(s, "inline") == 0) return TK_INLINE;
+    if (strcmp(s, "asm") == 0) return TK_ASM;
     if (strcmp(s, "int") == 0) return TK_INT;
     if (strcmp(s, "char") == 0) return TK_CHAR;
     if (strcmp(s, "void") == 0) return TK_VOID;
@@ -4185,6 +4187,57 @@ static void NccParseLocalDecl(bool expect_semi)
     }
 }
 
+/* ------------------------------------------------------------------ */
+/* inline assembly:  asm { <raw n64a source> }                          */
+/* ------------------------------------------------------------------ */
+
+static void NccEmitAsmBlock(const char *src, uint32_t len)
+{
+    N64aDiag diag;
+    N64aDiagInit(&diag, "<asm>");
+
+    char *buf = (char *)kmalloc((uint64_t)len + 1U);
+    if (buf == NULL)
+    {
+        NccError("asm{}: out of memory");
+        return;
+    }
+    memcpy(buf, src, len);
+    buf[len] = '\0';
+
+    uint8_t *obj = NULL;
+    uint32_t objsize = 0;
+    bool ok = N64aAssemble("<asm>", buf, (unsigned long long)len,
+                           &obj, &objsize, &diag);
+    kfree(buf);
+    if (!ok)
+    {
+        TerminalPrintLine32(diag.Message, ERR_COLOR);
+        NccError("asm{}: assembly failed");
+        return;
+    }
+    if (objsize < N64O_HDRSZ)
+    {
+        NccError("asm{}: bad object");
+        kfree(obj);
+        return;
+    }
+
+    uint32_t textsize = *(const uint32_t *)(obj + 16);
+    uint32_t reloccount = *(const uint32_t *)(obj + 28);
+    if (reloccount != 0U)
+    {
+        NccError("asm{}: external references not supported yet");
+        kfree(obj);
+        return;
+    }
+    if (textsize > 0U)
+    {
+        NccTextBytes(obj + N64O_HDRSZ, textsize);
+    }
+    kfree(obj);
+}
+
 static void NccParseStmt(void)
 {
     switch (g_tok.kind)
@@ -4207,6 +4260,41 @@ static void NccParseStmt(void)
             }
             NccScopePop();
             break;
+        case TK_ASM:
+        {
+            NccAdvance(); /* consume 'asm' */
+            if (g_tok.kind != TK_LBRACE)
+            {
+                NccError("expected '{' after asm");
+                return;
+            }
+            /* g_lex_p now points right after the opening '{' */
+            const char *start = g_lex_p;
+            const char *p = start;
+            int depth = 1;
+            while (*p != '\0' && depth > 0)
+            {
+                if (*p == '{') depth++;
+                else if (*p == '}')
+                {
+                    depth--;
+                    if (depth == 0) break;
+                }
+                p++;
+            }
+            if (depth != 0)
+            {
+                NccError("unterminated asm{} block");
+                return;
+            }
+            uint32_t bodylen = (uint32_t)(p - start);
+            NccEmitAsmBlock(start, bodylen);
+            /* resume lexing right after the closing '}' */
+            g_lex_p = p + 1;
+            g_peek_valid = false;
+            NccAdvance();
+            break;
+        }
         case TK_IF:
         {
             NccAdvance();

@@ -28,6 +28,8 @@ void strncpy(char *dst, const char *src, uint64_t n)
 
 void memcpy(void *dst, const void *src, uint64_t size)
 {
+    if (dst == 0 || src == 0 || size == 0)
+        return;
     uint8_t *d = dst;
     const uint8_t *s = src;
 
@@ -41,6 +43,9 @@ uint64_t strlen(const char *str)
 {
     uint64_t len=0;
 
+    if (str == 0)
+        return 0;
+
     while(str[len])
         len++;
 
@@ -49,6 +54,8 @@ uint64_t strlen(const char *str)
 
 void *memset(void *dest, int value, uint64_t size)
 {
+    if (dest == 0 || size == 0)
+        return dest;
     uint8_t *ptr = (uint8_t *)dest;
 
     for (uint64_t i = 0; i < size; i++)
@@ -61,6 +68,9 @@ void *memset(void *dest, int value, uint64_t size)
 
 int strcmp(const char *a, const char *b)
 {
+    if (a == 0) a = "";
+    if (b == 0) b = "";
+
     while(*a && (*a==*b))
     {
         a++;
@@ -86,6 +96,9 @@ char toupper_c(char c)
 
 int strcasecmp(const char *a, const char *b)
 {
+    if (a == 0) a = "";
+    if (b == 0) b = "";
+
     while (*a && *b)
     {
         char ca = tolower_c(*a);
@@ -100,6 +113,9 @@ int strcasecmp(const char *a, const char *b)
 
 int strncasecmp(const char *a, const char *b, uint64_t n)
 {
+    if (a == 0) a = "";
+    if (b == 0) b = "";
+
     for (uint64_t i = 0; i < n; i++)
     {
         if (a[i] == '\0' || b[i] == '\0')

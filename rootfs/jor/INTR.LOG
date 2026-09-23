@@ -1,4 +1,0 @@
-[INTR] Interrupt descriptor table online @ FFFFFFFF8000016C
-[INTR] Exception handlers installed (ISRs 0-31) @ FFFFFFFF800001BF
-[INTR] Hardware IRQ routing armed (IRQs 0-15) @ FFFFFFFF80000273
-[INTR] Keyboard driver ready (IRQ1) @ FFFFFFFF80000654

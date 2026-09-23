@@ -3,9 +3,13 @@
 #include "pic.h"
 #include "kernel/terminal/terminal.h"
 #include "drivers/input/keyboard/keyboard.h"
+#include "drivers/video_framebuffer/framebuffer.h"
 #include "../../../drivers/timer/PIT.h"
 #include "../Kernel/kernel/terminal/terminal.h"
 #include "../program/run.h"
+
+/* Frame present: blit the composited back buffer to the front buffer on every
+   PIT tick (raw timer fps, no refresh-rate pacing). */
 
 void IRQHandler(uint32_t IRQ, IRQFrame *Frame)
 {
@@ -13,6 +17,10 @@ void IRQHandler(uint32_t IRQ, IRQFrame *Frame)
     {
         PITTick();
         TerminalBlinkUpdate();
+        /* Present only the region that changed since the last present. When
+           nothing was drawn (idle guest / tight loop) this is a no-op, so it
+           can never overrun the 1 kHz tick and starve the system. */
+        FbPresent32();
         if (RunGuestActive && KbdAbortRequested())
         {
             Frame->RIP = (uint64_t)RunAbortResume;

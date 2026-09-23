@@ -1,0 +1,44 @@
+#include "vbr.h"
+
+#include <stddef.h>
+
+bool FAT32IsValid(const FAT32BootSector *Boot)
+{
+    if (Boot == NULL)
+    {
+        return false;
+    }
+
+    if (Boot->BytesPerSector == 0 ||
+        Boot->SectorsPerCluster == 0 ||
+        Boot->ReservedSectorCount == 0 ||
+        Boot->NumberOfFATs == 0 ||
+        Boot->FATSize32 == 0 ||
+        (Boot->TotalSectors16 == 0 && Boot->TotalSectors32 == 0))
+    {
+        return false;
+    }
+
+    return true;
+}
+
+uint32_t FAT32GetFirstFATSector(const FAT32BootSector *Boot,
+                                 uint32_t PartitionStartLBA)
+{
+    return PartitionStartLBA + Boot->ReservedSectorCount;
+}
+
+uint32_t FAT32GetFirstDataSector(const FAT32BootSector *Boot,
+                                  uint32_t PartitionStartLBA)
+{
+    return FAT32GetFirstFATSector(Boot, PartitionStartLBA) +
+           ((uint32_t)Boot->NumberOfFATs * Boot->FATSize32);
+}
+
+uint32_t FAT32ClusterToLBA(const FAT32BootSector *Boot,
+                           uint32_t PartitionStartLBA,
+                           uint32_t Cluster)
+{
+    return FAT32GetFirstDataSector(Boot, PartitionStartLBA) +
+           ((Cluster - 2U) * Boot->SectorsPerCluster);
+}

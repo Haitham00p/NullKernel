@@ -99,11 +99,19 @@ bool KbdAvailable(void)
 
 char KbdReadChar(void)
 {
+    while (KbdHead == KbdTail)
+    {
+        __asm__ volatile("pause" ::: "memory");
+    }
     return (char)KbdBufferPop();
 }
 
 uint8_t KbdReadKey(void)
 {
+    while (KbdHead == KbdTail)
+    {
+        __asm__ volatile("pause" ::: "memory");
+    }
     return KbdBufferPop();
 }
 
@@ -120,6 +128,9 @@ KB_STATE KbdGetState(void)
 
 void KeyboardInterrupt(void)
 {
+    uint8_t status = Inb(0x64);
+    if ((status & 0x01U) == 0) return;   /* output buffer empty            */
+    if ((status & 0x20U) != 0) return;   /* this byte is from the mouse     */
     uint8_t ScanCode = Inb(0x60);
 
     if (ScanCode == 0xE0)
@@ -250,8 +261,10 @@ void KeyboardInterrupt(void)
         return;
     }
 
-    /* Ctrl+C requests an abort of the currently running guest program. */
-    if (KbdState.Ctrl && (Character == 'c' || Character == 'C'))
+    /* Ctrl+C (no Shift) requests an abort of the currently running guest
+       program.  Ctrl+Shift+C is reserved for the editor's copy command, so it
+       must be allowed through to the key buffer instead of being swallowed. */
+    if (KbdState.Ctrl && !KbdState.Shift && (Character == 'c' || Character == 'C'))
     {
         KbdAbortFlag = true;
         return;

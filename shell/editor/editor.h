@@ -8,6 +8,6 @@ bool EditorOpen(const char *Path);
 
 bool EditorIsActive(void);
 
-void EditorHandleKey(uint8_t Key, bool ControlHeld);
+void EditorHandleKey(uint8_t Key, bool ControlHeld, bool ShiftHeld);
 
 #endif

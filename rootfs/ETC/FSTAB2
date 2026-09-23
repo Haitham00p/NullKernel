@@ -1,0 +1,2 @@
+/sda1  /      fat32  rw  0 0
+tmpfs  /tmp   ramfs  rw  0 0

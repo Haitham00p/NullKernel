@@ -1,0 +1,5 @@
+NAME="NullOS"
+VERSION="1.0-selfhosting"
+ID=nullos
+PRETTY_NAME="NullOS 1.0 (self hosted)"
+HOME_URL="https://github.com/anomalyco/NullOS"

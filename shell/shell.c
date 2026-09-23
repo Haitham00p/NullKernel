@@ -265,7 +265,7 @@ void ShellUpdate(void)
 
         if (EditorIsActive())
         {
-            EditorHandleKey(Key, KbdGetState().Ctrl);
+            EditorHandleKey(Key, KbdGetState().Ctrl, KbdGetState().Shift);
             if (!EditorIsActive())
             {
                 CommandLength = 0;

@@ -9,6 +9,7 @@ BUILD_DIR := build
 ISO_DIR   := $(BUILD_DIR)/iso
 KERNEL    := $(BUILD_DIR)/kernel.elf
 ISO       := $(BUILD_DIR)/NullOS.iso
+DISK      ?= nullos.img
 VAULT_C   := ncc/vault_gen.c
 VAULT_H   := ncc/vault_gen.h
 
@@ -96,7 +97,8 @@ C_SOURCES := \
 	source/kstring.c \
 	source/kterminal.c \
 	source/kshell.c \
-	lib/sound/sndbeep.c
+	lib/sound/sndbeep.c \
+	Graphic/graphic.c
 
 ASM_OBJECTS := \
 	$(BUILD_DIR)/arch/x86_64/interrupts/isr_asm.o \
@@ -107,7 +109,7 @@ OBJECTS := $(C_SOURCES:%.c=$(BUILD_DIR)/%.o) $(ASM_OBJECTS)
 
 -include $(C_SOURCES:%.c=$(BUILD_DIR)/%.d)
 
-.PHONY: all clean vault run play
+.PHONY: all clean vault run play install boot
 
 .NOTPARALLEL:
 
@@ -168,6 +170,28 @@ $(ISO): $(KERNEL) $(ROOTFS_FILES) iso/boot/limine/limine.conf iso/EFI/BOOT/BOOTX
 		--efi-boot boot/limine/limine-uefi-cd.bin -no-emul-boot \
 		-o $@ $(ISO_DIR)
 	$(LIMINE)/limine bios-install $@
+
+# Reinstall the freshly built ISO onto the working disk image so the OS
+# always reflects the current source tree (formats the disk from $(ISO),
+# copying the full rootfs with correct uppercase names). Run sync_rootfs
+# first if you have OS-side edits you want to keep.
+install: $(ISO)
+	./run-install.sh $(DISK) --auto
+
+# Boot the installed disk in a visible QEMU window so you can see the OS.
+# Runs in the foreground so `make` blocks on it and any error is visible.
+# The previous QEMU PID is recorded in a pidfile and killed by exact PID
+# only (no pattern matching, which would match this recipe's own shell and
+# kill `make` itself).
+boot: $(DISK)
+	@if [ -f /tmp/nullos-qemu.pid ]; then \
+		kill -9 "$$(cat /tmp/nullos-qemu.pid)" 2>/dev/null || true; \
+		rm -f /tmp/nullos-qemu.pid; \
+	fi
+	@sleep 1
+	qemu-system-x86_64 -m 256 -boot order=c \
+		-drive "file=$(DISK),format=raw,if=ide,index=0" \
+		-serial file:/tmp/nullos-serial.log -display gtk
 
 run: all
 	./start.sh

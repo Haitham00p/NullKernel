@@ -423,7 +423,6 @@ bool NldLink(const NldObject *Objects, uint32_t Count,
                     break;
                 }
                 case N64O_R_ABS32:
-                case N64O_R_DISP32:
                 {
                     uint64_t v = sym->Addr + (uint64_t)r->Addend;
                     if (v > 0x7FFFFFFFULL)
@@ -435,6 +434,24 @@ bool NldLink(const NldObject *Objects, uint32_t Count,
                                     r->Name, objs[i].Name);
                     }
                     Wr32(site, (uint32_t)v);
+                    break;
+                }
+                case N64O_R_DISP32:
+                {
+                    /* RIP-relative memory operand (lea rdi,[rel sym],
+                       mov ...,[rel sym], etc.): disp32 is the signed delta
+                       from the end of the instruction to the symbol. */
+                    int64_t delta = (int64_t)sym->Addr +
+                                    (int64_t)r->Addend -
+                                    ((int64_t)site_va + 4);
+                    if (delta < -2147483648LL || delta > 2147483647LL)
+                    {
+                        N64A_FREE(img);
+                        return Fail(Diag,
+                                    "displacement out of range: ",
+                                    r->Name, objs[i].Name);
+                    }
+                    Wr32(site, (uint32_t)delta);
                     break;
                 }
                 case N64O_R_REL32:

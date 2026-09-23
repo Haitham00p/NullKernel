@@ -7,6 +7,7 @@
 #include "fs/fat32/file/file.h"
 #include "fs/partition/mbr/mbr.h"
 #include "lib/string/string.h"
+#include "kernel/terminal/terminal.h"
 #include "kernel/debug/debug.h"
 
 #define DISKFS_SECTOR_SIZE 512U
@@ -531,14 +532,84 @@ bool DiskFsRemove(const char *Name)
     return false;
 }
 
+/* ------------------------------------------------------------------ */
+/* Duplicate-folder lock                                               */
+/*                                                                    */
+/* Refuses to create a directory whose name is a numbered / case       */
+/* variant of an already-existing directory in the current folder      */
+/* (e.g. "HOME2" when "HOME" already exists).  This prevents the       */
+/* shell from ever spawning duplicate folders like HOME0..HOME5.       */
+/* ------------------------------------------------------------------ */
+
+static void DiskFsStripTrailingDigits(const char *Name, char *Out, uint32_t OutMax)
+{
+    uint32_t n = (uint32_t)strlen(Name);
+    while (n > 0U && Name[n - 1U] >= '0' && Name[n - 1U] <= '9')
+    {
+        n--;
+    }
+    uint32_t i = 0;
+    while (i < n && i + 1U < OutMax)
+    {
+        char c = Name[i];
+        if (c >= 'a' && c <= 'z') c -= 32;
+        Out[i] = c;
+        i++;
+    }
+    Out[i] = '\0';
+}
+
+typedef struct
+{
+    char  Base[64];
+    bool  Found;
+} DiskFsDupCtx;
+
+static bool DiskFsDupVisitor(const FAT32DirectoryEntry *Entry,
+                             const char *ShortName, void *Context)
+{
+    DiskFsDupCtx *ctx = (DiskFsDupCtx *)Context;
+    char existing[64];
+    (void)Entry;
+    DiskFsStripTrailingDigits(ShortName, existing, sizeof(existing));
+    if (existing[0] != '\0' && strcmp(existing, ctx->Base) == 0)
+    {
+        ctx->Found = true;
+        return false; /* stop walking */
+    }
+    return true;
+}
+
 bool DiskFsMkdir(const char *Name)
 {
     FAT32Directory Child;
+    char newbase[64];
 
     if (!g_Mounted || Name == NULL || Name[0] == '\0')
     {
         return false;
     }
+
+    /* Lock: deny directories that duplicate (by base, case- and digit-
+       insensitively) an existing directory in the current folder. */
+    DiskFsStripTrailingDigits(Name, newbase, sizeof(newbase));
+    if (newbase[0] != '\0')
+    {
+        DiskFsDupCtx ctx;
+        ctx.Found = false;
+        memcpy(ctx.Base, newbase, strlen(newbase) + 1U);
+        FAT32DirectoryForEach(&g_Cwd, DiskFsDupVisitor, &ctx);
+        if (ctx.Found)
+        {
+            TerminalPrintLine32("mkdir: denied: duplicate folder '",
+                                0x00FFA500U);
+            TerminalWrite32(Name, 0x00FFA500U);
+            TerminalPrintLine32("' (a folder with that base already exists)",
+                                0x00FFA500U);
+            return false;
+        }
+    }
+
     return FAT32DirectoryCreateDirectory(&g_Cwd, Name, &Child);
 }
 

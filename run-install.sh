@@ -59,7 +59,7 @@ echo "[*] installing Limine BIOS bootloader on $IMG"
 
 if [ "$AUTO" = 1 ]; then
     echo "[*] booting NullOS live CD, disk: $IMG (auto-pressing I to install)"
-    qemu-system-x86_64 -m 256 -boot order=d -cdrom "$ISO" \
+    qemu-system-x86_64 -m 1024 -boot order=d -cdrom "$ISO" \
         -hda "$IMG" \
         -serial file:/tmp/nullos-install-serial.log -display none \
         -monitor unix:/tmp/nullos-mon.sock,server,nowait &
@@ -100,5 +100,5 @@ EOF
 fi
 
 echo "[*] booting NullOS live CD, disk: $IMG (press I in the VM to install)"
-exec qemu-system-x86_64 -m 256 -boot order=d -cdrom "$ISO" \
+exec qemu-system-x86_64 -m 1024 -boot order=d -cdrom "$ISO" \
     -hda "$IMG" -serial stdio

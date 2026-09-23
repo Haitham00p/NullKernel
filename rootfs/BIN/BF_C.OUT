@@ -1,0 +1,86 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+
+static unsigned char Cells[1000];
+
+void main(void)
+{
+    char code[256];
+    unsigned char *ptr;
+    char *pc;
+    unsigned int depth;
+
+    if (ShellArgCount() < 1)
+    {
+        puts("usage: bf <brainfuck-program>");
+        puts("example: bf ++++++++++ [>++++++++++<-]>.");
+        return;
+    }
+    ShellArgGet(0, code, (uint32_t)sizeof(code));
+    ptr = Cells;
+    pc = code;
+    while (*pc != '\0')
+    {
+        if (*pc == '>')
+        {
+            ptr++;
+        }
+        else if (*pc == '<')
+        {
+            ptr--;
+        }
+        else if (*pc == '+')
+        {
+            *ptr = *ptr + 1;
+        }
+        else if (*pc == '-')
+        {
+            *ptr = *ptr - 1;
+        }
+        else if (*pc == '.')
+        {
+            putchar((int)*ptr);
+        }
+        else if (*pc == '[')
+        {
+            if (*ptr == 0)
+            {
+                depth = 1;
+                while (depth > 0)
+                {
+                    pc++;
+                    if (*pc == '[')
+                    {
+                        depth++;
+                    }
+                    else if (*pc == ']')
+                    {
+                        depth--;
+                    }
+                }
+            }
+        }
+        else if (*pc == ']')
+        {
+            if (*ptr != 0)
+            {
+                depth = 1;
+                while (depth > 0)
+                {
+                    pc--;
+                    if (*pc == ']')
+                    {
+                        depth++;
+                    }
+                    else if (*pc == '[')
+                    {
+                        depth--;
+                    }
+                }
+            }
+        }
+        pc++;
+    }
+    putchar('\n');
+}

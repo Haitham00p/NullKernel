@@ -1,0 +1,10 @@
+[BOOT] Kernel entry point reached @ FFFFFFFF80007251
+[ OK ] Interrupt descriptor table online @ FFFFFFFF8000016C
+[ OK ] Exception handlers installed @ FFFFFFFF800001BF
+[ OK ] Hardware IRQ routing armed @ FFFFFFFF80000273
+[ OK ] Keyboard driver ready @ FFFFFFFF80000654
+[ OK ] IDE Driver: ATAPI CD-ROM drive detected and active @ FFFFFFFF80001572
+[ ERROR ] ISO9660 : Invalid PVD Sector @ FFFFFFFF80020F2A (IT IS NORMAL IF YOUR NULLOS WAS INSTALLED IN A HARD DISK)
+[ OK ] PIT is online @ FFFFFFFF80021B6F
+[ OK ] Kernel heap online @ FFFFFFFF8000D1D5
+[ OK ] IDE Driver: switched to ATA hard disk @ FFFFFFFF800016E5

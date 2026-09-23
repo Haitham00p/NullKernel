@@ -1,0 +1,51 @@
+#ifndef VBR_H
+#define VBR_H
+
+#include <stdbool.h>
+#include <stdint.h>
+
+/* Layout of the first sector of a FAT32 volume, exactly as stored on disk. */
+typedef struct __attribute__((packed))
+{
+    uint8_t JumpInstruction[3];
+    char OEMName[8];
+    uint16_t BytesPerSector;
+    uint8_t SectorsPerCluster;
+    uint16_t ReservedSectorCount;
+    uint8_t NumberOfFATs;
+    uint16_t RootEntryCount;
+    uint16_t TotalSectors16;
+    uint8_t MediaDescriptor;
+    uint16_t FATSize16;
+    uint16_t SectorsPerTrack;
+    uint16_t NumberOfHeads;
+    uint32_t HiddenSectors;
+    uint32_t TotalSectors32;
+    uint32_t FATSize32;
+    uint16_t Flags;
+    uint16_t FATVersion;
+    uint32_t RootCluster;
+    uint16_t FSInfoSector;
+    uint16_t BackupBootSector;
+    uint8_t Reserved[12];
+    uint8_t DriveNumber;
+    uint8_t Reserved1;
+    uint8_t BootSignature;
+    uint32_t VolumeID;
+    char VolumeLabel[11];
+    char FileSystemType[8];
+} FAT32BootSector;
+
+bool FAT32IsValid(const FAT32BootSector *Boot);
+
+uint32_t FAT32GetFirstFATSector(const FAT32BootSector *Boot,
+                                 uint32_t PartitionStartLBA);
+
+uint32_t FAT32GetFirstDataSector(const FAT32BootSector *Boot,
+                                  uint32_t PartitionStartLBA);
+
+uint32_t FAT32ClusterToLBA(const FAT32BootSector *Boot,
+                           uint32_t PartitionStartLBA,
+                           uint32_t Cluster);
+
+#endif

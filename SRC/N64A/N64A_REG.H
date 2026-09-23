@@ -1,0 +1,28 @@
+#ifndef N64A_REG_H
+#define N64A_REG_H
+
+#include "n64a.h"
+
+/* Operand sizes in bytes. */
+#define N64_SZ8   1U
+#define N64_SZ16  2U
+#define N64_SZ32  4U
+#define N64_SZ64  8U
+
+/* Canonical x86-64 GPR encoding index (0..15):
+ *   0=rax 1=rcx 2=rdx 3=rbx 4=rsp 5=rbp 6=rsi 7=rdi 8..15=r8..r15
+ * This matches the legacy instruction encoding order, so:
+ *   - byte-codable registers are idx < 8
+ *   - REX.B / REX.X / REX.R extend with bit 3 of the index              */
+typedef struct
+{
+    uint8_t  Index;     /* 0..15                                        */
+    uint8_t  Size;      /* N64_SZ* of THIS name (al != eax)             */
+    bool     NeedsRex;  /* spl/bpl/sil/dil and r8..r15 byte forms       */
+} N64Reg;
+
+/* Looks up a general-purpose register by its NASM-style name.
+ * Returns false when Name is not a register. */
+bool N64RegFind(const char *Name, N64Reg *Out);
+
+#endif

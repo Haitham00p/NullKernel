@@ -5,6 +5,17 @@
 #include <stddef.h>
 
 void FbInit32(void);
+/* Allocate the double-buffer back buffer; call AFTER HeapInitialize(). */
+void FbInitDoubleBuffer(void);
+
+
+
+void FbPresent32(void);
+
+/* Mark a region of the back buffer as changed so the next present blits it.
+   Used by the terminal renderer, which writes cells directly into the back
+   buffer and must inform the present path what changed. */
+void FbMarkDirty(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1);
 
 void FbPrintPixel32(uint32_t x,
                     uint32_t y,
@@ -51,4 +62,12 @@ void FbCopyRect32(uint32_t SrcX,
 uint32_t FbReadPixel32(
     uint32_t x,
     uint32_t y);
+
+
+void FrDrawLine32(uint32_t x0,
+                  uint32_t y0,
+                  uint32_t x1,
+                  uint32_t y1,
+                  uint32_t color);
+                  
 #endif

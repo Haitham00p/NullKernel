@@ -42,6 +42,8 @@ void     SelfHostExeName(const char *SourceName, char *ExeName);
 
 /* n64a / nld toolchain entry points (shell commands and guests). */
 bool SelfHostAssembleFile(const char *SourceName, const char *OutName);
+bool SelfHostAssembleObject(const char *SourceName, uint8_t **OutObject,
+                            uint32_t *OutObjectSize);
 bool SelfHostLinkFiles(const char **ObjectNames, uint32_t Count,
                        const char *OutName);
 

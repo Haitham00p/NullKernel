@@ -15,6 +15,7 @@
 #include "fs/partition/mbr/mbr.h"
 #include "mm/heap/heap.h"
 #include "lib/string/string.h"
+#include "libc/stdlib.h"
 
 #define INSTALL_ISO_SECTOR 2048U
 #define INSTALL_MAX_DEPTH  8U
@@ -930,6 +931,12 @@ bool InstallerRun(void)
 
         TerminalPrintLine32("  [phase] final free space", INST_COLOR_TITLE);
         InstallDumpBPB(&Boot, Info.PartitionStartLBA);
+
+        /* Compile every /BIN/*.C into a /BIN/*.EXE ONCE, here at install
+           time, so the installed OS boots straight from the executables that
+           already exist on the disk (no recompile at boot or reboot). */
+        TerminalPrintLine32("  [phase] one-time self-host build of /BIN", INST_COLOR_TITLE);
+        ShellBootBuild();
     }
 
     InstallBar("I N S T A L L   S U C C E S S");

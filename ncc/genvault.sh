@@ -13,7 +13,7 @@ OUT_H="${3:-${OUT_C%.c}.h}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-HEADER_DIRS="libc include source arch drivers fs kernel lib mm shell"
+HEADER_DIRS="libc include source arch drivers fs kernel lib mm shell Graphic"
 
 escape_c() {
     sed -e ':a;N;$!ba' \

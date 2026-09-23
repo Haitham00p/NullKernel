@@ -10,7 +10,9 @@
 #include "include/diskfs.h"
 #include "shell/editor/editor.h"
 #include "libc/stdlib.h"
+#include "libc/string.h"
 #include "ncc/ncc.h"
+#include "n64a/n64a.h"
 #include <stdbool.h>
 #include "../../arch/x86_64/power/pwr.h"
 #include "fs/ISO9660/iso9660.h"
@@ -106,6 +108,7 @@ void CmdHelp(const char *Category)
         TerminalPrintLine32("  rm <file>                       Remove file", PromColor);
         TerminalPrintLine32("  edit <file>                     Open NullEdit text editor", PromColor);
         TerminalPrintLine32("  tree                            Display directory tree", PromColor);
+        TerminalPrintLine32("  cp <src> <dst>                  Copy file or directory (recursive)", PromColor);
         return;
     }
 
@@ -366,12 +369,13 @@ void CmdTouch(const char *Path)
     if (!DiskFsTouch(Path)) TerminalPrintLine32("touch: cannot create file", 0x00FF0000);
 }
 
-void CmdCat(const char *Path)
+void CmdCat(const char *Path, const char *LineArg)
 {
     FAT32DirectoryEntry Entry;
     const FAT32Directory *Cwd;
     uint8_t *Buffer;
     uint32_t BytesRead = 0;
+    uint64_t LineVal = 0;
 
     if (!DiskFsIsMounted() && !DiskFsMount())
     {
@@ -397,6 +401,49 @@ void CmdCat(const char *Path)
         return;
     }
     Buffer[BytesRead] = '\0';
+
+    if (LineArg != NULL)
+    {
+        if (!ParseNumber(LineArg, &LineVal) || LineVal == 0)
+        {
+            TerminalPrintLine32("cat: invalid line number", 0x00FF0000);
+            kfree(Buffer);
+            return;
+        }
+        /* Print only the requested 1-based line. */
+        const char *S = (const char *)Buffer;
+        const char *LineStart = NULL;
+        uint64_t Cur = 1;
+        while (*S != '\0')
+        {
+            if (Cur == LineVal)
+            {
+                LineStart = S;
+                break;
+            }
+            while (*S != '\0' && *S != '\n')
+            {
+                S++;
+            }
+            if (*S == '\n')
+            {
+                S++;
+            }
+            Cur++;
+        }
+        if (LineStart != NULL)
+        {
+            while (*LineStart != '\0' && *LineStart != '\n')
+            {
+                TerminalPutChar32(*LineStart, PromColor);
+                LineStart++;
+            }
+        }
+        TerminalPutChar32('\n', PromColor);
+        kfree(Buffer);
+        return;
+    }
+
     HighlightPrintFile(Path, (const char *)Buffer);
     TerminalPutChar32('\n', PromColor);
 }
@@ -634,10 +681,11 @@ void CmdNcc(const PARSED_COMMAND *Command)
     uint8_t *Image = NULL;
     uint32_t Bytes = 0;
     uint32_t ImageSize = 0;
+    bool ObjOnly = false;
 
     if (Command == NULL || Command->ArgCount == 0U)
     {
-        TerminalPrintLine32("Usage: ncc [-o <out.exe>] <file.c>", 0x00FF0000);
+        TerminalPrintLine32("Usage: ncc [-o <out>] [--obj] <file.c>", 0x00FF0000);
         return;
     }
     for (uint32_t i = 0; i < Command->ArgCount; i++)
@@ -652,6 +700,10 @@ void CmdNcc(const PARSED_COMMAND *Command)
             Out = Command->Args[i + 1U];
             i++;
         }
+        else if (strcasecmp(Command->Args[i], "--obj") == 0)
+        {
+            ObjOnly = true;
+        }
         else if (Src == NULL)
         {
             Src = Command->Args[i];
@@ -659,7 +711,7 @@ void CmdNcc(const PARSED_COMMAND *Command)
     }
     if (Src == NULL)
     {
-        TerminalPrintLine32("Usage: ncc [-o <out.exe>] <file.c>", 0x00FF0000);
+        TerminalPrintLine32("Usage: ncc [-o <out>] [--obj] <file.c>", 0x00FF0000);
         return;
     }
     if (!DiskFsIsMounted())
@@ -675,7 +727,15 @@ void CmdNcc(const PARSED_COMMAND *Command)
     Source[Bytes] = '\0';
     TerminalWrite32("ncc: compiling ", PromColor);
     TerminalPrintLine32(Src, PromColor);
-    if (!NccCompile(Src, Source, Bytes, &Image, &ImageSize))
+    if (ObjOnly)
+    {
+        if (!NccCompileObject(Src, Source, Bytes, &Image, &ImageSize))
+        {
+            TerminalPrintLine32("ncc: compile failed", 0x00FF5C77);
+            return;
+        }
+    }
+    else if (!NccCompile(Src, Source, Bytes, &Image, &ImageSize))
     {
         TerminalPrintLine32("ncc: compile failed", 0x00FF5C77);
         return;
@@ -711,7 +771,7 @@ void CmdNcc(const PARSED_COMMAND *Command)
         TerminalWrite32("ncc: wrote ", PromColor);
         TerminalPrintLine32(Out, PromColor);
     }
-    else
+    else if (!ObjOnly)
     {
         char ExeName[13];
         SelfHostExeName(Src, ExeName);
@@ -724,10 +784,92 @@ void CmdNcc(const PARSED_COMMAND *Command)
         TerminalWrite32("ncc: wrote ", PromColor);
         TerminalPrintLine32(ExeName, PromColor);
     }
+    else
+    {
+        char ObjName[16];
+        uint32_t b = 0;
+        while (Src[b] != '\0' && Src[b] != '.' && b < 8U)
+        {
+            ObjName[b] = Src[b];
+            b++;
+        }
+        strcpy(ObjName + b, ".OBJ");
+        if (!DiskFsWrite(ObjName, Image, ImageSize))
+        {
+            TerminalPrintLine32("ncc: cannot write output", 0x00FF5C77);
+            kfree(Image);
+            return;
+        }
+        TerminalWrite32("ncc: wrote ", PromColor);
+        TerminalPrintLine32(ObjName, PromColor);
+    }
     kfree(Image);
 }
 
-/* n64a <file.asm> [-o <out.obj>] — the NullOS x86-64 assembler. */
+/* ---- n64a -lc / --obj support -------------------------------------------------
+ * The kernel symbol vault is the set of "known APIs" we can link against.
+ * External references that are neither in the vault nor defined inside the
+ * object itself are unknown APIs. */
+
+static uint32_t SH_Rd32(const uint8_t *p)
+{
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+/* Collect the names of external references that are NOT known APIs and NOT
+ * symbols defined inside this object. Returns the count (capped at Max). */
+static uint32_t SH_CollectUnknownApis(const uint8_t *Obj, uint32_t Size,
+                                      char (*Out)[N64O_NAME_MAX], uint32_t Max)
+{
+    uint32_t text, data, nsym, nfix, symOff, relOff, i, cnt = 0;
+
+    if (Obj == NULL || Size < N64O_HDRSZ)
+        return 0;
+    text = SH_Rd32(Obj + 16);
+    data = SH_Rd32(Obj + 20);
+    nsym = SH_Rd32(Obj + 24);
+    nfix = SH_Rd32(Obj + 28);
+    symOff = N64O_HDRSZ + text + data;
+    relOff = symOff + nsym * (uint32_t)sizeof(N64ObjSymbol);
+
+    for (i = 0; i < nfix; i++)
+    {
+        const char *name = (const char *)(Obj + relOff +
+                                          i * (uint32_t)sizeof(N64ObjReloc) + 12);
+        uint32_t j;
+        bool dup = false;
+
+        if (name[0] == '\0')
+            continue;
+        if (NccVaultHasSymbol(name))
+            continue;
+        /* defined locally inside this object? */
+        for (j = 0; j < nsym; j++)
+        {
+            const char *ls = (const char *)(Obj + symOff +
+                                           j * (uint32_t)sizeof(N64ObjSymbol) + 4);
+            if (ls[0] != '\0' && strcmp(ls, name) == 0)
+                break;
+        }
+        if (j < nsym)
+            continue;
+        for (j = 0; j < cnt; j++)
+            if (strcmp(Out[j], name) == 0) { dup = true; break; }
+        if (!dup && cnt < Max)
+        {
+            strncpy(Out[cnt], name, N64O_NAME_MAX - 1U);
+            Out[cnt][N64O_NAME_MAX - 1U] = '\0';
+            cnt++;
+        }
+    }
+    return cnt;
+}
+
+/* n64a <file.asm> [-o <out.obj>] [--obj] [-lc]
+ *   --obj : emit a .obj and do NOT auto-link to .exe
+ *   -lc   : link-check external APIs against the kernel symbol vault
+ *           (known APIs link; unknown APIs warn or error depending on --obj) */
 void CmdN64a(const PARSED_COMMAND *Command)
 {
     const char *Src = NULL;
@@ -735,10 +877,12 @@ void CmdN64a(const PARSED_COMMAND *Command)
     char DefaultOut[16];
     char ExeName[16];
     uint32_t b;
+    bool ObjOnly = false;
+    bool LinkCheck = false;
 
     if (Command == NULL || Command->ArgCount == 0U)
     {
-        TerminalPrintLine32("Usage: n64a <file.asm> [-o <out.obj>]",
+        TerminalPrintLine32("Usage: n64a <file.asm> [-o <out.obj>] [--obj] [-lc]",
                             0x00FF0000);
         return;
     }
@@ -754,6 +898,14 @@ void CmdN64a(const PARSED_COMMAND *Command)
             Out = Command->Args[i + 1U];
             i++;
         }
+        else if (strcasecmp(Command->Args[i], "--obj") == 0)
+        {
+            ObjOnly = true;
+        }
+        else if (strcasecmp(Command->Args[i], "-lc") == 0)
+        {
+            LinkCheck = true;
+        }
         else if (Src == NULL)
         {
             Src = Command->Args[i];
@@ -761,13 +913,13 @@ void CmdN64a(const PARSED_COMMAND *Command)
     }
     if (Src == NULL)
     {
-        TerminalPrintLine32("Usage: n64a <file.asm> [-o <out.obj>]",
+        TerminalPrintLine32("Usage: n64a <file.asm> [-o <out.obj>] [--obj] [-lc]",
                             0x00FF0000);
         return;
     }
     if (Out == NULL)
     {
-        uint32_t b = 0;
+        b = 0;
         while (Src[b] != '\0' && Src[b] != '.' && b < 8U)
         {
             DefaultOut[b] = Src[b];
@@ -776,13 +928,70 @@ void CmdN64a(const PARSED_COMMAND *Command)
         strcpy(DefaultOut + b, ".OBJ");
         Out = DefaultOut;
     }
-    if (!SelfHostAssembleFile(Src, Out))
+
+    if (!DiskFsIsMounted())
     {
+        TerminalPrintLine32("n64a: no disk mounted", 0xFF5C5CFF);
+        return;
+    }
+    uint8_t *Obj = NULL;
+    uint32_t Sz = 0;
+    if (!SelfHostAssembleObject(Src, &Obj, &Sz))
+    {
+        kfree(Obj);
         return;
     }
 
-    /* auto-link: assemble + link in one step so no separate nld run is
-     * needed for single-object programs (nld stays for multi-object). */
+    char Unk[64][N64O_NAME_MAX];
+    uint32_t UnkCount = 0;
+    if (LinkCheck)
+        UnkCount = SH_CollectUnknownApis(Obj, Sz, Unk, 64U);
+
+    if (LinkCheck && UnkCount > 0U)
+    {
+        if (ObjOnly)
+        {
+            for (uint32_t i = 0; i < UnkCount; i++)
+            {
+                TerminalWrite32("WARNING: ", 0xFFFFAA00);
+                TerminalWrite32(Unk[i], 0xFFFFAA00);
+                TerminalPrintLine32(" is unknown api, I will expect link with other .obj",
+                                    0xFFFFAA00);
+            }
+            if (DiskFsWrite(Out, Obj, Sz))
+            {
+                TerminalWrite32("n64a: wrote ", 0xFF88FF88);
+                TerminalPrintLine32(Out, 0xFF88FF88);
+            }
+            kfree(Obj);
+            return;
+        }
+        for (uint32_t i = 0; i < UnkCount; i++)
+        {
+            TerminalWrite32("ERROR: ", 0x00FF0000);
+            TerminalWrite32(Unk[i], 0x00FF0000);
+            TerminalPrintLine32(" is unknown, if this is from a C file, please add --obj then link them by nld",
+                                0x00FF0000);
+        }
+        kfree(Obj);
+        return;
+    }
+
+    /* write the object */
+    if (!DiskFsWrite(Out, Obj, Sz))
+    {
+        TerminalPrintLine32("n64a: cannot write output", 0xFF5C5CFF);
+        kfree(Obj);
+        return;
+    }
+    TerminalWrite32("n64a: wrote ", 0xFF88FF88);
+    TerminalPrintLine32(Out, 0xFF88FF88);
+    kfree(Obj);
+
+    if (ObjOnly)
+        return;
+
+    /* auto-link into a .exe (default behaviour when not --obj) */
     b = 0;
     while (Out[b] != '\0' && Out[b] != '.' && b < 8U)
     {
@@ -1501,4 +1710,310 @@ void CmdNSong(uint64_t Freq1, uint32_t Last1, uint64_t Freq2, uint32_t Last2, ui
     StartBeep(Freq4, Last4);
     StartBeep(Freq5, Last5);
     StartBeep(Freq6, Last6);
+}
+
+/* ----------------------------- cp ----------------------------- */
+
+static void CpStripTrailingSlash(char *p)
+{
+    uint32_t n = strlen(p);
+    while (n > 1U && p[n - 1U] == '/')
+    {
+        p[--n] = '\0';
+    }
+}
+
+/* Split an absolute or relative path into its directory part (no trailing
+ * slash, except "/" itself) and the final component name. */
+static void CpSplit(const char *path, char *dir, uint32_t dirN,
+                    char *name, uint32_t nameN)
+{
+    uint32_t len = strlen(path);
+    uint32_t last = 0U;
+    uint32_t i;
+    for (i = 0U; i < len; i++)
+    {
+        if (path[i] == '/')
+        {
+            last = i;
+        }
+    }
+    if (len > 0U && path[last] == '/')
+    {
+        if (last == 0U)
+        {
+            strcpy(dir, "/");
+            if (len > 1U)
+            {
+                strncpy(name, path + 1U, nameN - 1U);
+            }
+            else
+            {
+                name[0] = '\0';
+            }
+            name[nameN - 1U] = '\0';
+        }
+        else
+        {
+            if (last < dirN)
+            {
+                strncpy(dir, path, last);
+            }
+            dir[last] = '\0';
+            strncpy(name, path + last + 1U, nameN - 1U);
+            name[nameN - 1U] = '\0';
+        }
+    }
+    else
+    {
+        strcpy(dir, ".");
+        strncpy(name, path, nameN - 1U);
+        name[nameN - 1U] = '\0';
+    }
+}
+
+/* True when path refers to an existing directory (absolute or relative). */
+static bool CpIsDir(const char *path)
+{
+    char dir[DISKFS_PATH_MAX];
+    char name[DISKFS_PATH_MAX];
+    FAT32DirectoryEntry e;
+    uint32_t len = strlen(path);
+    if (len == 0U)
+    {
+        return false;
+    }
+    if (path[len - 1U] == '/')
+    {
+        return true;
+    }
+    CpSplit(path, dir, sizeof(dir), name, sizeof(name));
+    if (name[0] == '\0')
+    {
+        return true;
+    }
+    if (DiskFsFindInPath(dir, name, &e))
+    {
+        return (e.Attributes & FAT32_ATTRIBUTE_DIRECTORY) != 0U;
+    }
+    if (strcmp(dir, ".") == 0)
+    {
+        return DiskFsIsDirectory(name);
+    }
+    return false;
+}
+
+static bool CpCopyFile(const char *src, const char *dst)
+{
+    char sDir[DISKFS_PATH_MAX];
+    char sName[DISKFS_PATH_MAX];
+    char dDir[DISKFS_PATH_MAX];
+    char dName[DISKFS_PATH_MAX];
+    char finalDst[DISKFS_PATH_MAX];
+    uint32_t size = 0U;
+    uint8_t *buf;
+    uint32_t read = 0U;
+
+    CpSplit(src, sDir, sizeof(sDir), sName, sizeof(sName));
+    if (!DiskFsFileSizeInPath(sDir, sName, &size))
+    {
+        TerminalPrintLine32("cp: cannot stat source", 0xFFFF0000U);
+        return false;
+    }
+    buf = (uint8_t *)kmalloc(size ? size : 1U);
+    if (buf == NULL)
+    {
+        TerminalPrintLine32("cp: out of memory", 0xFFFF0000U);
+        return false;
+    }
+    if (!DiskFsReadInPath(sDir, sName, buf, size, &read))
+    {
+        TerminalPrintLine32("cp: read failed", 0xFFFF0000U);
+        kfree(buf);
+        return false;
+    }
+
+    if (CpIsDir(dst) || DiskFsIsDirectory(dst))
+    {
+        char tmp[DISKFS_PATH_MAX];
+        strcpy(tmp, dst);
+        CpStripTrailingSlash(tmp);
+        strcpy(finalDst, tmp);
+        strcat(finalDst, "/");
+        strcat(finalDst, sName);
+    }
+    else
+    {
+        strcpy(finalDst, dst);
+    }
+
+    CpSplit(finalDst, dDir, sizeof(dDir), dName, sizeof(dName));
+    if (dDir[0] != '\0' && strcmp(dDir, ".") != 0)
+    {
+        DiskFsMkdirAll(dDir);
+    }
+    if (DiskFsWriteInPath(dDir, dName, buf, read))
+    {
+        kfree(buf);
+        return true;
+    }
+    TerminalPrintLine32("cp: write failed", 0xFFFF0000U);
+    kfree(buf);
+    return false;
+}
+
+static void CpCopyTree(const char *srcDir, const char *dstDir)
+{
+    char saved[DISKFS_PATH_MAX];
+    char list[4096];
+    char childSrc[DISKFS_PATH_MAX];
+    char childDst[DISKFS_PATH_MAX];
+    uint32_t off = 0U;
+
+    DiskFsPwd(saved, sizeof(saved));
+    if (!DiskFsChdirPath(srcDir))
+    {
+        TerminalPrintLine32("cp: cannot open source directory", 0xFFFF0000U);
+        return;
+    }
+    list[0] = '\0';
+    DiskFsListNames(list, sizeof(list));
+    while (list[off] != '\0')
+    {
+        char name[64];
+        uint32_t n = 0U;
+        while (list[off] != '\0' && list[off] != '\n' && n < sizeof(name) - 1U)
+        {
+            name[n++] = list[off++];
+        }
+        if (list[off] == '\n')
+        {
+            off++;
+        }
+        name[n] = '\0';
+        if (name[0] == '\0')
+        {
+            continue;
+        }
+        if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
+        {
+            continue;
+        }
+
+        strcpy(childSrc, srcDir);
+        CpStripTrailingSlash(childSrc);
+        strcat(childSrc, "/");
+        strcat(childSrc, name);
+
+        if (DiskFsIsDirectory(name))
+        {
+            strcpy(childDst, dstDir);
+            CpStripTrailingSlash(childDst);
+            strcat(childDst, "/");
+            strcat(childDst, name);
+            DiskFsMkdirAll(childDst);
+            CpCopyTree(childSrc, childDst);
+        }
+        else
+        {
+            uint32_t size = 0U;
+            uint8_t *buf;
+            uint32_t read = 0U;
+            char dDir[DISKFS_PATH_MAX];
+            char dName[DISKFS_PATH_MAX];
+            if (!DiskFsFileSize(name, &size))
+            {
+                continue;
+            }
+            buf = (uint8_t *)kmalloc(size ? size : 1U);
+            if (buf == NULL)
+            {
+                continue;
+            }
+            if (!DiskFsRead(name, buf, size, &read))
+            {
+                kfree(buf);
+                continue;
+            }
+            strcpy(childDst, dstDir);
+            CpStripTrailingSlash(childDst);
+            strcat(childDst, "/");
+            strcat(childDst, name);
+            CpSplit(childDst, dDir, sizeof(dDir), dName, sizeof(dName));
+            if (dDir[0] != '\0' && strcmp(dDir, ".") != 0)
+            {
+                DiskFsMkdirAll(dDir);
+            }
+            DiskFsWriteInPath(dDir, dName, buf, read);
+            kfree(buf);
+        }
+    }
+    DiskFsChdirPath(saved);
+}
+
+void CmdCp(const char *Src, const char *Dst)
+{
+    if (Src == NULL || Dst == NULL)
+    {
+        TerminalPrintLine32("Usage: cp <source> <dest>", 0x00FF0000U);
+        return;
+    }
+    if (!DiskFsIsMounted() && !DiskFsMount())
+    {
+        TerminalPrintLine32("cp: no disk mounted", 0xFFFF0000U);
+        return;
+    }
+
+    if (CpIsDir(Src) || DiskFsIsDirectory(Src))
+    {
+        char finalDir[DISKFS_PATH_MAX];
+        char base[DISKFS_PATH_MAX];
+        uint32_t len = strlen(Src);
+        uint32_t last = 0U;
+        uint32_t i;
+        for (i = 0U; i < len; i++)
+        {
+            if (Src[i] == '/')
+            {
+                last = i;
+            }
+        }
+        if (len > 0U && Src[last] == '/')
+        {
+            strncpy(base, Src + last + 1U, sizeof(base) - 1U);
+        }
+        else
+        {
+            strcpy(base, Src);
+        }
+        base[sizeof(base) - 1U] = '\0';
+
+        {
+            char tmp[DISKFS_PATH_MAX];
+            uint32_t dlen = strlen(Dst);
+            strcpy(tmp, Dst);
+            CpStripTrailingSlash(tmp);
+            if ((dlen > 0U && Dst[dlen - 1U] == '/') || CpIsDir(Dst) ||
+                DiskFsIsDirectory(Dst))
+            {
+                strcpy(finalDir, tmp);
+                strcat(finalDir, "/");
+                strcat(finalDir, base);
+            }
+            else
+            {
+                strcpy(finalDir, Dst);
+            }
+        }
+        DiskFsMkdirAll(finalDir);
+        CpCopyTree(Src, finalDir);
+        TerminalPrintLine32("cp: directory copied", 0x0057DB92U);
+    }
+    else
+    {
+        if (CpCopyFile(Src, Dst))
+        {
+            TerminalPrintLine32("cp: copied", 0x0057DB92U);
+        }
+    }
 }

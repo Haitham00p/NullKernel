@@ -1160,9 +1160,38 @@ bool DispatcherTryDiskCommand(const PARSED_COMMAND *Command)
     {
         /* "./name": run <name>.EXE located in the current working directory,
            like a Unix "./program".  A bare command still resolves to /BIN. */
-        DiskFsPwd(Cwd, sizeof(Cwd));
-        SelfHostExeName(Command->Command + 2U, ExeName);
-        Dir = Cwd;
+        uint32_t che = 0;
+        bool IsExe = false;
+
+        while (Command->Command[che] != '\0')
+        {
+
+        if (Command->Command[che] == '.')
+        {
+            if ((Command->Command[che + 1] == 'E' ||
+                 Command->Command[che + 1] == 'e') &&
+                (Command->Command[che + 2] == 'X' ||
+                 Command->Command[che + 2] == 'x') &&
+                (Command->Command[che + 3] == 'E' ||
+                 Command->Command[che + 3] == 'e'))
+            {
+                IsExe = true;
+                break;
+            }
+        }
+
+        che++;
+    }
+
+    if (!IsExe)
+    {
+        TerminalPrintLine32("This isn't executable file, Aborting...\n", PromColor);
+        return false;
+    }
+
+    DiskFsPwd(Cwd, sizeof(Cwd));
+    SelfHostExeName(Command->Command + 2U, ExeName);
+    Dir = Cwd;
     }
     else
     {

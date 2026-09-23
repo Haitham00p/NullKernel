@@ -9,6 +9,7 @@
 #include "arch/x86_64/cpu/io.h"
 #include "kernel/debug/debug.h"
 #include "shell/shell.h"
+#include "include/diskfs.h"
 #include "vendor/limine/limine.h"
 #include <stddef.h>
 #include "mm/heap/heap.h"
@@ -19,17 +20,29 @@
 #include "../Kernel/drivers/timer/PIT.h"
 #include "installer/installer.h"
 #include "libc/stdlib.h"
+#include "libc/stdio.h"
 
 extern struct limine_memmap_request MemMapReq;
 
 
 void kernel_main(void)
 {
+    /* Enable SSE (CR4.OSFXSR) so varargs prologues using MOVAPS execute
+       instead of raising #UD. Also set CR0.MP=1, CR0.EM=0, CR0.NE=1. */
+    {
+        uint64_t cr0, cr4;
+        __asm__ volatile("mov %%cr0, %0" : "=r"(cr0));
+        __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
+        cr0 |= (1ULL << 1) | (1ULL << 5);
+        cr0 &= ~(1ULL << 2);
+        cr4 |= (1ULL << 9) | (1ULL << 10);
+        __asm__ volatile("mov %0, %%cr0" :: "r"(cr0));
+        __asm__ volatile("mov %0, %%cr4" :: "r"(cr4));
+    }
+
     DbgSerialInit();
     FbInit32();
 
-    TerminalInit32();
-    TerminalClear32(0x00000000);
     if (MemMapReq.response == NULL)
     {
         PanicKernel("Memory Map Not Found", (uintptr_t)kernel_main);
@@ -46,7 +59,6 @@ void kernel_main(void)
     DbgInfo("Exception handlers installed", (uintptr_t)ISRInitialize);
     DbgIntr("Exception handlers installed (ISRs 0-31)", (uintptr_t)ISRInitialize);
 
-
     IRQInitialize();
     DbgInfo("Hardware IRQ routing armed", (uintptr_t)IRQInitialize);
     DbgIntr("Hardware IRQ routing armed (IRQs 0-15)", (uintptr_t)IRQInitialize);
@@ -55,6 +67,7 @@ void kernel_main(void)
     KbdInitialize();
     DbgInfo("Keyboard driver ready", (uintptr_t)KbdInitialize);
     DbgIntr("Keyboard driver ready (IRQ1)", (uintptr_t)KbdInitialize);
+
     struct limine_memmap_response *Response;
     struct limine_memmap_entry *Entry;
 
@@ -102,6 +115,12 @@ void kernel_main(void)
         PanicKernel("No Usable Entry Found For Heap", (uintptr_t)HeapInitialize);
     }
     HeapInitialize(HeapBase, HeapLength);
+    /* Double-buffer + terminal must come up AFTER the heap is live, since the
+       back buffer is kmalloc()'d. TerminalInit32 captures the (now back)
+       framebuffer address, so it must run after FbInitDoubleBuffer(). */
+    FbInitDoubleBuffer();
+    TerminalInit32();
+    TerminalClear32(0x00000000);
     ISOInitialize();
     PITInitialize(Freq);
     DbgInfo("PIT is online", (uintptr_t)PITInitialize);
@@ -133,11 +152,11 @@ void kernel_main(void)
         InstallerRun();
     }
 
-    /* Mount the installed hard disk (when present) and rebuild every
-       /BIN source program into a /BIN executable so the OS only depends on
-       what is stored on the disk itself. */
+    /* Mount the installed hard disk (when present) so the OS runs directly
+       from the executables already stored on the disk.  Source .C files are
+       no longer recompiled at boot or reboot. */
     TerminalClear32(BackSpaceColor);
-    ShellBootBuild();
+    DiskFsMount();
 
     ShellApplyRegistry();
     ShellBootRunRAB();
