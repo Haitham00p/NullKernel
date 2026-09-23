@@ -153,7 +153,7 @@ static void NccErrorAt(const char *msg, uint32_t line)
 
 static void NccError(const char *msg)
 {
-    NccErrorAt(msg, 1);
+    NccErrorAt(msg, g_tok.line);
 }
 
 static bool NccIsIdentStart(char c)
