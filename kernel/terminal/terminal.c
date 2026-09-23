@@ -1,6 +1,7 @@
 #include "terminal.h"
 #include "drivers/video_framebuffer/framebuffer.h"
 #include "drivers/video_font/font.h"
+#include "drivers/video_font/ttf_font.h"
 #include "drivers/timer/PIT.h"
 #include "include/cursor.h"
 #include "kernel/debug/debug.h"
@@ -63,6 +64,8 @@ uint32_t TerminalGetPaneCols32(void)
 }
 
 void TerminalInit32(void) {
+    TtfFontInit();
+
     uint32_t fb_w = FbGetWidth32();
     uint32_t fb_h = FbGetHeight32();
     uint32_t *fb_addr = FbGetAddress32();
