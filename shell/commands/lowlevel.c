@@ -205,13 +205,34 @@ void LL_Rdtscp(void)
 
 void LL_Xgetbv(const PARSED_COMMAND *Command)
 {
-    uint64_t index = 0, value;
-    uint32_t lo, hi;
+    uint64_t index = 0, value, cr4;
+    uint32_t lo, hi, a, b, c, d;
+
     if (Command->ArgCount > 0U && !LLNum(Command->Args[0], &index))
     {
         LLLine("Usage: xgetbv [index]");
         return;
     }
+
+    if (LLMaxBasic() < 1U)
+    {
+        LLLine("xgetbv: CPUID leaf 1 unavailable.");
+        return;
+    }
+    LLCpuid(1, 0, &a, &b, &c, &d);
+    if ((c & (1U << 27)) == 0U)
+    {
+        LLLine("xgetbv: CPU does not advertise OSXSAVE.");
+        return;
+    }
+
+    __asm__ volatile("mov %%cr4,%0" : "=r"(cr4));
+    if ((cr4 & (1ULL << 18)) == 0U)
+    {
+        LLLine("xgetbv: CR4.OSXSAVE is disabled.");
+        return;
+    }
+
     __asm__ volatile("xgetbv" : "=a"(lo), "=d"(hi) : "c"((uint32_t)index));
     value = ((uint64_t)hi << 32) | lo;
     LLHex("XCR = ", value);
