@@ -17,8 +17,8 @@ void CursorInitialize(cursor_t *cursor, uint32_t id) {
 
     cursor->pixel_x = 0;
     cursor->pixel_y = 0;
-    cursor->width_px = 8;
-    cursor->height_px = 16;
+    cursor->width_px = 14;
+    cursor->height_px = 28;
 
     cursor->color = 0x0000E0FF;        /* Bright Cyan */
     cursor->accent_color = 0x00000000; /* Black contrast for glyph intersection */
@@ -218,7 +218,7 @@ static inline void RenderSingleCell(term_screen_t *screen, uint32_t col, uint32_
 
     const uint8_t *glyph_ptr = NULL;
     if (screen->font_glyph_data && cell->codepoint < 256) {
-        glyph_ptr = &screen->font_glyph_data[cell->codepoint * fh * ((fw > 8U) ? 2U : 1U)];
+        glyph_ptr = &screen->font_glyph_data[cell->codepoint * (uint32_t)fh * 2U];
     }
 
     uint32_t start_x = col * fw;
