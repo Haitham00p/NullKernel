@@ -174,30 +174,25 @@ static void WritePrompt(void) {
 
 static void RedrawCommandPrompt(void)
 {
-    term_screen_t *scr = TerminalGetScreen();
-    uint32_t cur_x = 0, cur_y = 0;
-    TerminalGetCursor32(&cur_x, &cur_y);
-
-    /* Hide the cursor while we rewrite the whole line so the inverted cursor
-       block does not sweep across the prompt on every keystroke. */
-    CursorSetVisible(scr, false);
-
-    /* Clear current prompt line content */
-    TerminalSetCursor32(0, cur_y);
-    WritePrompt();
-    TerminalWrite32(ActiveContext->Command, PromptColor);
-
-    /* Fill only the active pane. Never erase the other shell or the divider. */
-    uint32_t pane_cols = TerminalIsSplit()
-        ? (scr->cols / 2U)
-        : scr->cols;
-    for (uint32_t i = PromptTextLength + ActiveContext->CommandLength; i < pane_cols; i++) {
-        TerminalPutChar32(' ', PromptColor);
-    }
-
-    /* Position cursor at active editing offset ActiveContext->CommandPos, then show it */
-    TerminalSetCursor32((PromptTextLength + ActiveContext->CommandPos) * scr->font_width, cur_y);
-    CursorSetVisible(scr, true);
+    /*
+     * Input editing used to redraw the line by calling TerminalPutChar32()
+     * once per character (including every trailing space in the pane).
+     * TerminalPutChar32() renders immediately, so one key could trigger
+     * dozens of full terminal render passes. That becomes very noticeable
+     * after F2 enables the split panes.
+     *
+     * Keep the public terminal API intact and use one batched input-line
+     * redraw instead.
+     */
+    uint32_t prompt_color = ComputePromptColor(PromptColor);
+    ComposePrompt();
+    TerminalRedrawInputLine32(
+        PromptText,
+        prompt_color,
+        ActiveContext->Command,
+        PromptColor,
+        ActiveContext->CommandPos
+    );
 }
 
 static void ShellReplaceCommand(const char *Replacement)
