@@ -68,8 +68,11 @@ static double ttf_sqrt(double x)
 #define STBTT_free(x,u)   free(x)
 #define STBTT_assert(x)   ((void)0)
 #define STBTT_sqrt(x)     ttf_sqrt(x)
+/* This vendored stb_truetype version calls sqrt() directly. */
+#define sqrt(x)            ttf_sqrt(x)
 
 #include "drivers/video_font/stb_truetype.h"
+#undef sqrt
 
 static void clear_glyph(uint8_t out[FONT_HEIGHT])
 {
