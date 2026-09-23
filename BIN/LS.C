@@ -47,10 +47,7 @@ void main(void)
     uint32_t j = 0;
     uint32_t col = 0;
     uint32_t len = 0;
-    term_screen_t *screen = TerminalGetScreen();
-    uint32_t pane_cols = (TerminalIsSplit() && screen != NULL)
-        ? screen->cols / 2U
-        : (screen != NULL ? screen->cols : 80U);
+    uint32_t pane_cols = TerminalGetPaneCols32();
     if (pane_cols < 1U) pane_cols = 1U;
 
     /* Optional path argument: ls [path] */
