@@ -15,6 +15,13 @@
 #define BM_SEL "BOOTSEL.CFG"
 #define BM_MAX 192U
 #define BM_MAX_IMAGE (8U * 1024U * 1024U)
+#define BM_ID_PREFIX "KRNL1.0:0x"
+#define NPB_RED 0x00FF3030U
+#define NPB_ORANGE 0x00FF8C00U
+#define NPB_YELLOW 0x00FFFF00U
+#define NPB_GREEN 0x0000FF00U
+#define NPB_CYAN 0x0000FFFFU
+#define NPB_DIM 0x00888888U
 
 typedef struct {
     uint8_t id[16];
@@ -48,6 +55,103 @@ static bool SafeName(const char *s){
       (c>='0'&&c<='9')||c=='_'||c=='-'||c=='.'))return false;} return true;
 }
 static void P(const char *s){TerminalPrintLine32(s,0x00FFFFFFU);}
+static void PC(const char *s,uint32_t color){TerminalPrintLine32(s,color);}
+
+static bool KernelIdForName(const char *name, char *id, uint32_t cap, uint32_t *slot)
+{
+    char out[4096]; char *p; uint32_t index=0, found=0;
+    if (!name || !id || cap < 16U || !DiskFsChdirPath(BM_DIR)) return false;
+    if (!DiskFsListNames(out,sizeof(out))) { DiskFsCdRoot(); return false; }
+    p=out;
+    while (*p) {
+        uint32_t l=0;
+        while (p[l] && p[l]!='\\n' && p[l]!='\\r') l++;
+        if (l) {
+            char n[96]; uint32_t cp=l<95?l:95;
+            for(uint32_t i=0;i<cp;i++) n[i]=p[i]; n[cp]=0;
+            if (ElfName(n)) {
+                uint32_t current;
+                if (strcasecmp(n,"kernel.elf")==0) current=0;
+                else {
+                    current=1;
+                    char q[4096]; char *z=q;
+                    if (DiskFsListNames(q,sizeof(q))) {
+                        while (*z) {
+                            uint32_t zl=0; while(z[zl]&&z[zl]!='\\n'&&z[zl]!='\\r') zl++;
+                            if(zl) {
+                                char nn[96]; uint32_t nc=zl<95?zl:95;
+                                for(uint32_t k=0;k<nc;k++) nn[k]=z[k]; nn[nc]=0;
+                                if(ElfName(nn) && strcasecmp(nn,"kernel.elf")!=0) {
+                                    if(strcasecmp(nn,n)==0) break;
+                                    current++;
+                                }
+                            }
+                            z+=zl; while(*z=='\\n'||*z=='\\r') z++;
+                        }
+                    }
+                }
+                if (strcasecmp(n,name)==0) {
+                    if (slot) *slot=current;
+                    uint32_t pos=0; const char *pre=BM_ID_PREFIX;
+                    while(pre[pos] && pos+1<cap){id[pos]=pre[pos];pos++;}
+                    char hex[24]; uint32_t hv=current, hn=0;
+                    const char digs[]="0123456789ABCDEF";
+                    do {hex[hn++]=digs[hv&0xFU];hv>>=4;}while(hv);
+                    while(hn) { if(pos+1>=cap) {DiskFsCdRoot();return false;} id[pos++]=hex[--hn]; }
+                    id[pos]=0; DiskFsCdRoot(); return true;
+                }
+            }
+        }
+        p+=l; while(*p=='\\n'||*p=='\\r') p++;
+    }
+    DiskFsCdRoot(); return false;
+}
+
+static bool NameForKernelId(const char *id, char *name, uint32_t cap)
+{
+    char out[4096]; char *p;
+    if(!id || !name || cap<2U || strncasecmp(id,BM_ID_PREFIX,10)!=0) return false;
+    uint32_t wanted=0;
+    const char *h=id+10;
+    if(!*h) return false;
+    while(*h){char ch=*h++; uint32_t v;
+        if(ch>='0'&&ch<='9')v=(uint32_t)(ch-'0');
+        else if(ch>='a'&&ch<='f')v=(uint32_t)(ch-'a'+10);
+        else if(ch>='A'&&ch<='F')v=(uint32_t)(ch-'A'+10);
+        else return false;
+        if(wanted>0x0FFFFFFFU) return false;
+        wanted=(wanted<<4)|v;
+    }
+    if(!DiskFsChdirPath(BM_DIR)) return false;
+    if(!DiskFsListNames(out,sizeof(out))){DiskFsCdRoot();return false;}
+    p=out;
+    while(*p){
+        uint32_t l=0;while(p[l]&&p[l]!='\\n'&&p[l]!='\\r')l++;
+        if(l){
+            char n[96];uint32_t cp=l<95?l:95;for(uint32_t i=0;i<cp;i++)n[i]=p[i];n[cp]=0;
+            if(ElfName(n)){char got[32];uint32_t slot=0;if(KernelIdForName(n,got,sizeof(got),&slot)&&slot==wanted){
+                for(uint32_t i=0;i<cap-1&&n[i];i++)name[i]=n[i],name[i+1]=0;
+                DiskFsCdRoot();return true;
+            }}
+        }
+        p+=l;while(*p=='\\n'||*p=='\\r')p++;
+    }
+    DiskFsCdRoot();return false;
+}
+
+static bool ReadBootConfig(char *out,uint32_t cap)
+{
+    uint8_t b[4096];uint32_t got=0,i;
+    if(cap<2U || !DiskFsReadInPath("/BOOT/LIMINE","limine.conf",b,sizeof(b)-1,&got)) return false;
+    b[got]=0;
+    const char *needle="path:";
+    for(i=0;i+5<got;i++) if(b[i]=='p'&&b[i+1]=='a'&&b[i+2]=='t'&&b[i+3]=='h'&&b[i+4]==':'){
+        uint32_t s=i+5;while(s<got&&(b[s]==' '||b[s]=='\\t'))s++;
+        uint32_t e=s;while(e<got&&b[e]!='\\n'&&b[e]!='\\r')e++;
+        uint32_t n=e-s;if(n>=cap)n=cap-1;for(uint32_t j=0;j<n;j++)out[j]=(char)b[s+j];out[n]=0;return true;
+    }
+    return false;
+}
 
 static bool Validate(const uint8_t *img,uint32_t size,uint64_t *entry,
                      uint64_t *lo,uint64_t *hi){
@@ -91,9 +195,10 @@ static bool ReadKernel(const char *name){
 }
 
 static void ShowKernels(void){
+
     char out[4096];uint32_t n;char *p;
     if(!DiskFsChdirPath(BM_DIR)){P("ShowKernels: /BOOT unavailable");return;}
-    P("READY KERNELS");
+    PC("READY KERNELS / NPB IMAGE REGISTRY",NPB_ORANGE);
     n=DiskFsListNames(out,sizeof(out));p=out;
     while(*p){
         uint32_t l=0;while(p[l]&&p[l]!='\n'&&p[l]!='\r')l++;
@@ -101,7 +206,12 @@ static void ShowKernels(void){
             char name[96];uint32_t i,cp=l<95?l:95;uint32_t sz=0;
             for(i=0;i<cp;i++)name[i]=p[i];name[cp]=0;
             if(ElfName(name)&&DiskFsFileSize(name,&sz)){
-                TerminalWrite32("  ",0x00FFFFFFU);TerminalWrite32(name,0x0000FFFFU);
+                char kid[32]; uint32_t kslot=0;
+                KernelIdForName(name,kid,sizeof(kid),&kslot);
+                TerminalWrite32("  ",0x00FFFFFFU);
+                TerminalWrite32(kid,NPB_CYAN);
+                TerminalWrite32("  ",0x00FFFFFFU);
+                TerminalWrite32(name,0x00FFFFFFU);
                 TerminalWrite32("  ",0x00FFFFFFU);TerminalPrintHex64Compact(sz);
                 TerminalPrintLine32(" bytes",0x00808080U);
             }
@@ -130,32 +240,75 @@ static bool StageLimine(const char *name){
     kfree(buf);return false;
 }
 
+static bool VerifyLoaded(void)
+{
+    uint64_t e,l,h;
+    if(!g_image){PC("verify: nothing staged",NPB_YELLOW);return false;}
+    if(!Validate(g_image,g_size,&e,&l,&h)){PC("verify: STAGED IMAGE FAILED VALIDATION",NPB_RED);return false;}
+    PC("verify: staged ELF is valid",NPB_GREEN);return true;
+}
+
+static void PrintStatus(void)
+{
+    PC("NPB STATUS",NPB_ORANGE);
+    TerminalWrite32("  staged ID     : ",NPB_DIM);
+    if(g_name[0]){char id[32];uint32_t slot=0;if(KernelIdForName(g_name,id,sizeof(id),&slot))TerminalPrintLine32(id,NPB_CYAN);else TerminalPrintLine32("unknown",NPB_YELLOW);}
+    else TerminalPrintLine32("none",NPB_YELLOW);
+    TerminalWrite32("  staged file   : ",NPB_DIM);TerminalPrintLine32(g_name[0]?g_name:"none",0x00FFFFFFU);
+    TerminalWrite32("  staged bytes  : ",NPB_DIM);TerminalPrintHex64Compact(g_image?g_size:0);TerminalNewLine32(0);
+    TerminalWrite32("  entry         : ",NPB_DIM);TerminalPrintHex64Compact(g_image?g_entry:0);TerminalNewLine32(0);
+    char path[256];
+    TerminalWrite32("  Limine path   : ",NPB_DIM);
+    if(ReadBootConfig(path,sizeof(path)))TerminalPrintLine32(path,NPB_CYAN);else TerminalPrintLine32("unreadable",NPB_RED);
+}
+
+static void PrintDanger(void)
+{
+    PC("!! DANGER ZONE !!",NPB_RED);
+    PC("NPB can change the next kernel and execute raw x86-64.",NPB_YELLOW);
+    PC("There is no shell safety layer here.",NPB_ORANGE);
+    PC("RSP/RIP remain monitor-owned in jmp-a.",NPB_DIM);
+}
+
 static void ContinueBoot(void){
     const char *name=g_name[0]?g_name:"kernel.elf";
     if(!SafeName(name)){P("continue: invalid kernel name");return;}
-    if(!DiskFsWriteInPath(BM_DIR,BM_SEL,name,Len(name))){P("continue: cannot save selection");return;}
+    if(!VerifyLoaded() && g_name[0]) return;
+    if(!DiskFsWriteInPath(BM_DIR,BM_SEL,name,Len(name))){P("jmp: cannot save selection");return;}
     if(!StageLimine(name)){
-        P("continue: selection saved, but installed Limine config was not changed");
-        P("continue: ISO/CD boot remains unchanged because ISO is read-only");
+        P("jmp: selection saved, but installed Limine config was not changed");
+        P("jmp: boot source may be ISO/CD; NPB cannot rewrite a read-only ISO.");
     }else{
-        TerminalWrite32("continuing with ",0x00FFFFFFU);TerminalPrintLine32(name,0x0000FF00U);
+        TerminalWrite32("JMP -> ",NPB_ORANGE);TerminalPrintLine32(name,NPB_GREEN);
     }
     Reboot();
 }
 
 static void Help(void){
-    P("Null Boot Monitor");
+    PC("NullOS PreBoot (NPB) command set",NPB_ORANGE);
     P("  help                    show this help");
     P("  ShowKernels             list /BOOT/*.ELF");
-    P("  load <kernel.elf>       validate and stage a kernel");
+    P("  load <KRNL1.0:0xN>       validate and stage a kernel by ID");
     P("  unload                  discard staged kernel");
-    P("  continue                reboot into staged/default kernel");
-    P("  continue-a              enter instruction-level AsmMode");
+    P("  jmp <ID>                stage/select kernel ID and reboot");
+    P("  jmp                     reboot into staged/default kernel");
+    P("  jmp-a                   enter raw instruction AsmMode");
     P("  meminfo                 show staged image size");
+    P("  status                  show NPB state");
+    P("  verify                  revalidate staged ELF");
+    P("  config                  show current Limine kernel path");
+    P("  kernels                 alias for ShowKernels");
+    P("  danger                  show dangerous-mode warning");
+    P("  ids                     explain kernel IDs");
     P("  map                     show staged ELF range");
     P("  entry                   show staged ELF entry");
     P("  reboot                  reboot now");
     P("  halt                    halt CPU");
+    P("  about                   show NPB identity");
+    P("  clear-selection         forget staged kernel");
+    P("  clear-request           clear one-shot NPB request");
+    P("  poweroff                halt after disabling interrupts");
+    P("  regs/reset              inspect/reset AsmMode registers");
 }
 
 static void ReadLine(char *line,uint32_t cap);
@@ -274,15 +427,37 @@ static void Execute(char *line){
     for(char *p=cmd;*p;p++)if(*p==' '||*p=='\t'){*p=0;arg=p+1;while(*arg==' '||*arg=='\t')arg++;break;}
     if(Eq(cmd,"help")){Help();return;}
     if(Eq(cmd,"ShowKernels")||Eq(cmd,"showkernels")){ShowKernels();return;}
-    if(Eq(cmd,"load")){if(!arg||!*arg)P("Usage: load <kernel.elf>");else{
-        if(!SafeName(arg)){P("load: invalid kernel filename");return;}Unload();
+    if(Eq(cmd,"load")){if(!arg||!*arg)P("Usage: load <KRNL1.0:0xID>");else{
+        char resolved[96];
+        if(!NameForKernelId(arg,resolved,sizeof(resolved))){P("load: unknown kernel ID");return;}
+        arg=resolved;Unload();
         if(!DiskFsChdirPath(BM_DIR)){P("load: /BOOT unavailable");return;}
         if(!ReadKernel(arg)){DiskFsCdRoot();P("load: rejected - invalid/unreadable NullOS kernel ELF");return;}
         DiskFsCdRoot();
     }return;}
     if(Eq(cmd,"unload")){Unload();P("unloaded");return;}
-    if(Eq(cmd,"continue")){ContinueBoot();return;}
-    if(Eq(cmd,"continue-a")){AsmMode();return;}
+    if(Eq(cmd,"jmp")){
+        if(arg&&*arg){
+            char resolved[96];
+            if(!NameForKernelId(arg,resolved,sizeof(resolved))){P("jmp: unknown kernel ID");return;}
+            Unload();
+            if(!DiskFsChdirPath(BM_DIR)||!ReadKernel(resolved)){DiskFsCdRoot();P("jmp: failed to stage selected kernel");return;}
+            DiskFsCdRoot();
+        }
+        ContinueBoot();return;
+    }
+    if(Eq(cmd,"jmp-a")){AsmMode();return;}
+    if(Eq(cmd,"status")){PrintStatus();return;}
+    if(Eq(cmd,"verify")){VerifyLoaded();return;}
+    if(Eq(cmd,"config")){char path[256];if(ReadBootConfig(path,sizeof(path)))TerminalPrintLine32(path,NPB_CYAN);else P("config: unreadable");return;}
+    if(Eq(cmd,"kernels")){ShowKernels();return;}
+    if(Eq(cmd,"danger")){PrintDanger();return;}
+    if(Eq(cmd,"ids")){P("IDs use KRNL1.0:0xN; kernel.elf is KRNL1.0:0x0.");return;}
+    if(Eq(cmd,"about")){PC("NullOS PreBoot (NPB) // RAW BOOT CONTROL",NPB_ORANGE);PC("Disk-side preboot environment. No normal shell safety layer.",NPB_RED);return;}
+    if(Eq(cmd,"clear-selection")){Unload();P("staged kernel cleared");return;}
+    if(Eq(cmd,"clear-request")){BootMonitorClearRequest();P("NPB request cleared");return;}
+    if(Eq(cmd,"poweroff")){__asm__ volatile("cli");for(;;)__asm__ volatile("hlt");}
+
     if(Eq(cmd,"meminfo")){TerminalWrite32("loaded=",0x00FFFFFFU);TerminalPrintHex64Compact(g_image?g_size:0);TerminalPrintLine32(" bytes",0x00808080U);return;}
     if(Eq(cmd,"map")){uint64_t e,l,h;if(!g_image){P("map: nothing loaded");return;}if(Validate(g_image,g_size,&e,&l,&h)){TerminalPrintHex64Compact(l);TerminalWrite32(" - ",0x00808080U);TerminalPrintHex64Compact(h);TerminalNewLine32(0);}return;}
     if(Eq(cmd,"entry")){if(!g_image)P("entry: nothing loaded");else{TerminalWrite32("entry=",0x00FFFFFFU);TerminalPrintHex64Compact(g_entry);TerminalNewLine32(0);}return;}
@@ -305,10 +480,29 @@ bool BootMonitorShouldEnter(void){
            got>=4&&m[0]=='B'&&m[1]=='M'&&m[2]=='1'&&m[3]=='\n';
 }
 void BootMonitorRequest(void){const char m[]="BM1\n";DiskFsWriteInPath(BM_DIR,BM_REQ,m,4);}
-void BootMonitorClearRequest(void){if(DiskFsIsMounted())DiskFsRemove(BM_REQ);}
+void BootMonitorClearRequest(void)
+{
+    if(!DiskFsIsMounted()) return;
+    if(!DiskFsRemove(BM_REQ))
+    {
+        const char off[]="BM0\\n";
+        /* Fallback: an explicit disabled marker is safer than a stale BM1
+           request that can trap the machine in NPB forever. */
+        DiskFsWriteInPath(BM_DIR,BM_REQ,off,4);
+    }
+}
 void BootMonitorRun(void){
-    char line[BM_MAX];BootMonitorClearRequest();
-    P("");P("==============================================");P("          NULL BOOT MONITOR 1.0");
-    P("==============================================");P("Disk-side boot control. type help.");P("");
-    for(;;){TerminalWrite32("BootMonitor> ",0x0000FFFFU);ReadLine(line,sizeof(line));Execute(line);}
+    char line[BM_MAX];
+    BootMonitorClearRequest();
+    PC("",NPB_DIM);
+    PC("==============================================================",NPB_RED);
+    PC("                    NullOS PreBoot",NPB_ORANGE);
+    PC("                         [ NPB ]",NPB_RED);
+    PC("==============================================================",NPB_RED);
+    PC("!! DANGER ZONE // RAW BOOT CONTROL // NO SAFETY NET !!",NPB_YELLOW);
+    PC("This environment can select the next kernel or execute native code.",NPB_DIM);
+    PC("",NPB_DIM);
+    ShowKernels();
+    PC("",NPB_DIM);
+    for(;;){TerminalWrite32("NPB> ",NPB_CYAN);ReadLine(line,sizeof(line));Execute(line);}
 }
