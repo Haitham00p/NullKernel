@@ -224,9 +224,22 @@ static inline void RenderSingleCell(term_screen_t *screen, uint32_t col, uint32_
     uint32_t start_x = col * fw;
     uint32_t start_y = row * fh;
 
+    /*
+     * Cell geometry normally fits exactly because TerminalInit32 derives
+     * cols/rows with integer division. Keep the renderer defensive anyway:
+     * editor/status/cursor code must never write outside the framebuffer.
+     */
     for (uint8_t py = 0; py < fh; py++) {
-        uint32_t *vram_scanline = &screen->framebuffer[(start_y + py) * pitch + start_x];
+        uint32_t y = start_y + (uint32_t)py;
+        if (y >= screen->fb_height)
+            continue;
+
         for (uint8_t px = 0; px < fw; px++) {
+            uint32_t x = start_x + (uint32_t)px;
+            if (x >= screen->fb_width)
+                continue;
+
+            uint32_t *vram_pixel = &screen->framebuffer[y * pitch + x];
             /*
              * Atlas rows are packed MSB-first into ceil(fw/8) bytes.
              * Do not assemble a 14-bit row into the low bits of a uint16_t:
@@ -272,14 +285,20 @@ static inline void RenderSingleCell(term_screen_t *screen, uint32_t col, uint32_
                 final_pixel = is_glyph ? fg : bg;
             }
 
-            vram_scanline[px] = final_pixel;
+            *vram_pixel = final_pixel;
         }
     }
 
     /* The cell was written straight into the back buffer, so tell the present
        path that this region changed. Without this the periodic blit never
        picks up terminal output and the display freezes on the last present. */
-    FbMarkDirty(start_x, start_y, start_x + fw - 1U, start_y + fh - 1U);
+    if (start_x < screen->fb_width && start_y < screen->fb_height) {
+        uint32_t dirty_x1 = start_x + (uint32_t)fw - 1U;
+        uint32_t dirty_y1 = start_y + (uint32_t)fh - 1U;
+        if (dirty_x1 >= screen->fb_width) dirty_x1 = screen->fb_width - 1U;
+        if (dirty_y1 >= screen->fb_height) dirty_y1 = screen->fb_height - 1U;
+        FbMarkDirty(start_x, start_y, dirty_x1, dirty_y1);
+    }
 
     cell->attributes &= ~TERM_ATTR_DIRTY;
 }
