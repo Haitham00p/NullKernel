@@ -422,32 +422,62 @@ void CmdTouch(const char *Path)
 
 void CmdCat(const char *Path, const char *LineArg)
 {
-    FAT32DirectoryEntry Entry;
-    const FAT32Directory *Cwd;
     uint8_t *Buffer;
-    uint32_t BytesRead = 0;
+    uint32_t BytesRead = 0, FileSize = 0;
     uint64_t LineVal = 0;
+    char Dir[256], Name[128];
+    uint32_t len = (uint32_t)strlen(Path);
+    uint32_t last = 0U;
 
     if (!DiskFsIsMounted() && !DiskFsMount())
     {
         TerminalPrintLine32("cat: no FAT32 disk mounted", 0x00FF0000);
         return;
     }
-    Cwd = DiskFsCwd();
-    if (Cwd == NULL || !FAT32DirectoryFind(Cwd, Path, &Entry))
+    if (Path == NULL || !*Path || len >= sizeof(Dir))
+    {
+        TerminalPrintLine32("cat: invalid path", 0x00FF0000);
+        return;
+    }
+
+    for (uint32_t i = 0; i < len; i++) if (Path[i] == '/') last = i;
+    uint32_t dir_len = last;
+    uint32_t name_start = last ? last + 1U : 0U;
+    uint32_t name_len = len - name_start;
+    if (name_len == 0U || name_len >= sizeof(Name))
+    {
+        TerminalPrintLine32("cat: invalid path", 0x00FF0000);
+        return;
+    }
+
+    if (dir_len == 0U)
+    {
+        strcpy(Dir, ".");
+    }
+    else
+    {
+        if (dir_len >= sizeof(Dir)) return;
+        memcpy(Dir, Path, dir_len);
+        Dir[dir_len] = '\0';
+    }
+    memcpy(Name, Path + name_start, name_len);
+    Name[name_len] = '\0';
+
+    if (!DiskFsFileSizeInPath(Dir, Name, &FileSize))
     {
         TerminalPrintLine32("cat: file not found", 0x00FF0000);
         return;
     }
 
-    Buffer = (uint8_t *)kmalloc(Entry.FileSize + 1U);
-    if (Buffer == NULL)
+    Buffer = (uint8_t *)kmalloc((uint64_t)FileSize + 1U);
+    if (!Buffer)
     {
         TerminalPrintLine32("cat: out of memory", 0x00FF0000);
         return;
     }
-    if (!DiskFsRead(Path, Buffer, Entry.FileSize, &BytesRead))
+    if (!DiskFsReadInPath(Dir, Name, Buffer, FileSize, &BytesRead))
     {
+        kfree(Buffer);
         TerminalPrintLine32("cat: read failed", 0x00FF0000);
         return;
     }
@@ -457,46 +487,31 @@ void CmdCat(const char *Path, const char *LineArg)
     {
         if (!ParseNumber(LineArg, &LineVal) || LineVal == 0)
         {
-            TerminalPrintLine32("cat: invalid line number", 0x00FF0000);
             kfree(Buffer);
+            TerminalPrintLine32("cat: invalid line number", 0x00FF0000);
             return;
         }
-        /* Print only the requested 1-based line. */
-        const char *S = (const char *)Buffer;
-        const char *LineStart = NULL;
-        uint64_t Cur = 1;
-        while (*S != '\0')
+        const char *p = (const char *)Buffer;
+        const char *line_start = NULL;
+        uint64_t cur = 1U;
+        while (*p)
         {
-            if (Cur == LineVal)
-            {
-                LineStart = S;
-                break;
-            }
-            while (*S != '\0' && *S != '\n')
-            {
-                S++;
-            }
-            if (*S == '\n')
-            {
-                S++;
-            }
-            Cur++;
+            if (cur == LineVal) { line_start = p; break; }
+            while (*p && *p != '\n') p++;
+            if (*p == '\n') p++;
+            cur++;
         }
-        if (LineStart != NULL)
-        {
-            while (*LineStart != '\0' && *LineStart != '\n')
-            {
-                TerminalPutChar32(*LineStart, PromColor);
-                LineStart++;
-            }
-        }
+        if (line_start)
+            while (*line_start && *line_start != '\n')
+                TerminalPutChar32(*line_start++, PromColor);
         TerminalPutChar32('\n', PromColor);
-        kfree(Buffer);
-        return;
     }
-
-    HighlightPrintFile(Path, (const char *)Buffer);
-    TerminalPutChar32('\n', PromColor);
+    else
+    {
+        HighlightPrintFile(Path, (const char *)Buffer);
+        TerminalPutChar32('\n', PromColor);
+    }
+    kfree(Buffer);
 }
 
 void CmdRm(const char *Path)
