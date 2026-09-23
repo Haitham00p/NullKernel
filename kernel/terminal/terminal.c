@@ -71,8 +71,8 @@ void TerminalInit32(void) {
     uint32_t *fb_addr = FbGetAddress32();
     uint32_t fb_pitch = FbGetPitchPixels32();
 
-    uint32_t cols = fb_w / FONT_WIDTH;
-    uint32_t rows = fb_h / FONT_HEIGHT;
+    uint32_t cols = fb_w / TTF_FONT_WIDTH;
+    uint32_t rows = fb_h / TTF_FONT_HEIGHT;
 
     if (cols > MAX_TERM_COLS) cols = MAX_TERM_COLS;
     if (rows > MAX_TERM_ROWS) rows = MAX_TERM_ROWS;
@@ -96,7 +96,7 @@ void TerminalInit32(void) {
 
     g_screen.lines = g_term_lines;
     TerminalInitialize(&g_screen, cols, rows, fb_addr, fb_w, fb_h, fb_pitch,
-                       (const uint8_t *)font8x16, FONT_WIDTH, FONT_HEIGHT);
+                       TtfFontGetAtlas(), TTF_FONT_WIDTH, TTF_FONT_HEIGHT);
 
     CurCol = 0;
     CurRow = 0;
@@ -118,7 +118,7 @@ static void TerminalRenderWithDivider(void)
     uint32_t divider_col = g_screen.cols / 2U;
     if (divider_col >= g_screen.cols) return;
 
-    uint32_t x = divider_col * FONT_WIDTH;
+    uint32_t x = divider_col * TTF_FONT_WIDTH;
     if (x > 0U) x--;
 
     FrDrawLine32(x, 0U, x, g_screen.fb_height - 1U, 0x00707070U);
@@ -243,8 +243,8 @@ void TerminalSetCursor32(uint32_t x, uint32_t y) {
 }
 
 void TerminalGetCursor32(uint32_t *x, uint32_t *y) {
-    if (x) *x = CurCol * FONT_WIDTH;
-    if (y) *y = CurRow * FONT_HEIGHT;
+    if (x) *x = CurCol * TTF_FONT_WIDTH;
+    if (y) *y = CurRow * TTF_FONT_HEIGHT;
 }
 
 void TerminalNewLine32(uint32_t color) {
@@ -357,10 +357,10 @@ void TerminalWriteScaled32(const char *str, uint32_t x, uint32_t y,
     while (*str != '\0') {
         if (*str == '\n') {
             x = StartX;
-            y += FONT_HEIGHT * scale;
+            y += TTF_FONT_HEIGHT * scale;
         } else {
             FbDrawCharScaled32((uint8_t)*str, x, y, scale, color);
-            x += FONT_WIDTH * scale;
+            x += TTF_FONT_WIDTH * scale;
         }
         str++;
     }
