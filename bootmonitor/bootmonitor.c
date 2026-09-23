@@ -460,7 +460,8 @@ static void Execute(char *line){
 }
 
 static void ReadLine(char *line,uint32_t cap){
-    uint32_t n=0;for(;;){uint8_t k=KbdReadKey();
+    uint32_t n=0;for(;;){uint8_t k=KbdReadKey(); KB_STATE st=KbdGetState();
+        if(st.Ctrl && (k=='l'||k=='L')){n=0;line[0]=0;TerminalClear32(0x00000000U);continue;}
         if(k=='\n'||k=='\r'){line[n]=0;TerminalNewLine32(0);return;}
         if(k==8||k==127){if(n){n--;line[n]=0;TerminalWrite32("\b \b",0x00FFFFFFU);}continue;}
         if(k>=0x20&&k<=0x7e&&n+1<cap){line[n++]=(char)k;line[n]=0;char s[2]={(char)k,0};TerminalWrite32(s,0x00FFFFFFU);}
