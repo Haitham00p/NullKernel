@@ -74,6 +74,7 @@ void CmdHelp(const char *Category)
         TerminalPrintLine32("  help registry                  RAM registry database commands", PromColor);
         TerminalPrintLine32("  help sound                     Sound & beep commands", PromColor);
         TerminalPrintLine32("  help developer                 Developer diagnostics commands", PromColor);
+        TerminalPrintLine32("  help lowlevel                  x86_64 CPU / bus / port / memory lab", PromColor);
         TerminalPrintLine32("-------------------------------------------------", 0x00314A70);
         return;
     }
@@ -167,10 +168,54 @@ void CmdHelp(const char *Category)
         return;
     }
 
+    if (strcasecmp(Category, "lowlevel") == 0 || strcasecmp(Category, "low-level") == 0)
+    {
+        TerminalPrintLine32("LOW-LEVEL LAB / x86_64", 0x00FFD700);
+        TerminalPrintLine32("  cpuinfo                         CPUID vendor/signature/features", PromColor);
+        TerminalPrintLine32("  cpuidx <leaf> [subleaf]        Execute raw CPUID", PromColor);
+        TerminalPrintLine32("  cpuidmax                        Show CPUID limits", PromColor);
+        TerminalPrintLine32("  cpuidbits                       List feature bits", PromColor);
+        TerminalPrintLine32("  flags                           Read RFLAGS bit fields", PromColor);
+        TerminalPrintLine32("  regs                            Dump general registers", PromColor);
+        TerminalPrintLine32("  segs                            Dump segment selectors", PromColor);
+        TerminalPrintLine32("  rsp / rbp / rip                 Inspect execution pointers", PromColor);
+        TerminalPrintLine32("  rdtscp                          Read TSC + TSC_AUX", PromColor);
+        TerminalPrintLine32("  xgetbv [index]                  Read XCR", PromColor);
+        TerminalPrintLine32("  crinfo                          Dump CR0/CR2/CR3/CR4", PromColor);
+        TerminalPrintLine32("  stack [qwords]                  Dump memory below current RSP", PromColor);
+        TerminalPrintLine32("  tscbench [loops]                Measure PAUSE with TSC", PromColor);
+        TerminalPrintLine32("  pause                           Execute CPU PAUSE", PromColor);
+        TerminalPrintLine32("  hypervisor                      Detect CPUID hypervisor", PromColor);
+        TerminalPrintLine32("  tscinfo                         Inspect TSC frequency leaves", PromColor);
+        TerminalPrintLine32("  cacheinfo                       Decode deterministic cache leaf", PromColor);
+        TerminalPrintLine32("  fpuinfo / simdinfo              Inspect FPU/SIMD state and features", PromColor);
+        TerminalPrintLine32("  cmos <reg> / rtc                Read RTC/CMOS bytes", PromColor);
+        TerminalPrintLine32("  pci <b> <s> <f> <off>           Read PCI config DWORD", PromColor);
+        TerminalPrintLine32("  pciscan [bus]                   Scan PCI bus", PromColor);
+        TerminalPrintLine32("  pcidump <b> <s> <f>             Dump 256-byte PCI config space", PromColor);
+        TerminalPrintLine32("  pit / pic                       Inspect timer/PIC state", PromColor);
+        TerminalPrintLine32("  iodly                           Hit legacy I/O delay port", PromColor);
+        TerminalPrintLine32("  e9 <text...>                    Write QEMU/Bochs debug port", PromColor);
+        TerminalPrintLine32("  portwatch <port> [reads]        Sample an I/O port", PromColor);
+        TerminalPrintLine32("  memscan <addr> <bytes> <byte>   Scan raw memory", PromColor);
+        TerminalPrintLine32("  memfill <addr> <bytes> <byte>   Write raw memory", PromColor);
+        TerminalPrintLine32("  memxor <addr> <bytes> <byte>    XOR raw memory", PromColor);
+        TerminalPrintLine32("  bits <value>                    Binary bit view", PromColor);
+        TerminalPrintLine32("  endian <value>                  Byte-swap 64-bit value", PromColor);
+        TerminalPrintLine32("  align <addr> [alignment]        Alignment math", PromColor);
+        TerminalPrintLine32("  ioports                         Print common legacy I/O map", PromColor);
+        TerminalPrintLine32("  pageinfo                        Inspect paging control bits", PromColor);
+        TerminalPrintLine32("  dbgregs                         Dump hardware debug registers", PromColor);
+        TerminalPrintLine32("  gdtidt                          Read GDTR and IDTR", PromColor);
+        TerminalPrintLine32("  serial <hexbytes>               Send raw bytes to COM1", PromColor);
+        TerminalPrintLine32("  WARNING: memfill/memxor/memscan and port writes can crash hardware.", 0x00FF8800);
+        return;
+    }
+
     TerminalWrite32("help: unknown category '", 0x00FF0000);
     TerminalWrite32(Category, 0x00FF0000);
     TerminalPrintLine32("'", 0x00FF0000);
-    TerminalPrintLine32("Categories: system, filesystem, memory, iso, registry, sound, developer", PromColor);
+    TerminalPrintLine32("Categories: system, filesystem, memory, iso, registry, sound, developer, lowlevel", PromColor);
 }
 
 void CmdDevKit(void){
