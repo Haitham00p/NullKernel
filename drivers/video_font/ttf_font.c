@@ -34,8 +34,25 @@ static int ttf_iceil(double x)
 
 static double ttf_sqrt(double x)
 {
-    if (x <= 0.0) return 0.0;
-    return __builtin_sqrt(x);
+    /*
+     * Freestanding kernel: there is no libm, so do not use __builtin_sqrt()
+     * here because GCC may lower it to an external sqrt() symbol.
+     */
+    if (x <= 0.0)
+        return 0.0;
+
+    double lo = 0.0;
+    double hi = (x < 1.0) ? 1.0 : x;
+
+    for (int i = 0; i < 64; ++i) {
+        double mid = (lo + hi) * 0.5;
+        if (mid * mid > x)
+            hi = mid;
+        else
+            lo = mid;
+    }
+
+    return (lo + hi) * 0.5;
 }
 
 /*
@@ -50,7 +67,7 @@ static double ttf_sqrt(double x)
 #define STBTT_malloc(x,u) malloc(x)
 #define STBTT_free(x,u)   free(x)
 #define STBTT_assert(x)   ((void)0)
-#define sqrt(x)           ttf_sqrt(x)
+#define STBTT_sqrt(x)     ttf_sqrt(x)
 
 #include "drivers/video_font/stb_truetype.h"
 
