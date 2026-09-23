@@ -74,6 +74,8 @@ static double ttf_sqrt(double x)
 #include "drivers/video_font/stb_truetype.h"
 #undef sqrt
 
+static uint8_t terminal_font16x32[128][TTF_FONT_HEIGHT * 2U];
+
 static void clear_glyph(uint8_t out[FONT_HEIGHT])
 {
     for (uint32_t y = 0; y < FONT_HEIGHT; ++y)
@@ -136,8 +138,36 @@ static void bake_codepoint(const stbtt_fontinfo *font,
     stbtt_FreeBitmap(bitmap, NULL);
 }
 
+static void build_fallback_atlas(void)
+{
+    for (uint32_t cp = 0; cp < 128U; ++cp) {
+        for (uint32_t y = 0; y < FONT_HEIGHT; ++y) {
+            uint8_t row = font8x16[cp][y];
+            uint8_t hi = 0;
+            uint8_t lo = 0;
+            for (uint32_t x = 0; x < FONT_WIDTH; ++x) {
+                if (!(row & (uint8_t)(1U << (7U - x)))) continue;
+                uint32_t dx = x * 2U;
+                if (dx < 8U) hi |= (uint8_t)(0xC0U >> dx);
+                else lo |= (uint8_t)(0xC0U >> (dx - 8U));
+            }
+            uint32_t dy = y * 2U;
+            terminal_font16x32[cp][dy * 2U] = hi;
+            terminal_font16x32[cp][dy * 2U + 1U] = lo;
+            terminal_font16x32[cp][(dy + 1U) * 2U] = hi;
+            terminal_font16x32[cp][(dy + 1U) * 2U + 1U] = lo;
+        }
+    }
+}
+
+const uint8_t *TtfFontGetAtlas(void)
+{
+    return &terminal_font16x32[0][0];
+}
+
 void TtfFontInit(void)
 {
+    build_fallback_atlas();
     const unsigned char *ttf =
         _binary_drivers_video_font_IBMPlexMono_Regular_ttf_start;
 
@@ -158,7 +188,7 @@ void TtfFontInit(void)
      * 16px gives IBM Plex Mono a slightly larger, clearer glyph while leaving the
      * existing 16px terminal cell intact.
      */
-    float scale = stbtt_ScaleForPixelHeight(&font, 16.0f);
+    float scale = stbtt_ScaleForPixelHeight(&font, 30.0f);
 
     for (int cp = 32; cp < 128; ++cp) {
         uint8_t glyph[FONT_HEIGHT];
@@ -179,6 +209,24 @@ void TtfFontInit(void)
         if (has_pixels) {
             for (uint32_t y = 0; y < FONT_HEIGHT; ++y)
                 font8x16[cp][y] = glyph[y];
+        }
+
+        /* Expand the baked 8x16-compatible glyph to the 16x32 terminal atlas. */
+        for (uint32_t y = 0; y < FONT_HEIGHT; ++y) {
+            uint8_t row = font8x16[cp][y];
+            uint8_t hi = 0, lo = 0;
+            for (uint32_t x = 0; x < FONT_WIDTH; ++x) {
+                if (!(row & (uint8_t)(1U << (7U - x)))) continue;
+                uint32_t dx = x * 2U;
+                if (dx < 8U) hi |= (uint8_t)(0xC0U >> dx);
+                else lo |= (uint8_t)(0xC0U >> (dx - 8U));
+            }
+            uint32_t dy = y * 2U;
+            terminal_font16x32[cp][dy * 2U] = hi;
+            terminal_font16x32[cp][dy * 2U + 1U] = lo;
+            terminal_font16x32[cp][(dy + 1U) * 2U] = hi;
+            terminal_font16x32[cp][(dy + 1U) * 2U + 1U] = lo;
+        }
         }
     }
 }
