@@ -4,6 +4,7 @@
 #include "kernel/terminal/terminal.h"
 #include "kernel/panic/panic.h"
 #include "../fs/ISO9660/iso9660.h"
+#include "../include/diskfs.h"
 #include "../include/kshell.h"
 #include "libc/stdlib.h"
 #include "commands/lowlevel.h"
