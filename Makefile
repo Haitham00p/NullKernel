@@ -44,6 +44,7 @@ C_SOURCES := \
 	drivers/input/keyboard/keyboard_layout.c \
 	drivers/storage/ide/ide.c \
 	drivers/video_font/font.c \
+	drivers/video_font/ttf_font.c \
 	drivers/video_framebuffer/framebuffer.c \
  	fs/fat32/directory/directory.c \
 	fs/fat32/file/file.c \
@@ -101,6 +102,8 @@ C_SOURCES := \
 	lib/sound/sndbeep.c \
 	Graphic/graphic.c
 
+TTF_OBJECT := $(BUILD_DIR)/IBMPlexMono-Regular.ttf.o
+
 ASM_OBJECTS := \
 	$(BUILD_DIR)/arch/x86_64/interrupts/isr_asm.o \
 	$(BUILD_DIR)/arch/x86_64/interrupts/irq_asm.o \
@@ -137,7 +140,11 @@ vault: $(KERNEL)
 		touch .vault-stamp; \
 	fi
 
-$(TTF_OBJECT): IBMPlexMono-Regular.ttf\n\t@mkdir -p $(@D)\n\tld -r -b binary -o $@ $<\n\n$(BUILD_DIR)/%.o: %.c
+$(TTF_OBJECT): IBMPlexMono-Regular.ttf
+	@mkdir -p $(@D)
+	$(LD) -r -b binary -o $@ $<
+
+$(BUILD_DIR)/%.o: %.c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c $< -o $@
 
