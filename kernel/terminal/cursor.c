@@ -30,7 +30,7 @@ void CursorInitialize(cursor_t *cursor, uint32_t id) {
     cursor->blink_enabled = true;
     cursor->overwrite_mode = false;
 
-    cursor->blink_period_ms = 500;     /* Toggle every 500ms (0.5 sec) */
+    cursor->blink_period_ms = 300;     /* Fast terminal blink: 300ms half-cycle */
     cursor->last_activity_ms = 0;
 
     cursor->next_cursor = NULL;
@@ -101,7 +101,7 @@ void CursorMoveTo(term_screen_t *screen, uint32_t col, uint32_t row) {
     cursor->pixel_y = row * screen->font_height;
 
     /* Reset blink phase on movement */
-    cursor->blink_state = true;
+    cursor->blink_state = false;
     cursor->last_activity_ms = PITGetMilliseconds();
 
     /* Invalidate new position */
@@ -134,7 +134,7 @@ void CursorMoveUp(term_screen_t *screen, uint32_t delta) {
     c->col = target_col;
     c->pixel_x = c->col * screen->font_width;
     c->pixel_y = c->row * screen->font_height;
-    c->blink_state = true;
+    c->blink_state = false;
     c->last_activity_ms = PITGetMilliseconds();
     TerminalInvalidateCell(screen, c->col, c->row);
 }
