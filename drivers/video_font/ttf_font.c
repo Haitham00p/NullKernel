@@ -75,6 +75,7 @@ static double ttf_sqrt(double x)
 #undef sqrt
 
 static uint8_t terminal_font16x32[128][TTF_FONT_HEIGHT * 2U];
+static unsigned char ttf_bitmap[64U * 64U];
 
 static void clear_glyph(uint8_t out[TTF_FONT_HEIGHT * 2U])
 {
@@ -100,11 +101,11 @@ static void bake_codepoint(const stbtt_fontinfo *font,
                            uint8_t out[TTF_FONT_HEIGHT * 2U])
 {
     /*
-     * Render into a caller-owned buffer. This avoids stb_truetype allocating
-     * a temporary bitmap from the kernel heap for every character.
+     * Render into a static scratch buffer. Do not put this bitmap on the
+     * kernel stack: 64x64 bytes is large enough to damage a small boot stack.
      */
     enum { BITMAP_MAX = 64 };
-    unsigned char bitmap[BITMAP_MAX * BITMAP_MAX];
+    unsigned char *bitmap = ttf_bitmap;
 
     clear_glyph(out);
 
