@@ -7,6 +7,8 @@
 #include "mm/heap/heap.h"
 #include "lib/string/string.h"
 #include "arch/x86_64/power/pwr.h"
+#include "bootmonitor/bootasm.h"
+#include "n64a/n64a.h"
 
 #define BM_DIR "/BOOT"
 #define BM_REQ "BOOTMON.CFG"
@@ -143,16 +145,126 @@ static void ContinueBoot(void){
 
 static void Help(void){
     P("Null Boot Monitor");
+    P("  help                    show this help");
     P("  ShowKernels             list /BOOT/*.ELF");
     P("  load <kernel.elf>       validate and stage a kernel");
     P("  unload                  discard staged kernel");
     P("  continue                reboot into staged/default kernel");
-    P("  continue-a              enter AsmMode");
+    P("  continue-a              enter instruction-level AsmMode");
     P("  meminfo                 show staged image size");
     P("  map                     show staged ELF range");
     P("  entry                   show staged ELF entry");
-    P("  reboot                  reboot");
+    P("  reboot                  reboot now");
     P("  halt                    halt CPU");
+}
+
+static BootAsmRegs AsmRegs;
+
+static void AsmPrintReg(const char *name, uint64_t v)
+{
+    TerminalWrite32(name, 0x00808080U);
+    TerminalWrite32("=0x", 0x00808080U);
+    TerminalPrintHex64Compact(v);
+    TerminalNewLine32(0);
+}
+
+static void AsmRegsPrint(void)
+{
+    AsmPrintReg("rax",AsmRegs.rax); AsmPrintReg("rbx",AsmRegs.rbx);
+    AsmPrintReg("rcx",AsmRegs.rcx); AsmPrintReg("rdx",AsmRegs.rdx);
+    AsmPrintReg("rsi",AsmRegs.rsi); AsmPrintReg("rdi",AsmRegs.rdi);
+    AsmPrintReg("rbp",AsmRegs.rbp); AsmPrintReg("r8 ",AsmRegs.r8);
+    AsmPrintReg("r9 ",AsmRegs.r9);  AsmPrintReg("r10",AsmRegs.r10);
+    AsmPrintReg("r11",AsmRegs.r11); AsmPrintReg("r12",AsmRegs.r12);
+    AsmPrintReg("r13",AsmRegs.r13); AsmPrintReg("r14",AsmRegs.r14);
+    AsmPrintReg("r15",AsmRegs.r15);
+}
+
+static void AsmHelp(void)
+{
+    P("AsmMode - one native x86-64 instruction per line");
+    P("  help                    show AsmMode help");
+    P("  regs                    show register state");
+    P("  reset                   zero all exposed registers");
+    P("  back                    return to BootMonitor");
+    P("  <instruction>           assemble and execute it immediately");
+    P("  RSP and RIP are owned by the monitor");
+    P("  Example: mov rax, 5");
+    P("  Example: add rax, 7");
+    P("  Example: outb 0x64, 0xFE");
+}
+
+static void AsmExecuteInstruction(const char *line)
+{
+    char src[BM_MAX + 16];
+    uint8_t *obj = NULL;
+    uint32_t obj_size = 0;
+    N64aDiag diag;
+    N64ObjHeader hdr;
+    uint32_t text_size;
+    uint8_t *code;
+    uint32_t n = Len(line);
+
+    if (!n || n + 5U >= sizeof(src)) { P("AsmMode: instruction too long"); return; }
+
+    for (uint32_t i=0;i<n;i++) src[i]=line[i];
+    src[n++]='\n'; src[n++]='r'; src[n++]='e'; src[n++]='t'; src[n]='\0';
+
+    if (!N64aAssemble("<boot-asm>", src, n, &obj, &obj_size, &diag))
+    {
+        TerminalWrite32("asm: ",0x00FF5555U);
+        TerminalPrintLine32(diag.Message,0x00FFFFFFU);
+        return;
+    }
+
+    if (obj_size < N64O_HDRSZ || obj[0]!='N' || obj[1]!='6' ||
+        obj[2]!='4' || obj[3]!='O' || obj[4]!='B' || obj[5]!='J')
+    {
+        kfree(obj); P("AsmMode: assembler returned invalid object"); return;
+    }
+
+    for (uint32_t i=0;i<sizeof(hdr);i++) ((uint8_t*)&hdr)[i]=obj[i];
+    text_size=hdr.TextSize;
+    if (!text_size || text_size > 256U ||
+        (uint64_t)N64O_HDRSZ + text_size > obj_size)
+    {
+        kfree(obj); P("AsmMode: invalid text section"); return;
+    }
+
+    code=(uint8_t*)kmalloc(text_size);
+    if(!code){kfree(obj);P("AsmMode: out of memory");return;}
+    for(uint32_t i=0;i<text_size;i++) code[i]=obj[N64O_HDRSZ+i];
+
+    BootAsmRun(code,&AsmRegs);
+    kfree(code);
+    kfree(obj);
+    AsmRegsPrint();
+}
+
+static void AsmMode(void)
+{
+    char line[BM_MAX];
+
+    P("");
+    P("AsmMode: native instruction executor online.");
+    P("Type help for commands. back returns to BootMonitor.");
+    P("RSP/RIP are monitor-owned.");
+    AsmRegsPrint();
+
+    for(;;)
+    {
+        TerminalWrite32("AsmMode> ",0x0000FFFFU);
+        ReadLine(line,sizeof(line));
+
+        char *p=line;
+        while(*p==' '||*p=='\t')p++;
+        if(Eq(p,"back")||Eq(p,"exit")||Eq(p,"quit")) return;
+        if(Eq(p,"help")){AsmHelp();continue;}
+        if(Eq(p,"regs")){AsmRegsPrint();continue;}
+        if(Eq(p,"reset")){for(uint32_t i=0;i<sizeof(AsmRegs);i++)((uint8_t*)&AsmRegs)[i]=0;AsmRegsPrint();continue;}
+        if(!*p)continue;
+        AsmExecuteInstruction(p);
+    }
 }
 static void Execute(char *line){
     char *cmd=line,*arg=NULL;
@@ -168,7 +280,7 @@ static void Execute(char *line){
     }return;}
     if(Eq(cmd,"unload")){Unload();P("unloaded");return;}
     if(Eq(cmd,"continue")){ContinueBoot();return;}
-    if(Eq(cmd,"continue-a")){P("AsmMode>");P("native instruction execution is not enabled yet; assembly-mode kernel support is staged separately");return;}
+    if(Eq(cmd,"continue-a")){AsmMode();return;}
     if(Eq(cmd,"meminfo")){TerminalWrite32("loaded=",0x00FFFFFFU);TerminalPrintHex64Compact(g_image?g_size:0);TerminalPrintLine32(" bytes",0x00808080U);return;}
     if(Eq(cmd,"map")){uint64_t e,l,h;if(!g_image){P("map: nothing loaded");return;}if(Validate(g_image,g_size,&e,&l,&h)){TerminalPrintHex64Compact(l);TerminalWrite32(" - ",0x00808080U);TerminalPrintHex64Compact(h);TerminalNewLine32(0);}return;}
     if(Eq(cmd,"entry")){if(!g_image)P("entry: nothing loaded");else{TerminalWrite32("entry=",0x00FFFFFFU);TerminalPrintHex64Compact(g_entry);TerminalNewLine32(0);}return;}
