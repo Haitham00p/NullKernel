@@ -374,10 +374,6 @@ static bool __attribute__((unused)) raster_simple(uint16_t glyph)
 
 static bool raster_glyph(uint16_t glyph, uint8_t out[FONT_HEIGHT])
 {
-    /*
-     * Render into a temporary byte glyph so the public legacy array remains
-     * exactly the same type and layout.
-     */
     for (uint32_t i = 0; i < FONT_HEIGHT; ++i) out[i] = 0;
 
     uint32_t glen = 0;
@@ -392,173 +388,221 @@ static bool raster_glyph(uint16_t glyph, uint8_t out[FONT_HEIGHT])
 
     uint16_t endPts[64];
     uint16_t total = 0;
-    for (int i=0;i<contours;i++) {
-        endPts[i]=be16(g+pos); pos+=2;
-        total=endPts[i]+1U;
+    for (int i = 0; i < contours; ++i) {
+        endPts[i] = be16(g + pos);
+        pos += 2;
+        if (endPts[i] < total) return false;
+        total = (uint16_t)(endPts[i] + 1U);
     }
-    uint16_t ins=be16(g+pos); pos+=2;
-    if(pos+ins>glen || total==0 || total>1024) return false;
-    pos+=ins;
+
+    uint16_t instruction_len = be16(g + pos);
+    pos += 2;
+    if (pos + instruction_len > glen || total == 0 || total > 1024) return false;
+    pos += instruction_len;
 
     static Point pts[1024];
     static unsigned char flags[1024];
-    uint16_t fi=0;
-    while(fi<total){
-        if(pos>=glen) return false;
-        unsigned char f=g[pos++];
-        flags[fi++]=f;
-        if(f&8){
-            if(pos>=glen) return false;
-            unsigned char r=g[pos++];
-            if((uint32_t)fi+r>total) return false;
-            while(r--) flags[fi++]=f;
+
+    uint16_t fi = 0;
+    while (fi < total) {
+        if (pos >= glen) return false;
+        unsigned char f = g[pos++];
+        flags[fi++] = f;
+
+        if (f & 0x08) {
+            if (pos >= glen) return false;
+            unsigned char repeat = g[pos++];
+            if ((uint32_t)fi + repeat > total) return false;
+            while (repeat--) flags[fi++] = f;
         }
     }
 
-    int32_t x=0,y=0;
-    for(uint16_t i=0;i<total;i++){
-        unsigned char f=flags[i];
-        int32_t d=0;
-        if(f&2){if(pos>=glen)return false; d=g[pos++]; if(!(f&16))d=-d;}
-        else if(!(f&16)){if(pos+1>=glen)return false;d=bes16(g+pos);pos+=2;}
-        x+=d;pts[i].x=x;
-    }
-    for(uint16_t i=0;i<total;i++){
-        unsigned char f=flags[i];
-        int32_t d=0;
-        if(f&4){if(pos>=glen)return false;d=g[pos++];if(!(f&32))d=-d;}
-        else if(!(f&32)){if(pos+1>=glen)return false;d=bes16(g+pos);pos+=2;}
-        y+=d;pts[i].y=y;pts[i].on=(f&1)!=0;
+    int32_t x = 0;
+    for (uint16_t i = 0; i < total; ++i) {
+        unsigned char f = flags[i];
+        int32_t dx;
+
+        if (f & 0x02) {
+            if (pos >= glen) return false;
+            dx = g[pos++];
+            if (!(f & 0x10)) dx = -dx;
+        } else if (f & 0x10) {
+            dx = 0;
+        } else {
+            if (pos + 1 >= glen) return false;
+            dx = bes16(g + pos);
+            pos += 2;
+        }
+
+        x += dx;
+        pts[i].x = x;
     }
 
-    int32_t xMin=bes16(g+2), yMin=bes16(g+4);
-    int32_t xMax=bes16(g+6), yMax=bes16(g+8);
-    int32_t w=xMax-xMin,h=yMax-yMin;
-    if(w<=0||h<=0) return true;
+    int32_t y = 0;
+    for (uint16_t i = 0; i < total; ++i) {
+        unsigned char f = flags[i];
+        int32_t dy;
 
-    static Edge edges[4096]; uint32_t ec=0;
+        if (f & 0x04) {
+            if (pos >= glen) return false;
+            dy = g[pos++];
+            if (!(f & 0x20)) dy = -dy;
+        } else if (f & 0x20) {
+            dy = 0;
+        } else {
+            if (pos + 1 >= glen) return false;
+            dy = bes16(g + pos);
+            pos += 2;
+        }
+
+        y += dy;
+        pts[i].y = y;
+        pts[i].on = (f & 0x01) != 0;
+    }
+
+    int32_t xMin = bes16(g + 2);
+    int32_t yMin = bes16(g + 4);
+    int32_t xMax = bes16(g + 6);
+    int32_t yMax = bes16(g + 8);
+    int32_t w = xMax - xMin;
+    int32_t h = yMax - yMin;
+    if (w <= 0 || h <= 0) return true;
 
     /*
-     * Convert every quadratic contour into line segments. This walk handles
-     * TrueType's implicit on-curve midpoint between adjacent off-curve points.
+     * Build a flattened outline using the actual TrueType contour rules:
+     *   on -> on: line
+     *   on -> off -> on: quadratic
+     *   off -> off: implicit on-curve midpoint
+     *
+     * We first choose the contour's true starting point, then consume each
+     * contour point exactly once. This avoids the malformed contour walk that
+     * produced heavily corrupted glyphs.
      */
-    for(int ci=0;ci<contours;ci++){
-        uint16_t first=(ci==0)?0:(uint16_t)(endPts[ci-1]+1U);
-        uint16_t last=endPts[ci];
-        Point start=pts[first];
-        uint16_t cur=first;
+    static Edge edges[4096];
+    uint32_t ec = 0;
 
-        while(1){
-            Point p0=pts[cur];
-            uint16_t next=(cur==last)?first:(uint16_t)(cur+1U);
-            Point p1=pts[next];
+    for (int ci = 0; ci < contours; ++ci) {
+        uint16_t first = (ci == 0) ? 0 : (uint16_t)(endPts[ci - 1] + 1U);
+        uint16_t last = endPts[ci];
+        if (first > last || last >= total) return false;
 
-            if(p0.on && p1.on){
-                if(ec<4096)edges[ec++]=(Edge){p0.x,p0.y,p1.x,p1.y};
-                cur=next;
-            } else if(p0.on && !p1.on){
-                uint16_t n2=(next==last)?first:(uint16_t)(next+1U);
-                Point p2=pts[n2];
-                if(p2.on){
-                    ec=flatten_quad(edges,ec,4096,p0.x,p0.y,p1.x,p1.y,p2.x,p2.y);
-                    cur=n2;
-                }else{
-                    Point mid={(p1.x+p2.x)/2,(p1.y+p2.y)/2,true};
-                    ec=flatten_quad(edges,ec,4096,p0.x,p0.y,p1.x,p1.y,mid.x,mid.y);
-                    cur=next;
+        uint16_t i;
+        Point current;
+
+        if (pts[first].on) {
+            current = pts[first];
+            i = first;
+        } else if (pts[last].on) {
+            current = pts[last];
+            i = first;
+        } else {
+            current = (Point){
+                (pts[last].x + pts[first].x) / 2,
+                (pts[last].y + pts[first].y) / 2,
+                true
+            };
+            i = first;
+        }
+
+        uint32_t guard = 0;
+        while (guard++ <= (uint32_t)(last - first + 2U)) {
+            uint16_t n = (i == last) ? first : (uint16_t)(i + 1U);
+            Point p = pts[i];
+            Point q = pts[n];
+
+            if (p.on) {
+                if (q.on) {
+                    if (ec < 4096)
+                        edges[ec++] = (Edge){current.x, current.y, q.x, q.y};
+                    current = q;
+                    i = n;
+                    if (i == first) break;
+                } else {
+                    uint16_t n2 = (n == last) ? first : (uint16_t)(n + 1U);
+                    Point r = pts[n2];
+                    Point end = r.on ? r :
+                        (Point){(q.x + r.x) / 2, (q.y + r.y) / 2, true};
+
+                    ec = flatten_quad(edges, ec, 4096,
+                                      current.x, current.y,
+                                      q.x, q.y,
+                                      end.x, end.y);
+                    current = end;
+
+                    if (r.on) {
+                        i = n2;
+                        if (i == first) break;
+                    } else {
+                        /* q was the off-curve control point; r is the next
+                         * off-curve point and its midpoint was consumed as
+                         * the endpoint. Continue from r. */
+                        i = n;
+                    }
                 }
-            } else if(!p0.on && p1.on){
-                /* This case is reached after an implicit midpoint split. */
-                Point mid={(start.x+p0.x)/2,(start.y+p0.y)/2,true};
-                (void)mid;
-                cur=next;
             } else {
-                cur=next;
+                /* This point is already consumed as a control point by the
+                 * preceding on/off branch. Continue to the next point. */
+                i = n;
             }
-
-            if(cur==first) break;
         }
 
-        /*
-         * A second, robust contour pass builds edges by explicitly starting
-         * at the first on-curve point (or the midpoint of two off-curve
-         * points). This replaces any ambiguous transition from the compact
-         * walk above.
-         */
-        (void)start;
+        if (current.x != ((pts[first].on) ? pts[first].x :
+                          (pts[last].on ? pts[last].x :
+                           (pts[last].x + pts[first].x) / 2)) ||
+            current.y != ((pts[first].on) ? pts[first].y :
+                          (pts[last].on ? pts[last].y :
+                           (pts[last].y + pts[first].y) / 2))) {
+            if (ec < 4096)
+                edges[ec++] = (Edge){current.x, current.y,
+                                      ((pts[first].on) ? pts[first].x :
+                                       (pts[last].on) ? pts[last].x :
+                                       (pts[last].x + pts[first].x) / 2),
+                                      ((pts[first].on) ? pts[first].y :
+                                       (pts[last].on) ? pts[last].y :
+                                       (pts[last].y + pts[first].y) / 2)};
+        }
     }
+
+    if (ec == 0) return false;
 
     /*
-     * Rebuild edges with a simpler canonical TrueType contour algorithm.
+     * Scan-convert the flattened outline at pixel centers. TrueType's Y axis
+     * grows upward, while terminal rows grow downward, so invert Y here.
      */
-    ec=0;
-    for(int ci=0;ci<contours;ci++){
-        uint16_t first=(ci==0)?0:(uint16_t)(endPts[ci-1]+1U);
-        uint16_t last=endPts[ci];
+    for (uint32_t py = 0; py < FONT_HEIGHT; ++py) {
+        for (uint32_t px = 0; px < FONT_WIDTH; ++px) {
+            int32_t sx = xMin +
+                (int32_t)(((uint64_t)(px * 2U + 1U) * w) /
+                          (FONT_WIDTH * 2U));
+            int32_t sy = yMin +
+                (int32_t)(((uint64_t)(py * 2U + 1U) * h) /
+                          (FONT_HEIGHT * 2U));
 
-        Point pfirst=pts[first];
-        Point s;
-        uint16_t idx;
+            bool inside = false;
 
-        if(pfirst.on){
-            s=pfirst; idx=first;
-        }else{
-            Point plast=pts[last];
-            if(plast.on) s=plast;
-            else s=(Point){(plast.x+pfirst.x)/2,(plast.y+pfirst.y)/2,true};
-            idx=first;
-        }
+            for (uint32_t e = 0; e < ec; ++e) {
+                int32_t ax = edges[e].x0;
+                int32_t ay = edges[e].y0;
+                int32_t bx = edges[e].x1;
+                int32_t by = edges[e].y1;
 
-        Point current=s;
-        uint16_t i=idx;
-        bool first_cycle=true;
+                if ((ay > sy) == (by > sy)) continue;
 
-        while(first_cycle || i!=idx){
-            first_cycle=false;
-            Point a=pts[i];
-            uint16_t n=(i==last)?first:(uint16_t)(i+1U);
-            Point b=pts[n];
+                int64_t lhs = (int64_t)(sx - ax) * (by - ay);
+                int64_t rhs = (int64_t)(bx - ax) * (sy - ay);
 
-            if(a.on){
-                if(b.on){
-                    if(ec<4096)edges[ec++]=(Edge){current.x,current.y,b.x,b.y};
-                    current=b;
-                    i=n;
-                }else{
-                    uint16_t nn=(n==last)?first:(uint16_t)(n+1U);
-                    Point c=pts[nn];
-                    Point end=c.on?c:(Point){(b.x+c.x)/2,(b.y+c.y)/2,true};
-                    ec=flatten_quad(edges,ec,4096,current.x,current.y,b.x,b.y,end.x,end.y);
-                    current=end;
-                    i=c.on?nn:n;
-                }
-            }else{
-                i=n;
-                if(i==idx) break;
+                if ((by > ay && lhs < rhs) ||
+                    (by < ay && lhs > rhs))
+                    inside = !inside;
             }
-        }
 
-        if(current.x!=s.x || current.y!=s.y){
-            if(ec<4096)edges[ec++]=(Edge){current.x,current.y,s.x,s.y};
+            if (inside) {
+                uint32_t row = FONT_HEIGHT - 1U - py;
+                out[row] |= (uint8_t)(1U << (7U - px));
+            }
         }
     }
 
-    for(uint32_t py=0;py<FONT_HEIGHT;py++){
-        for(uint32_t px=0;px<FONT_WIDTH;px++){
-            int32_t sx=xMin+(int32_t)(((uint64_t)(px*2U+1U)*w)/(FONT_WIDTH*2U));
-            int32_t sy=yMin+(int32_t)(((uint64_t)(py*2U+1U)*h)/(FONT_HEIGHT*2U));
-            bool inside=false;
-            for(uint32_t e=0;e<ec;e++){
-                int32_t ax=edges[e].x0,ay=edges[e].y0,bx=edges[e].x1,by=edges[e].y1;
-                if(((ay>sy)!=(by>sy))){
-                    int64_t lhs=(int64_t)(sx-ax)*(by-ay);
-                    int64_t rhs=(int64_t)(bx-ax)*(sy-ay);
-                    if((by>ay&&lhs<rhs)||(by<ay&&lhs>rhs))inside=!inside;
-                }
-            }
-            if(inside) out[py]|=(uint8_t)(1U<<(7U-px));
-        }
-    }
     return true;
 }
 
