@@ -6,6 +6,7 @@
 #include "../fs/ISO9660/iso9660.h"
 #include "../include/kshell.h"
 #include "libc/stdlib.h"
+#include "commands/lowlevel.h"
 
 void DispatcherDispatch(const PARSED_COMMAND *Command){
     /* Disk commands shadow the built-ins: when /BIN/<cmd>.EXE exists on
@@ -107,6 +108,50 @@ void DispatcherDispatch(const PARSED_COMMAND *Command){
     if (strcmp(Command->Command, "cr4") == 0) { CmdCR4(); return; }
     if (strcmp(Command->Command, "msr") == 0) { CmdMsr(Command); return; }
     if (strcmp(Command->Command, "diskread") == 0) { CmdDiskRead(Command); return; }
+
+    // --- Low-Level Lab Tools ---
+    if (strcmp(Command->Command, "cpuinfo") == 0) { LL_CpuInfo(); return; }
+    if (strcmp(Command->Command, "cpuidx") == 0) { LL_Cpuid(Command); return; }
+    if (strcmp(Command->Command, "cpuidmax") == 0) { LL_CpuidMax(); return; }
+    if (strcmp(Command->Command, "flags") == 0) { LL_Flags(); return; }
+    if (strcmp(Command->Command, "regs") == 0) { LL_Regs(); return; }
+    if (strcmp(Command->Command, "segs") == 0) { LL_Segs(); return; }
+    if (strcmp(Command->Command, "rsp") == 0) { LL_Rsp(); return; }
+    if (strcmp(Command->Command, "rbp") == 0) { LL_Rbp(); return; }
+    if (strcmp(Command->Command, "rip") == 0) { LL_Rip(); return; }
+    if (strcmp(Command->Command, "rdtscp") == 0) { LL_Rdtscp(); return; }
+    if (strcmp(Command->Command, "xgetbv") == 0) { LL_Xgetbv(Command); return; }
+    if (strcmp(Command->Command, "crinfo") == 0) { LL_CrInfo(); return; }
+    if (strcmp(Command->Command, "stack") == 0) { LL_Stack(Command); return; }
+    if (strcmp(Command->Command, "tscbench") == 0) { LL_Bench(Command); return; }
+    if (strcmp(Command->Command, "pause") == 0) { LL_Pause(); return; }
+    if (strcmp(Command->Command, "cmos") == 0) { LL_Cmos(Command); return; }
+    if (strcmp(Command->Command, "rtc") == 0) { LL_Rtc(); return; }
+    if (strcmp(Command->Command, "pci") == 0) { LL_Pci(Command); return; }
+    if (strcmp(Command->Command, "pciscan") == 0) { LL_PciScan(Command); return; }
+    if (strcmp(Command->Command, "pcidump") == 0) { LL_PciDump(Command); return; }
+    if (strcmp(Command->Command, "pit") == 0) { LL_Pit(); return; }
+    if (strcmp(Command->Command, "pic") == 0) { LL_Pic(); return; }
+    if (strcmp(Command->Command, "iodly") == 0) { LL_IoDelay(); return; }
+    if (strcmp(Command->Command, "e9") == 0) { LL_E9(Command); return; }
+    if (strcmp(Command->Command, "portwatch") == 0) { LL_PortWatch(Command); return; }
+    if (strcmp(Command->Command, "memscan") == 0) { LL_MemScan(Command); return; }
+    if (strcmp(Command->Command, "memfill") == 0) { LL_MemFill(Command); return; }
+    if (strcmp(Command->Command, "memxor") == 0) { LL_MemXor(Command); return; }
+    if (strcmp(Command->Command, "bits") == 0) { LL_Bits(Command); return; }
+    if (strcmp(Command->Command, "endian") == 0) { LL_Endian(Command); return; }
+    if (strcmp(Command->Command, "align") == 0) { LL_Align(Command); return; }
+    if (strcmp(Command->Command, "cpuidbits") == 0) { LL_CpuidBits(); return; }
+    if (strcmp(Command->Command, "hypervisor") == 0) { LL_Hypervisor(); return; }
+    if (strcmp(Command->Command, "tscinfo") == 0) { LL_TscInfo(); return; }
+    if (strcmp(Command->Command, "cacheinfo") == 0) { LL_CacheInfo(); return; }
+    if (strcmp(Command->Command, "fpuinfo") == 0) { LL_FpuInfo(); return; }
+    if (strcmp(Command->Command, "simdinfo") == 0) { LL_SimdInfo(); return; }
+    if (strcmp(Command->Command, "ioports") == 0) { LL_IoPorts(); return; }
+    if (strcmp(Command->Command, "pageinfo") == 0) { LL_PageInfo(); return; }
+    if (strcmp(Command->Command, "dbgregs") == 0) { LL_DbgRegs(); return; }
+    if (strcmp(Command->Command, "gdtidt") == 0) { LL_GdtIdt(); return; }
+    if (strcmp(Command->Command, "serial") == 0) { LL_Serial(Command); return; }
 
     // --- High-Level System & Utility Commands ---
     /* neofetch/sysinfo provided by /BIN/NEOFETCH.EXE */
