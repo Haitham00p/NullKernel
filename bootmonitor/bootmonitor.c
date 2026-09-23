@@ -193,6 +193,7 @@ static void ShowKernels(void){
             if(ElfName(name)&&DiskFsFileSize(name,&sz)){
                 char kid[32]; uint32_t kslot=0;
                 KernelIdForName(name,kid,sizeof(kid),&kslot);
+                DiskFsChdirPath(BM_DIR);
                 TerminalWrite32("  ",0x00FFFFFFU);
                 TerminalWrite32(kid,NPB_CYAN);
                 TerminalWrite32("  ",0x00FFFFFFU);
