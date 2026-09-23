@@ -255,6 +255,11 @@ void KeyboardInterrupt(void)
         return;
     }
 
+    /* Function keys used by the split-shell manager. */
+    if (ScanCode == 0x3B) { KbdBufferPush(KBD_KEY_F1); return; }
+    if (ScanCode == 0x3C) { KbdBufferPush(KBD_KEY_F2); return; }
+    if (ScanCode == 0x3D) { KbdBufferPush(KBD_KEY_F3); return; }
+
     char Character = KeyboardLayoutNormal[ScanCode];
     if (Character == 0)
     {

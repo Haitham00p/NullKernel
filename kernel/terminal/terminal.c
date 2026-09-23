@@ -19,6 +19,32 @@ static uint32_t CurCol = 0;
 static uint32_t CurRow = 0;
 static uint32_t CurBGColor = 0x00000000;
 
+#define TERMINAL_MAX_PANES 2U
+static bool g_split = false;
+static uint32_t g_active_pane = 0;
+static uint32_t g_pane_col[TERMINAL_MAX_PANES] = {0, 0};
+static uint32_t g_pane_row[TERMINAL_MAX_PANES] = {0, 0};
+
+static uint32_t TerminalPaneStartRow(uint32_t pane)
+{
+    if (!g_split || pane == 0U) return 0U;
+    return (g_screen.rows / 2U) + 1U;
+}
+
+static uint32_t TerminalPaneRows(uint32_t pane)
+{
+    if (!g_split) return g_screen.rows;
+    uint32_t half = g_screen.rows / 2U;
+    if (pane == 0U) return half;
+    return g_screen.rows - half - 1U;
+}
+
+static void TerminalSyncCursor(void)
+{
+    uint32_t abs_row = TerminalPaneStartRow(g_active_pane) + CurRow;
+    CursorMoveTo(&g_screen, CurCol, abs_row);
+}
+
 term_screen_t *TerminalGetScreen(void) {
     return &g_screen;
 }
@@ -58,6 +84,10 @@ void TerminalInit32(void) {
 
     CurCol = 0;
     CurRow = 0;
+    g_pane_col[0] = g_pane_col[1] = 0;
+    g_pane_row[0] = g_pane_row[1] = 0;
+    g_active_pane = 0;
+    g_split = false;
     CursorMoveTo(&g_screen, CurCol, CurRow);
 
     g_initialized = true;
@@ -86,6 +116,8 @@ static uint32_t TerminalContrastColor(uint32_t fg, uint32_t bg)
 
 void TerminalPutChar32(char c, uint32_t color) {
     if (!g_initialized) return;
+    uint32_t pane_rows = TerminalPaneRows(g_active_pane);
+    uint32_t pane_start = TerminalPaneStartRow(g_active_pane);
 
     /* Mirror the console to the serial port so output is observable over
        a serial connection as well as on the framebuffer. */
@@ -110,16 +142,23 @@ void TerminalPutChar32(char c, uint32_t color) {
         TerminalNewLine32(color);
     }
 
-    term_cell_t *cell = &g_screen.lines[CurRow].cells[CurCol];
+    if (CurRow >= pane_rows) {
+        TerminalScroll32();
+    }
+
+    uint32_t abs_row = pane_start + CurRow;
+    term_cell_t *cell = &g_screen.lines[abs_row].cells[CurCol];
     cell->codepoint = (uint8_t)c;
     cell->fg_color = TerminalContrastColor(color, CurBGColor);
     cell->bg_color = CurBGColor;
     cell->attributes |= TERM_ATTR_DIRTY;
 
-    TerminalInvalidateCell(&g_screen, CurCol, CurRow);
+    TerminalInvalidateCell(&g_screen, CurCol, abs_row);
 
     CurCol++;
-    CursorMoveTo(&g_screen, CurCol, CurRow);
+    g_pane_col[g_active_pane] = CurCol;
+    g_pane_row[g_active_pane] = CurRow;
+    TerminalSyncCursor();
 
     TerminalRender(&g_screen);
 }
@@ -141,7 +180,9 @@ void TerminalClear32(uint32_t color) {
     if (!g_initialized) return;
 
     CurBGColor = color;
-    for (uint32_t r = 0; r < g_screen.rows; r++) {
+    uint32_t start = TerminalPaneStartRow(g_active_pane);
+    uint32_t rows = TerminalPaneRows(g_active_pane);
+    for (uint32_t r = start; r < start + rows; r++) {
         g_term_lines[r].is_dirty = true;
         g_term_lines[r].first_dirty = 0;
         g_term_lines[r].last_dirty = (uint16_t)(g_screen.cols - 1);
@@ -155,7 +196,9 @@ void TerminalClear32(uint32_t color) {
 
     CurCol = 0;
     CurRow = 0;
-    CursorMoveTo(&g_screen, CurCol, CurRow);
+    g_pane_col[g_active_pane] = 0;
+    g_pane_row[g_active_pane] = 0;
+    TerminalSyncCursor();
     TerminalRender(&g_screen);
 }
 
@@ -163,9 +206,14 @@ void TerminalSetCursor32(uint32_t x, uint32_t y) {
     if (!g_initialized) return;
     uint32_t col = x / FONT_WIDTH;
     uint32_t row = y / FONT_HEIGHT;
+    uint32_t rows = TerminalPaneRows(g_active_pane);
+    if (col > g_screen.cols) col = g_screen.cols;
+    if (row >= rows) row = rows ? rows - 1U : 0U;
     CurCol = col;
     CurRow = row;
-    CursorMoveTo(&g_screen, CurCol, CurRow);
+    g_pane_col[g_active_pane] = CurCol;
+    g_pane_row[g_active_pane] = CurRow;
+    TerminalSyncCursor();
     TerminalRender(&g_screen);
 }
 
@@ -181,10 +229,13 @@ void TerminalNewLine32(uint32_t color) {
     CurCol = 0;
     CurRow++;
 
-    if (CurRow >= g_screen.rows) {
+    uint32_t rows = TerminalPaneRows(g_active_pane);
+    if (CurRow >= rows) {
         TerminalScroll32();
     } else {
-        CursorMoveTo(&g_screen, CurCol, CurRow);
+        g_pane_col[g_active_pane] = CurCol;
+        g_pane_row[g_active_pane] = CurRow;
+        TerminalSyncCursor();
     }
     TerminalRender(&g_screen);
 }
@@ -196,35 +247,41 @@ void TerminalBackspace32(uint32_t color) {
     if (CurCol == 0) return;
 
     CurCol--;
-    term_cell_t *cell = &g_screen.lines[CurRow].cells[CurCol];
+    uint32_t abs_row = TerminalPaneStartRow(g_active_pane) + CurRow;
+    term_cell_t *cell = &g_screen.lines[abs_row].cells[CurCol];
     cell->codepoint = ' ';
     cell->bg_color = CurBGColor;
     cell->attributes |= TERM_ATTR_DIRTY;
 
-    TerminalInvalidateCell(&g_screen, CurCol, CurRow);
-    CursorMoveTo(&g_screen, CurCol, CurRow);
+    TerminalInvalidateCell(&g_screen, CurCol, abs_row);
+    g_pane_col[g_active_pane] = CurCol;
+    TerminalSyncCursor();
     TerminalRender(&g_screen);
 }
 
 void TerminalScroll32(void) {
     if (!g_initialized) return;
 
-    for (uint32_t r = 0; r < g_screen.rows - 1; r++) {
-        g_term_lines[r].is_dirty = true;
-        g_term_lines[r].first_dirty = 0;
-        g_term_lines[r].last_dirty = (uint16_t)(g_screen.cols - 1);
+    uint32_t start = TerminalPaneStartRow(g_active_pane);
+    uint32_t rows = TerminalPaneRows(g_active_pane);
+    if (rows == 0U) return;
 
+    for (uint32_t r = 0; r + 1U < rows; r++) {
+        uint32_t dst = start + r;
+        uint32_t src = start + r + 1U;
+        g_term_lines[dst].is_dirty = true;
+        g_term_lines[dst].first_dirty = 0;
+        g_term_lines[dst].last_dirty = (uint16_t)(g_screen.cols - 1);
         for (uint32_t c = 0; c < g_screen.cols; c++) {
-            g_term_cells[r][c] = g_term_cells[r + 1][c];
-            g_term_cells[r][c].attributes |= TERM_ATTR_DIRTY;
+            g_term_cells[dst][c] = g_term_cells[src][c];
+            g_term_cells[dst][c].attributes |= TERM_ATTR_DIRTY;
         }
     }
 
-    uint32_t last_r = g_screen.rows - 1;
+    uint32_t last_r = start + rows - 1U;
     g_term_lines[last_r].is_dirty = true;
     g_term_lines[last_r].first_dirty = 0;
     g_term_lines[last_r].last_dirty = (uint16_t)(g_screen.cols - 1);
-
     for (uint32_t c = 0; c < g_screen.cols; c++) {
         g_term_cells[last_r][c].codepoint = ' ';
         g_term_cells[last_r][c].fg_color = 0xFFFFFFFF;
@@ -232,8 +289,9 @@ void TerminalScroll32(void) {
         g_term_cells[last_r][c].attributes = TERM_ATTR_DIRTY;
     }
 
-    CurRow = last_r;
-    CursorMoveTo(&g_screen, CurCol, CurRow);
+    CurRow = rows - 1U;
+    g_pane_row[g_active_pane] = CurRow;
+    TerminalSyncCursor();
     TerminalInvalidateAll(&g_screen);
     TerminalRender(&g_screen);
 }
@@ -287,5 +345,91 @@ void TerminalWriteScaled32(const char *str, uint32_t x, uint32_t y,
 void TerminalBlinkUpdate(void) {
     if (!g_initialized) return;
     CursorBlinkTick(&g_screen, PITGetMilliseconds());
+    TerminalRender(&g_screen);
+}
+
+void TerminalSetActivePane(uint32_t pane)
+{
+    if (!g_initialized || pane > 1U) return;
+    if (!g_split && pane != 0U) return;
+    g_pane_col[g_active_pane] = CurCol;
+    g_pane_row[g_active_pane] = CurRow;
+    g_active_pane = pane;
+    CurCol = g_pane_col[pane];
+    CurRow = g_pane_row[pane];
+    if (CurRow >= TerminalPaneRows(pane))
+        CurRow = TerminalPaneRows(pane) ? TerminalPaneRows(pane) - 1U : 0U;
+    TerminalSyncCursor();
+    TerminalRender(&g_screen);
+}
+uint32_t TerminalGetActivePane(void) { return g_active_pane; }
+bool TerminalIsSplit(void) { return g_split; }
+
+void TerminalSplitEnable(void)
+{
+    if (!g_initialized || g_split) return;
+    uint32_t half = g_screen.rows / 2U;
+    if (half < 2U || g_screen.rows < 5U) return;
+    g_split = true;
+    g_active_pane = 0;
+    g_pane_col[0] = CurCol;
+    g_pane_row[0] = CurRow < half ? CurRow : half - 1U;
+    g_pane_col[1] = 0;
+    g_pane_row[1] = 0;
+    uint32_t divider = half;
+    for (uint32_t c = 0; c < g_screen.cols; c++) {
+        g_term_cells[divider][c].codepoint = '-';
+        g_term_cells[divider][c].fg_color = 0x00707070U;
+        g_term_cells[divider][c].bg_color = CurBGColor;
+        g_term_cells[divider][c].attributes |= TERM_ATTR_DIRTY;
+    }
+    for (uint32_t r = half + 1U; r < g_screen.rows; r++) {
+        g_term_lines[r].is_dirty = true;
+        for (uint32_t c = 0; c < g_screen.cols; c++) {
+            g_term_cells[r][c].codepoint = ' ';
+            g_term_cells[r][c].fg_color = 0xFFFFFFFFU;
+            g_term_cells[r][c].bg_color = CurBGColor;
+            g_term_cells[r][c].attributes |= TERM_ATTR_DIRTY;
+        }
+    }
+    CurCol = g_pane_col[0];
+    CurRow = g_pane_row[0];
+    TerminalSyncCursor();
+    TerminalInvalidateAll(&g_screen);
+    TerminalRender(&g_screen);
+}
+
+void TerminalSplitDisablePromote(uint32_t pane)
+{
+    if (!g_initialized || !g_split || pane > 1U) return;
+    uint32_t start = TerminalPaneStartRow(pane);
+    uint32_t rows = TerminalPaneRows(pane);
+    if (rows == 0U) return;
+    for (uint32_t r = 0; r < g_screen.rows; r++) {
+        g_term_lines[r].is_dirty = true;
+        g_term_lines[r].first_dirty = 0;
+        g_term_lines[r].last_dirty = (uint16_t)(g_screen.cols - 1);
+    }
+    for (uint32_t r = 0; r < g_screen.rows; r++) {
+        for (uint32_t c = 0; c < g_screen.cols; c++) {
+            if (r < rows) g_term_cells[r][c] = g_term_cells[start + r][c];
+            else {
+                g_term_cells[r][c].codepoint = ' ';
+                g_term_cells[r][c].fg_color = 0xFFFFFFFFU;
+                g_term_cells[r][c].bg_color = CurBGColor;
+                g_term_cells[r][c].attributes = TERM_ATTR_DIRTY;
+            }
+            g_term_cells[r][c].attributes |= TERM_ATTR_DIRTY;
+        }
+    }
+    g_split = false;
+    g_active_pane = 0;
+    CurCol = g_pane_col[pane];
+    CurRow = g_pane_row[pane];
+    if (CurRow >= g_screen.rows) CurRow = g_screen.rows - 1U;
+    g_pane_col[0] = CurCol;
+    g_pane_row[0] = CurRow;
+    TerminalSyncCursor();
+    TerminalInvalidateAll(&g_screen);
     TerminalRender(&g_screen);
 }
