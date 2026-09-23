@@ -28,52 +28,53 @@ uint32_t PromptColor = 0xFFFFFFFFU;
 
 typedef struct
 {
-    char *Command;
-    uint32_t CommandCapacity;
-    uint32_t CommandLength;
-    uint32_t CommandPos;
-    char *History[SHELL_HISTORY_SIZE];
-    char *HistoryDraft;
-    uint32_t HistoryCount;
-    uint32_t HistoryPosition;
-    bool HistoryBrowsing;
+    char *ActiveContext->Command;
+    uint32_t ActiveContext->CommandCapacity;
+    uint32_t ActiveContext->CommandLength;
+    uint32_t ActiveContext->CommandPos;
+    char *ActiveContext->History[SHELL_HISTORY_SIZE];
+    char *ActiveContext->HistoryDraft;
+    uint32_t ActiveContext->HistoryCount;
+    uint32_t ActiveContext->HistoryPosition;
+    bool ActiveContext->HistoryBrowsing;
     char Cwd[SHELL_CWD_CAPACITY];
     bool Exists;
 } SHELL_CONTEXT;
 
 static SHELL_CONTEXT Shells[SHELL_MAX_SHELLS];
 static uint32_t ActiveShell = 0;
+#define ActiveContext (&Shells[ActiveShell])
 
-#define Command             (Shells[ActiveShell].Command)
-#define CommandCapacity     (Shells[ActiveShell].CommandCapacity)
-#define CommandLength       (Shells[ActiveShell].CommandLength)
-#define CommandPos          (Shells[ActiveShell].CommandPos)
-#define History             (Shells[ActiveShell].History)
-#define HistoryDraft        (Shells[ActiveShell].HistoryDraft)
-#define HistoryCount        (Shells[ActiveShell].HistoryCount)
-#define HistoryPosition     (Shells[ActiveShell].HistoryPosition)
-#define HistoryBrowsing     (Shells[ActiveShell].HistoryBrowsing)
+#define ActiveContext->Command             (Shells[ActiveShell].Command)
+#define ActiveContext->CommandCapacity     (Shells[ActiveShell].CommandCapacity)
+#define ActiveContext->CommandLength       (Shells[ActiveShell].CommandLength)
+#define ActiveContext->CommandPos          (Shells[ActiveShell].CommandPos)
+#define ActiveContext->History             (Shells[ActiveShell].History)
+#define ActiveContext->HistoryDraft        (Shells[ActiveShell].HistoryDraft)
+#define ActiveContext->HistoryCount        (Shells[ActiveShell].HistoryCount)
+#define ActiveContext->HistoryPosition     (Shells[ActiveShell].HistoryPosition)
+#define ActiveContext->HistoryBrowsing     (Shells[ActiveShell].HistoryBrowsing)
 
 /* Grows the live command buffer so it can hold at least Need bytes
    (including the NUL terminator).  Returns false on allocation failure. */
 static bool ShellCmdEnsure(uint32_t Need)
 {
-    if (Need <= CommandCapacity) return true;
-    uint32_t NewCap = CommandCapacity ? CommandCapacity : SHELL_CMD_INIT_CAP;
+    if (Need <= ActiveContext->CommandCapacity) return true;
+    uint32_t NewCap = ActiveContext->CommandCapacity ? ActiveContext->CommandCapacity : SHELL_CMD_INIT_CAP;
     while (NewCap < Need) NewCap *= 2U;
     char *New = (char *)kmalloc((uint64_t)NewCap);
     if (New == NULL) return false;
-    if (Command != NULL)
+    if (ActiveContext->Command != NULL)
     {
-        for (uint32_t i = 0; i <= CommandLength; i++) New[i] = Command[i];
-        kfree(Command);
+        for (uint32_t i = 0; i <= ActiveContext->CommandLength; i++) New[i] = ActiveContext->Command[i];
+        kfree(ActiveContext->Command);
     }
     else
     {
         New[0] = '\0';
     }
-    Command = New;
-    CommandCapacity = NewCap;
+    ActiveContext->Command = New;
+    ActiveContext->CommandCapacity = NewCap;
     return true;
 }
 
@@ -193,15 +194,15 @@ static void RedrawCommandPrompt(void)
     /* Clear current prompt line content */
     TerminalSetCursor32(0, cur_y);
     WritePrompt();
-    TerminalWrite32(Command, PromptColor);
+    TerminalWrite32(ActiveContext->Command, PromptColor);
 
     /* Fill remaining line length with spaces to clean up deleted chars */
-    for (uint32_t i = PromptTextLength + CommandLength; i < scr->cols; i++) {
+    for (uint32_t i = PromptTextLength + ActiveContext->CommandLength; i < scr->cols; i++) {
         TerminalPutChar32(' ', PromptColor);
     }
 
-    /* Position cursor at active editing offset CommandPos, then show it */
-    TerminalSetCursor32((PromptTextLength + CommandPos) * scr->font_width, cur_y);
+    /* Position cursor at active editing offset ActiveContext->CommandPos, then show it */
+    TerminalSetCursor32((PromptTextLength + ActiveContext->CommandPos) * scr->font_width, cur_y);
     CursorSetVisible(scr, true);
 }
 
@@ -209,57 +210,57 @@ static void ShellReplaceCommand(const char *Replacement)
 {
     uint32_t Len = (uint32_t)strlen(Replacement);
     if (!ShellCmdEnsure(Len + 1U)) return;
-    strcpy(Command, Replacement);
-    CommandLength = Len;
-    CommandPos = Len;
+    strcpy(ActiveContext->Command, Replacement);
+    ActiveContext->CommandLength = Len;
+    ActiveContext->CommandPos = Len;
     RedrawCommandPrompt();
 }
 
 static void ShellSaveHistory(void)
 {
-    if (CommandLength == 0) return;
-    char *Copy = ShellCmdDup(Command);
+    if (ActiveContext->CommandLength == 0) return;
+    char *Copy = ShellCmdDup(ActiveContext->Command);
     if (Copy == NULL) return;
-    if (HistoryCount < SHELL_HISTORY_SIZE)
+    if (ActiveContext->HistoryCount < SHELL_HISTORY_SIZE)
     {
-        History[HistoryCount++] = Copy;
+        ActiveContext->History[ActiveContext->HistoryCount++] = Copy;
     }
     else
     {
-        kfree(History[0]);
+        kfree(ActiveContext->History[0]);
         for (uint32_t Index = 1; Index < SHELL_HISTORY_SIZE; Index++)
-            History[Index - 1U] = History[Index];
-        History[SHELL_HISTORY_SIZE - 1U] = Copy;
+            ActiveContext->History[Index - 1U] = ActiveContext->History[Index];
+        ActiveContext->History[SHELL_HISTORY_SIZE - 1U] = Copy;
     }
-    HistoryPosition = HistoryCount;
-    HistoryBrowsing = false;
+    ActiveContext->HistoryPosition = ActiveContext->HistoryCount;
+    ActiveContext->HistoryBrowsing = false;
 }
 
 static void ShellHistoryUp(void)
 {
-    if (HistoryCount == 0) return;
-    if (!HistoryBrowsing)
+    if (ActiveContext->HistoryCount == 0) return;
+    if (!ActiveContext->HistoryBrowsing)
     {
-        if (HistoryDraft != NULL) kfree(HistoryDraft);
-        HistoryDraft = ShellCmdDup(Command);
-        HistoryPosition = HistoryCount;
-        HistoryBrowsing = true;
+        if (ActiveContext->HistoryDraft != NULL) kfree(ActiveContext->HistoryDraft);
+        ActiveContext->HistoryDraft = ShellCmdDup(ActiveContext->Command);
+        ActiveContext->HistoryPosition = ActiveContext->HistoryCount;
+        ActiveContext->HistoryBrowsing = true;
     }
-    if (HistoryPosition > 0)
-        ShellReplaceCommand(History[--HistoryPosition]);
+    if (ActiveContext->HistoryPosition > 0)
+        ShellReplaceCommand(ActiveContext->History[--ActiveContext->HistoryPosition]);
 }
 
 static void ShellHistoryDown(void)
 {
-    if (!HistoryBrowsing) return;
-    if (HistoryPosition + 1U < HistoryCount)
+    if (!ActiveContext->HistoryBrowsing) return;
+    if (ActiveContext->HistoryPosition + 1U < ActiveContext->HistoryCount)
     {
-        ShellReplaceCommand(History[++HistoryPosition]);
+        ShellReplaceCommand(ActiveContext->History[++ActiveContext->HistoryPosition]);
         return;
     }
-    HistoryBrowsing = false;
-    HistoryPosition = HistoryCount;
-    ShellReplaceCommand(HistoryDraft != NULL ? HistoryDraft : "");
+    ActiveContext->HistoryBrowsing = false;
+    ActiveContext->HistoryPosition = ActiveContext->HistoryCount;
+    ShellReplaceCommand(ActiveContext->HistoryDraft != NULL ? ActiveContext->HistoryDraft : "");
 }
 
 static void ShellSaveCwd(void)
@@ -306,7 +307,7 @@ static void ShellInitContext(uint32_t Index, const char *Cwd)
     Ctx->Exists = true;
     ActiveShell = Index;
     ShellCmdEnsure(SHELL_CMD_INIT_CAP);
-    if (Command != NULL) Command[0] = '\0';
+    if (ActiveContext->Command != NULL) ActiveContext->Command[0] = '\0';
     ActiveShell = Saved;
 }
 
@@ -395,9 +396,9 @@ void ShellInitialize(void)
     Shells[0].Exists = true;
     DiskFsPwd(Shells[0].Cwd, SHELL_CWD_CAPACITY);
     ShellCmdEnsure(SHELL_CMD_INIT_CAP);
-    CommandLength = 0;
-    CommandPos = 0;
-    if (Command != NULL) Command[0] = '\0';
+    ActiveContext->CommandLength = 0;
+    ActiveContext->CommandPos = 0;
+    if (ActiveContext->Command != NULL) ActiveContext->Command[0] = '\0';
     WritePrompt();
 }
 
@@ -419,24 +420,24 @@ void ShellUpdate(void)
             EditorHandleKey(Key, KbdGetState().Ctrl, KbdGetState().Shift);
             if (!EditorIsActive())
             {
-                CommandLength = 0;
-                CommandPos = 0;
-                Command[0] = '\0';
+                ActiveContext->CommandLength = 0;
+                ActiveContext->CommandPos = 0;
+                ActiveContext->Command[0] = '\0';
                 WritePrompt();
             }
             continue;
         }
 
-        /* History Navigation */
+        /* ActiveContext->History Navigation */
         if (Key == KBD_KEY_UP)   { ShellHistoryUp(); continue; }
         if (Key == KBD_KEY_DOWN) { ShellHistoryDown(); continue; }
 
         /* Left / Right Arrow Cursor Movement */
         if (Key == KBD_KEY_LEFT)
         {
-            if (CommandPos > 0)
+            if (ActiveContext->CommandPos > 0)
             {
-                CommandPos--;
+                ActiveContext->CommandPos--;
                 CursorMoveLeft(TerminalGetScreen(), 1);
             }
             continue;
@@ -444,9 +445,9 @@ void ShellUpdate(void)
 
         if (Key == KBD_KEY_RIGHT)
         {
-            if (CommandPos < CommandLength)
+            if (ActiveContext->CommandPos < ActiveContext->CommandLength)
             {
-                CommandPos++;
+                ActiveContext->CommandPos++;
                 CursorMoveRight(TerminalGetScreen(), 1);
             }
             continue;
@@ -454,27 +455,27 @@ void ShellUpdate(void)
 
         if (Key == KBD_KEY_HOME)
         {
-            CommandPos = 0;
+            ActiveContext->CommandPos = 0;
             RedrawCommandPrompt();
             continue;
         }
 
         if (Key == KBD_KEY_END)
         {
-            CommandPos = CommandLength;
+            ActiveContext->CommandPos = ActiveContext->CommandLength;
             RedrawCommandPrompt();
             continue;
         }
 
         if (Key == KBD_KEY_DELETE)
         {
-            if (CommandPos < CommandLength)
+            if (ActiveContext->CommandPos < ActiveContext->CommandLength)
             {
-                for (uint32_t i = CommandPos; i < CommandLength; i++)
+                for (uint32_t i = ActiveContext->CommandPos; i < ActiveContext->CommandLength; i++)
                 {
-                    Command[i] = Command[i + 1];
+                    ActiveContext->Command[i] = ActiveContext->Command[i + 1];
                 }
-                CommandLength--;
+                ActiveContext->CommandLength--;
                 RedrawCommandPrompt();
             }
             continue;
@@ -491,17 +492,17 @@ void ShellUpdate(void)
         {
             TerminalPutChar32('\n', PromColor);
             ShellSaveHistory();
-            Command[CommandLength] = '\0';
+            ActiveContext->Command[ActiveContext->CommandLength] = '\0';
 
             PARSED_COMMAND Parsed;
-            ParserParse(Command, &Parsed);
+            ParserParse(ActiveContext->Command, &Parsed);
             DispatcherDispatch(&Parsed);
             ParserFree(&Parsed);
             ShellSaveCwd();
 
-            CommandLength = 0;
-            CommandPos = 0;
-            Command[0] = '\0';
+            ActiveContext->CommandLength = 0;
+            ActiveContext->CommandPos = 0;
+            ActiveContext->Command[0] = '\0';
             if (!EditorIsActive())
             {
                 WritePrompt();
@@ -512,14 +513,14 @@ void ShellUpdate(void)
         /* Backspace Key */
         if (Character == '\b')
         {
-            if (CommandPos > 0)
+            if (ActiveContext->CommandPos > 0)
             {
-                for (uint32_t i = CommandPos - 1; i < CommandLength; i++)
+                for (uint32_t i = ActiveContext->CommandPos - 1; i < ActiveContext->CommandLength; i++)
                 {
-                    Command[i] = Command[i + 1];
+                    ActiveContext->Command[i] = ActiveContext->Command[i + 1];
                 }
-                CommandLength--;
-                CommandPos--;
+                ActiveContext->CommandLength--;
+                ActiveContext->CommandPos--;
                 RedrawCommandPrompt();
             }
             continue;
@@ -528,19 +529,19 @@ void ShellUpdate(void)
         /* Printable Characters */
         if (Character >= ' ' && Character <= '~')
         {
-            if (!ShellCmdEnsure(CommandLength + 2U))
+            if (!ShellCmdEnsure(ActiveContext->CommandLength + 2U))
             {
                 continue;
             }
 
-            for (int32_t i = (int32_t)CommandLength; i >= (int32_t)CommandPos; i--)
+            for (int32_t i = (int32_t)ActiveContext->CommandLength; i >= (int32_t)ActiveContext->CommandPos; i--)
             {
-                Command[i + 1] = Command[i];
+                ActiveContext->Command[i + 1] = ActiveContext->Command[i];
             }
-            Command[CommandPos] = Character;
-            CommandLength++;
-            CommandPos++;
-            Command[CommandLength] = '\0';
+            ActiveContext->Command[ActiveContext->CommandPos] = Character;
+            ActiveContext->CommandLength++;
+            ActiveContext->CommandPos++;
+            ActiveContext->Command[ActiveContext->CommandLength] = '\0';
             RedrawCommandPrompt();
         }
     }
