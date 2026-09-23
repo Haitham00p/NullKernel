@@ -1,7 +1,7 @@
 #ifndef NULL_LOWLEVEL_H
 #define NULL_LOWLEVEL_H
 
-#include "parser.h"
+#include "../parser.h"
 
 void LL_CpuInfo(void);
 void LL_Cpuid(const PARSED_COMMAND *Command);
