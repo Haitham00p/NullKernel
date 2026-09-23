@@ -91,7 +91,21 @@ void TerminalInit32(void) {
     CursorMoveTo(&g_screen, CurCol, CurRow);
 
     g_initialized = true;
+    TerminalRenderWithDivider();
+}
+
+static void TerminalRenderWithDivider(void)
+{
     TerminalRender(&g_screen);
+    if (!g_split || g_screen.cols == 0U || g_screen.rows == 0U) return;
+
+    uint32_t divider_col = g_screen.cols / 2U;
+    if (divider_col >= g_screen.cols) return;
+
+    uint32_t x = divider_col * FONT_WIDTH;
+    if (x > 0U) x--;
+
+    FrDrawLine32(x, 0U, x, g_screen.fb_height - 1U, 0x00707070U);
 }
 
 static uint32_t TerminalContrastColor(uint32_t fg, uint32_t bg)
@@ -276,14 +290,14 @@ void TerminalScroll32(void) {
     g_term_lines[last_r].is_dirty = true;
     g_term_lines[last_r].first_dirty = 0;
     g_term_lines[last_r].last_dirty = (uint16_t)(g_screen.cols - 1);
-    for (uint32_t c = 0; c < g_screen.cols; c++) {
+    for (uint32_t c = start; c < start + cols; c++) {
         g_term_cells[last_r][c].codepoint = ' ';
         g_term_cells[last_r][c].fg_color = 0xFFFFFFFF;
         g_term_cells[last_r][c].bg_color = CurBGColor;
         g_term_cells[last_r][c].attributes = TERM_ATTR_DIRTY;
     }
 
-    CurRow = rows - 1U;
+    CurRow = g_screen.rows - 1U;
     g_pane_row[g_active_pane] = CurRow;
     TerminalSyncCursor();
     TerminalInvalidateAll(&g_screen);
@@ -371,14 +385,6 @@ void TerminalSplitEnable(void)
     g_pane_row[0] = CurRow;
     g_pane_col[1] = 0;
     g_pane_row[1] = 0;
-
-    uint32_t divider = half;
-    for (uint32_t r = 0; r < g_screen.rows; r++) {
-        g_term_cells[r][divider].codepoint = '|';
-        g_term_cells[r][divider].fg_color = 0x00707070U;
-        g_term_cells[r][divider].bg_color = CurBGColor;
-        g_term_cells[r][divider].attributes |= TERM_ATTR_DIRTY;
-    }
 
     CurCol = g_pane_col[0];
     CurRow = g_pane_row[0];
