@@ -8,7 +8,7 @@
 static uint32_t my_len(const char *s){ uint32_t n=0; while(s[n]) n++; return n; }
 static void my_cpy(char *d, const char *s){ while((*d++ = *s++)); }
 static void my_cat(char *d, const char *s){ while(*d) d++; while((*d++ = *s++)); }
-static const char *my_rchr(const char *s, char c){ const char *r=0; while(*s){ if(*s==c) r=s; s++; } return r; }
+static uint32_t my_rslash(const char *s){ uint32_t i=0, r=MAXP; while(s[i]){ if(s[i]=='/') r=i; i++; } return r; }
 
 static void strip_slash(char *p){ uint32_t n=my_len(p); while(n>1 && p[n-1]=='/') p[--n]='\0'; }
 
@@ -23,16 +23,11 @@ static int is_dir(const char *path){
 
 /* Split path into directory part (no trailing slash) and final name. */
 static void split_path(const char *path, char *dir, char *name){
-    const char *sl = my_rchr(path, '/');
-    uint32_t pos = 0;
-    uint32_t scan;
-    if(sl == 0){
+    uint32_t pos = my_rslash(path);
+    if(pos == MAXP){
         my_cpy(dir, ".");
         my_cpy(name, path);
     } else {
-        scan = 0;
-        while (path[scan] != '\0' && &path[scan] != sl) scan++;
-        pos = scan;
         if(pos == 0){
             my_cpy(dir, "/");
             my_cpy(name, path + 1);
@@ -149,12 +144,12 @@ void main(void){
     ShellArgGet(1, dst, MAXP);
     if(is_dir(src)){
         char base[MAXP], finaldir[MAXP], tmp[MAXP], srcstrip[MAXP];
-        const char *sl;
+        uint32_t slash;
         uint32_t dlen;
         my_cpy(srcstrip, src);
         strip_slash(srcstrip);
-        sl = my_rchr(srcstrip, '/');
-        if(sl && sl[1]) my_cpy(base, sl + 1); else my_cpy(base, srcstrip);
+        slash = my_rslash(srcstrip);
+        if(slash < MAXP && srcstrip[slash + 1U] != '\0') my_cpy(base, srcstrip + slash + 1U); else my_cpy(base, srcstrip);
         my_cpy(tmp, dst);
         strip_slash(tmp);
         dlen = my_len(dst);
