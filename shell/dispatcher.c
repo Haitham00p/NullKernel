@@ -8,6 +8,7 @@
 #include "libc/stdlib.h"
 #include "commands/lowlevel.h"
 #include "bootmonitor/bootmonitor.h"
+#include "arch/x86_64/power/pwr.h"
 
 void DispatcherDispatch(const PARSED_COMMAND *Command){
     if (strcmp(Command->Command, "reboot-c") == 0)
