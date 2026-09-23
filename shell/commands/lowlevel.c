@@ -94,9 +94,9 @@ void LL_CpuInfo(void)
     char vendor[13];
 
     LLCpuid(0, 0, &max, &b, &c, &d);
-    *(uint32_t *)&vendor[0] = b;
-    *(uint32_t *)&vendor[4] = d;
-    *(uint32_t *)&vendor[8] = c;
+    memcpy(&vendor[0], &b, sizeof(b));
+    memcpy(&vendor[4], &d, sizeof(d));
+    memcpy(&vendor[8], &c, sizeof(c));
     vendor[12] = '\0';
 
     TerminalPrintLine32("CPU LAB / CPUID", 0x00FFD700);
@@ -197,7 +197,22 @@ void LL_Rip(void)
 
 void LL_Rdtscp(void)
 {
+    uint32_t max_ext = LLMaxExtended();
+    uint32_t a, b, c, d;
     uint32_t lo, hi, aux;
+
+    if (max_ext < 0x80000001U)
+    {
+        LLLine("rdtscp: extended CPUID leaf unavailable.");
+        return;
+    }
+    LLCpuid(0x80000001U, 0, &a, &b, &c, &d);
+    if ((d & (1U << 27)) == 0U)
+    {
+        LLLine("rdtscp: CPU does not advertise RDTSCP.");
+        return;
+    }
+
     __asm__ volatile("rdtscp" : "=a"(lo), "=d"(hi), "=c"(aux));
     LLHex("TSC = ", ((uint64_t)hi << 32) | lo);
     LLHex("TSC_AUX = ", aux);
@@ -230,6 +245,11 @@ void LL_Xgetbv(const PARSED_COMMAND *Command)
     if ((cr4 & (1ULL << 18)) == 0U)
     {
         LLLine("xgetbv: CR4.OSXSAVE is disabled.");
+        return;
+    }
+    if (index != 0U)
+    {
+        LLLine("xgetbv: only XCR0 (index 0) is supported safely.");
         return;
     }
 
@@ -549,7 +569,10 @@ void LL_Hypervisor(void)
     {
         LLCpuid(0x40000000U,0,&a,&b,&c,&d);
         char s[13];
-        *(uint32_t *)&s[0]=b; *(uint32_t *)&s[4]=c; *(uint32_t *)&s[8]=d; s[12]='\0';
+        memcpy(&s[0], &b, sizeof(b));
+        memcpy(&s[4], &c, sizeof(c));
+        memcpy(&s[8], &d, sizeof(d));
+        s[12]='\0';
         TerminalWrite32("vendor = ",PromColor); TerminalPrintLine32(s,PromColor);
         LLHex("max hypervisor leaf = ",a);
     }
