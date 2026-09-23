@@ -474,7 +474,13 @@ void BootMonitorRequest(void){const char m[]="BM1\n";DiskFsWriteInPath(BM_DIR,BM
 void BootMonitorClearRequest(void)
 {
     if(!DiskFsIsMounted()) return;
-    if(!DiskFsRemove(BM_REQ))
+    bool removed=false;
+    if(DiskFsChdirPath(BM_DIR))
+    {
+        removed=DiskFsRemove(BM_REQ);
+        DiskFsCdRoot();
+    }
+    if(!removed)
     {
         const char off[]="BM0\\n";
         /* Fallback: an explicit disabled marker is safer than a stale BM1
