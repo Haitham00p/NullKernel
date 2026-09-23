@@ -367,7 +367,12 @@ static bool CmdListVisitor(const FAT32DirectoryEntry *Entry,
     }
 
     Len = (uint32_t)strlen(ShortName);
-    if (LsColumnPos + Len + 4U >= 80U)
+    term_screen_t *Screen = TerminalGetScreen();
+    uint32_t PaneCols = (TerminalIsSplit() && Screen != NULL)
+        ? Screen->cols / 2U
+        : (Screen != NULL ? Screen->cols : 80U);
+    if (PaneCols < 1U) PaneCols = 1U;
+    if (LsColumnPos + Len + 4U >= PaneCols)
     {
         TerminalPutChar32('\n', PromColor);
         LsColumnPos = 0U;
