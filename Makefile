@@ -44,7 +44,6 @@ C_SOURCES := \
 	drivers/input/keyboard/keyboard_layout.c \
 	drivers/storage/ide/ide.c \
 	drivers/video_font/font.c \
-	drivers/video_font/ttf_font.c \
 	drivers/video_framebuffer/framebuffer.c \
  	fs/fat32/directory/directory.c \
 	fs/fat32/file/file.c \
@@ -102,14 +101,12 @@ C_SOURCES := \
 	lib/sound/sndbeep.c \
 	Graphic/graphic.c
 
-TTF_OBJECT := $(BUILD_DIR)/drivers/video_font/IBMPlexMono-Regular.ttf.o
-
 ASM_OBJECTS := \
 	$(BUILD_DIR)/arch/x86_64/interrupts/isr_asm.o \
 	$(BUILD_DIR)/arch/x86_64/interrupts/irq_asm.o \
 	$(BUILD_DIR)/arch/x86_64/program/run_asm.o
 
-OBJECTS := $(C_SOURCES:%.c=$(BUILD_DIR)/%.o) $(ASM_OBJECTS) $(TTF_OBJECT)
+OBJECTS := $(C_SOURCES:%.c=$(BUILD_DIR)/%.o) $(ASM_OBJECTS)
 
 -include $(C_SOURCES:%.c=$(BUILD_DIR)/%.d)
 
@@ -139,10 +136,6 @@ vault: $(KERNEL)
 		$(MAKE) --no-print-directory $(KERNEL) && \
 		touch .vault-stamp; \
 	fi
-
-$(TTF_OBJECT): drivers/video_font/IBMPlexMono-Regular.ttf
-	@mkdir -p $(@D)
-	$(LD) -r -b binary -o $@ $<
 
 $(BUILD_DIR)/%.o: %.c
 	@mkdir -p $(@D)

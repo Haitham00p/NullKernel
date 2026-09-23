@@ -6,7 +6,6 @@
 #include "include/cursor.h"
 #include "drivers/input/keyboard/keyboard.h"
 #include "drivers/video_framebuffer/framebuffer.h"
-#include "drivers/video_font/ttf_font.h"
 #include "lib/string/string.h"
 
 #define EDITOR_CAPACITY 4096U
@@ -193,24 +192,13 @@ static void EditorDrawStatus(void)
     n = EditorAppendNum(St, n, Col + 1U);
     St[n] = '\0';
 
-    if (scr->cols == 0U || scr->rows == 0U)
-    {
-        return;
-    }
-
-    uint32_t status_cells = scr->cols < EDITOR_STATUS_CELLS
-                          ? scr->cols : EDITOR_STATUS_CELLS;
-    TerminalSetCursor32((scr->cols - status_cells) * scr->font_width,
+    TerminalSetCursor32((scr->cols - EDITOR_STATUS_CELLS) * scr->font_width,
                         (scr->rows - 1U) * scr->font_height);
     for (i = 0; i < EDITOR_STATUS_CELLS; i++)
     {
         TerminalPutChar32(' ', EDITOR_BG);
     }
-    if (n > scr->cols)
-    {
-        n = scr->cols;
-    }
-    Start = n < scr->cols ? scr->cols - n : 0U;
+    Start = n < EDITOR_STATUS_CELLS ? scr->cols - n : scr->cols - EDITOR_STATUS_CELLS;
     TerminalSetCursor32(Start * scr->font_width,
                         (scr->rows - 1U) * scr->font_height);
     TerminalWrite32(St, EDITOR_FG);
@@ -224,17 +212,8 @@ static void EditorCursorTo(void)
     uint32_t Row;
 
     EditorLineCol(EditorPos, &Line, &Col);
-    if (scr->rows == 0U)
-    {
-        return;
-    }
-
-    Row = Line >= EditorTopLine ? Line - EditorTopLine : 0U;
-    if (scr->rows <= 1U)
-    {
-        Row = 0U;
-    }
-    else if (Row >= scr->rows - 1U)
+    Row = Line - EditorTopLine;
+    if (Row > scr->rows - 2U)
     {
         Row = scr->rows - 2U;
     }
@@ -668,40 +647,6 @@ static bool EditorBlockStateAtLine(uint32_t Line)
     return inBlock;
 }
 
-static void EditorDrawSelectedGlyph(term_screen_t *scr,
-                                        uint8_t codepoint,
-                                        uint32_t x,
-                                        uint32_t y)
-{
-    const uint8_t *atlas = TtfFontGetAtlas();
-    uint32_t fw = scr->font_width;
-    uint32_t fh = scr->font_height;
-    uint32_t bytes_per_row = (fw + 7U) / 8U;
-
-    if (!atlas || codepoint >= 128U || fw == 0U || fh == 0U)
-        return;
-
-    const uint8_t *glyph = atlas + (uint32_t)codepoint * fh * 2U;
-
-    for (uint32_t py = 0; py < fh; py++)
-    {
-        uint32_t dy = y + py;
-        if (dy >= scr->fb_height)
-            continue;
-
-        for (uint32_t px = 0; px < fw; px++)
-        {
-            uint32_t dx = x + px;
-            if (dx >= scr->fb_width)
-                continue;
-
-            uint8_t byte = glyph[py * bytes_per_row + (px >> 3)];
-            if (byte & (uint8_t)(1U << (7U - (px & 7U))))
-                scr->framebuffer[dy * scr->fb_pitch_pixels + dx] = 0x00FFFFFFU;
-        }
-    }
-}
-
 static void EditorPaintSelection(void)
 {
     term_screen_t *scr = TerminalGetScreen();
@@ -733,7 +678,7 @@ static void EditorPaintSelection(void)
         FbFillRect32(X, Y, scr->font_width, scr->font_height, 0x004060A0U);
         if (EditorBuffer[i] != '\n')
         {
-            EditorDrawSelectedGlyph(scr, (uint8_t)EditorBuffer[i], X, Y);
+            FbDrawChar32((uint8_t)EditorBuffer[i], X, Y, 0x00FFFFFFU);
         }
     }
 }
