@@ -183,7 +183,7 @@ void TerminalPutChar32(char c, uint32_t color) {
     g_pane_row[g_active_pane] = CurRow;
     TerminalSyncCursor();
 
-    TerminalRender(&g_screen);
+    TerminalRenderWithDivider();
 }
 
 void TerminalWrite32(const char *str, uint32_t color) {
@@ -222,7 +222,7 @@ void TerminalClear32(uint32_t color) {
     g_pane_col[g_active_pane] = 0;
     g_pane_row[g_active_pane] = 0;
     TerminalSyncCursor();
-    TerminalRender(&g_screen);
+    TerminalRenderWithDivider();
 }
 
 void TerminalSetCursor32(uint32_t x, uint32_t y) {
@@ -236,7 +236,7 @@ void TerminalSetCursor32(uint32_t x, uint32_t y) {
     g_pane_col[g_active_pane] = CurCol;
     g_pane_row[g_active_pane] = CurRow;
     TerminalSyncCursor();
-    TerminalRender(&g_screen);
+    TerminalRenderWithDivider();
 }
 
 void TerminalGetCursor32(uint32_t *x, uint32_t *y) {
@@ -258,7 +258,7 @@ void TerminalNewLine32(uint32_t color) {
         g_pane_row[g_active_pane] = CurRow;
         TerminalSyncCursor();
     }
-    TerminalRender(&g_screen);
+    TerminalRenderWithDivider();
 }
 
 void TerminalBackspace32(uint32_t color) {
@@ -277,7 +277,7 @@ void TerminalBackspace32(uint32_t color) {
     TerminalInvalidateCell(&g_screen, abs_col, CurRow);
     g_pane_col[g_active_pane] = CurCol;
     TerminalSyncCursor();
-    TerminalRender(&g_screen);
+    TerminalRenderWithDivider();
 }
 
 void TerminalScroll32(void) {
@@ -314,7 +314,7 @@ void TerminalScroll32(void) {
     g_pane_row[g_active_pane] = CurRow;
     TerminalSyncCursor();
     TerminalInvalidateAll(&g_screen);
-    TerminalRender(&g_screen);
+    TerminalRenderWithDivider();
 }
 
 void TerminalPrintLine32(const char *str, uint32_t color) {
@@ -366,7 +366,7 @@ void TerminalWriteScaled32(const char *str, uint32_t x, uint32_t y,
 void TerminalBlinkUpdate(void) {
     if (!g_initialized) return;
     CursorBlinkTick(&g_screen, PITGetMilliseconds());
-    TerminalRender(&g_screen);
+    TerminalRenderWithDivider();
 }
 
 void TerminalSetActivePane(uint32_t pane)
@@ -381,7 +381,7 @@ void TerminalSetActivePane(uint32_t pane)
     if (CurCol >= TerminalPaneCols(pane))
         CurCol = TerminalPaneCols(pane) ? TerminalPaneCols(pane) - 1U : 0U;
     TerminalSyncCursor();
-    TerminalRender(&g_screen);
+    TerminalRenderWithDivider();
 }
 uint32_t TerminalGetActivePane(void) { return g_active_pane; }
 bool TerminalIsSplit(void) { return g_split; }
@@ -403,7 +403,7 @@ void TerminalSplitEnable(void)
     CurRow = g_pane_row[0];
     TerminalSyncCursor();
     TerminalInvalidateAll(&g_screen);
-    TerminalRender(&g_screen);
+    TerminalRenderWithDivider();
 }
 
 void TerminalSplitDisablePromote(uint32_t pane)
@@ -439,5 +439,5 @@ void TerminalSplitDisablePromote(uint32_t pane)
     g_pane_row[0] = CurRow;
     TerminalSyncCursor();
     TerminalInvalidateAll(&g_screen);
-    TerminalRender(&g_screen);
+    TerminalRenderWithDivider();
 }
