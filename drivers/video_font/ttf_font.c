@@ -128,7 +128,7 @@ static void bake_codepoint(const stbtt_fontinfo *font,
              * The terminal atlas is 1bpp. A slightly lower threshold keeps
              * thin IBM Plex Mono strokes visible at 8x16.
              */
-            if (bitmap[sy * w + sx] >= 96)
+            if (bitmap[sy * w + sx] >= 80)
                 out[dy] |= (uint8_t)(1U << (7U - (uint32_t)dx));
         }
     }
@@ -155,10 +155,10 @@ void TtfFontInit(void)
         return;
 
     /*
-     * 15px gives IBM Plex Mono enough vertical room while leaving the
+     * 16px gives IBM Plex Mono a slightly larger, clearer glyph while leaving the
      * existing 16px terminal cell intact.
      */
-    float scale = stbtt_ScaleForPixelHeight(&font, 15.0f);
+    float scale = stbtt_ScaleForPixelHeight(&font, 16.0f);
 
     for (int cp = 32; cp < 128; ++cp) {
         uint8_t glyph[FONT_HEIGHT];
