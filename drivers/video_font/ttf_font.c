@@ -99,21 +99,31 @@ static void bake_codepoint(const stbtt_fontinfo *font,
                            float scale,
                            uint8_t out[TTF_FONT_HEIGHT * 2U])
 {
-    int w, h, xoff, yoff;
-    unsigned char *bitmap;
+    /*
+     * Render into a caller-owned buffer. This avoids stb_truetype allocating
+     * a temporary bitmap from the kernel heap for every character.
+     */
+    enum { BITMAP_MAX = 64 };
+    unsigned char bitmap[BITMAP_MAX * BITMAP_MAX];
 
     clear_glyph(out);
 
-    bitmap = stbtt_GetCodepointBitmap(font, scale, scale,
-                                      codepoint, &w, &h, &xoff, &yoff);
-    if (!bitmap || w <= 0 || h <= 0)
+    int ix0, iy0, ix1, iy1;
+    stbtt_GetCodepointBitmapBox(font, codepoint, scale, scale,
+                                &ix0, &iy0, &ix1, &iy1);
+
+    int w = ix1 - ix0;
+    int h = iy1 - iy0;
+
+    if (w <= 0 || h <= 0 || w > BITMAP_MAX || h > BITMAP_MAX)
         return;
 
-    /*
-     * Center the actual rasterized glyph inside the terminal cell.
-     * Using the bitmap's own bounding box avoids depending on the font's
-     * ascent/descent sign convention for yoff.
-     */
+    for (int i = 0; i < w * h; ++i)
+        bitmap[i] = 0;
+
+    stbtt_MakeCodepointBitmap(font, bitmap, w, h, w,
+                              scale, scale, codepoint);
+
     int dst_x = ((int)TTF_FONT_WIDTH - w) / 2;
     int dst_y = ((int)TTF_FONT_HEIGHT - h) / 2;
 
@@ -123,20 +133,16 @@ static void bake_codepoint(const stbtt_fontinfo *font,
             continue;
 
         for (int sx = 0; sx < w; ++sx) {
-            int dx = (w <= (int)TTF_FONT_WIDTH)
-                   ? dst_x + sx
-                   : sx - (w - (int)TTF_FONT_WIDTH) / 2;
+            int dx = dst_x + sx;
+
+            if (dx < 0)
+                dx = sx - (w - (int)TTF_FONT_WIDTH) / 2;
 
             if (bitmap[sy * w + sx] != 0)
                 set_glyph_pixel(out, dx, dy);
         }
     }
-
-    (void)xoff;
-    (void)yoff;
-    stbtt_FreeBitmap(bitmap, NULL);
 }
-
 
 
 static void build_fallback_atlas(void)
