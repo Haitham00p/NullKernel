@@ -7,8 +7,29 @@
 #include "../include/kshell.h"
 #include "libc/stdlib.h"
 #include "commands/lowlevel.h"
+#include "bootmonitor/bootmonitor.h"
 
 void DispatcherDispatch(const PARSED_COMMAND *Command){
+    if (strcmp(Command->Command, "reboot-c") == 0)
+    {
+        if (Command->ArgCount != 0U)
+        {
+            TerminalPrintLine32("Usage: reboot-c", 0x00FF0000U);
+            return;
+        }
+
+        if (!DiskFsIsMounted() && !DiskFsMount())
+        {
+            TerminalPrintLine32("reboot-c: no FAT32 disk mounted", 0x00FF0000U);
+            return;
+        }
+
+        BootMonitorRequest();
+        TerminalPrintLine32("reboot-c: entering Null Boot Monitor on next boot...", 0x0000FFFFU);
+        Reboot();
+        return;
+    }
+
     /* cp stays in the kernel: its recursive FAT32/path-safety implementation
        must not be shadowed by the older /BIN/CP.EXE image. */
     if (strcmp(Command->Command, "cp") == 0) {
