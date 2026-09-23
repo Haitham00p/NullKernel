@@ -19,6 +19,8 @@ static uint32_t CurCol = 0;
 static uint32_t CurRow = 0;
 static uint32_t CurBGColor = 0x00000000;
 
+static void TerminalRenderWithDivider(void);
+
 #define TERMINAL_MAX_PANES 2U
 static bool g_split = false;
 static uint32_t g_active_pane = 0;
