@@ -1768,109 +1768,96 @@ static void CpStripTrailingSlash(char *p)
     }
 }
 
-/* Split an absolute or relative path into its directory part (no trailing
- * slash, except "/" itself) and the final component name. */
+/* Split a path into directory and final FAT32 8.3-style component. */
 static void CpSplit(const char *path, char *dir, uint32_t dirN,
                     char *name, uint32_t nameN)
 {
     uint32_t len = strlen(path);
     uint32_t last = 0U;
-    uint32_t i;
-    for (i = 0U; i < len; i++)
+
+    for (uint32_t i = 0U; i < len; i++)
     {
-        if (path[i] == '/')
-        {
-            last = i;
-        }
+        if (path[i] == '/') last = i;
     }
+
     if (len > 0U && path[last] == '/')
     {
         if (last == 0U)
         {
             strcpy(dir, "/");
-            if (len > 1U)
-            {
-                strncpy(name, path + 1U, nameN - 1U);
-            }
-            else
-            {
-                name[0] = '\0';
-            }
-            name[nameN - 1U] = '\0';
+            strncpy(name, path + 1U, nameN - 1U);
         }
         else
         {
-            if (last < dirN)
-            {
-                strncpy(dir, path, last);
-            }
-            dir[last] = '\0';
+            uint32_t copy = last < dirN ? last : dirN - 1U;
+            strncpy(dir, path, copy);
+            dir[copy] = '\0';
             strncpy(name, path + last + 1U, nameN - 1U);
-            name[nameN - 1U] = '\0';
         }
     }
     else
     {
         strcpy(dir, ".");
         strncpy(name, path, nameN - 1U);
-        name[nameN - 1U] = '\0';
     }
+    dir[dirN - 1U] = '\0';
+    name[nameN - 1U] = '\0';
 }
 
-/* True when path refers to an existing directory (absolute or relative). */
+/* True when path names an existing directory. */
 static bool CpIsDir(const char *path)
 {
+    FAT32DirectoryEntry e;
     char dir[DISKFS_PATH_MAX];
     char name[DISKFS_PATH_MAX];
-    FAT32DirectoryEntry e;
+
+    if (path == NULL || path[0] == '\0') return false;
     uint32_t len = strlen(path);
-    if (len == 0U)
-    {
-        return false;
-    }
-    if (path[len - 1U] == '/')
-    {
-        return true;
-    }
+    if (path[len - 1U] == '/') return true;
+
     CpSplit(path, dir, sizeof(dir), name, sizeof(name));
-    if (name[0] == '\0')
+    if (name[0] == '\0') return true;
+    if (!DiskFsFindInPath(dir, name, &e)) return false;
+    return (e.Attributes & FAT32_ATTRIBUTE_DIRECTORY) != 0U;
+}
+
+static bool CpSameOrChild(const char *src, const char *dst)
+{
+    uint32_t n = strlen(src);
+    if (strcmp(src, dst) == 0) return true;
+    if (n == 0U || dst[n] != '/') return false;
+    for (uint32_t i = 0U; i < n; i++)
     {
-        return true;
+        if (src[i] != dst[i]) return false;
     }
-    if (DiskFsFindInPath(dir, name, &e))
-    {
-        return (e.Attributes & FAT32_ATTRIBUTE_DIRECTORY) != 0U;
-    }
-    if (strcmp(dir, ".") == 0)
-    {
-        return DiskFsIsDirectory(name);
-    }
-    return false;
+    return true;
 }
 
 static bool CpCopyFile(const char *src, const char *dst)
 {
-    char sDir[DISKFS_PATH_MAX];
-    char sName[DISKFS_PATH_MAX];
-    char dDir[DISKFS_PATH_MAX];
-    char dName[DISKFS_PATH_MAX];
+    char sDir[DISKFS_PATH_MAX], sName[DISKFS_PATH_MAX];
+    char dDir[DISKFS_PATH_MAX], dName[DISKFS_PATH_MAX];
     char finalDst[DISKFS_PATH_MAX];
-    uint32_t size = 0U;
+    FAT32DirectoryEntry sourceEntry;
+    uint32_t size = 0U, read = 0U;
     uint8_t *buf;
-    uint32_t read = 0U;
 
     CpSplit(src, sDir, sizeof(sDir), sName, sizeof(sName));
-    if (!DiskFsFileSizeInPath(sDir, sName, &size))
+    if (!DiskFsFindInPath(sDir, sName, &sourceEntry) ||
+        (sourceEntry.Attributes & FAT32_ATTRIBUTE_DIRECTORY) != 0U ||
+        !DiskFsFileSizeInPath(sDir, sName, &size))
     {
-        TerminalPrintLine32("cp: cannot stat source", 0xFFFF0000U);
+        TerminalPrintLine32("cp: source is not a regular file", 0xFFFF0000U);
         return false;
     }
+
     buf = (uint8_t *)kmalloc(size ? size : 1U);
     if (buf == NULL)
     {
         TerminalPrintLine32("cp: out of memory", 0xFFFF0000U);
         return false;
     }
+
     if (!DiskFsReadInPath(sDir, sName, buf, size, &read))
     {
         TerminalPrintLine32("cp: read failed", 0xFFFF0000U);
@@ -1878,127 +1865,154 @@ static bool CpCopyFile(const char *src, const char *dst)
         return false;
     }
 
-    if (CpIsDir(dst) || DiskFsIsDirectory(dst))
+    if (CpIsDir(dst))
     {
-        char tmp[DISKFS_PATH_MAX];
-        strcpy(tmp, dst);
-        CpStripTrailingSlash(tmp);
-        strcpy(finalDst, tmp);
+        uint32_t need = strlen(dst) + strlen(sName) + 2U;
+        if (need >= sizeof(finalDst))
+        {
+            TerminalPrintLine32("cp: destination path too long", 0xFFFF0000U);
+            kfree(buf);
+            return false;
+        }
+        strcpy(finalDst, dst);
+        CpStripTrailingSlash(finalDst);
         strcat(finalDst, "/");
         strcat(finalDst, sName);
     }
     else
     {
+        if (strlen(dst) >= sizeof(finalDst))
+        {
+            TerminalPrintLine32("cp: destination path too long", 0xFFFF0000U);
+            kfree(buf);
+            return false;
+        }
         strcpy(finalDst, dst);
     }
 
     CpSplit(finalDst, dDir, sizeof(dDir), dName, sizeof(dName));
-    if (dDir[0] != '\0' && strcmp(dDir, ".") != 0)
+    if (dDir[0] != '\0' && strcmp(dDir, ".") != 0 && !DiskFsMkdirAll(dDir))
     {
-        DiskFsMkdirAll(dDir);
-    }
-    if (DiskFsWriteInPath(dDir, dName, buf, read))
-    {
+        TerminalPrintLine32("cp: cannot create destination directory", 0xFFFF0000U);
         kfree(buf);
-        return true;
+        return false;
     }
-    TerminalPrintLine32("cp: write failed", 0xFFFF0000U);
+
+    bool ok = DiskFsWriteInPath(dDir, dName, buf, read);
     kfree(buf);
-    return false;
+    if (!ok)
+    {
+        TerminalPrintLine32("cp: write failed", 0xFFFF0000U);
+        return false;
+    }
+    return true;
 }
 
-static void CpCopyTree(const char *srcDir, const char *dstDir)
+static bool CpCopyTree(const char *srcDir, const char *dstDir)
 {
     char saved[DISKFS_PATH_MAX];
     char list[4096];
-    char childSrc[DISKFS_PATH_MAX];
-    char childDst[DISKFS_PATH_MAX];
     uint32_t off = 0U;
+
+    if (!DiskFsMkdirAll(dstDir))
+    {
+        TerminalPrintLine32("cp: cannot create destination directory", 0xFFFF0000U);
+        return false;
+    }
 
     DiskFsPwd(saved, sizeof(saved));
     if (!DiskFsChdirPath(srcDir))
     {
         TerminalPrintLine32("cp: cannot open source directory", 0xFFFF0000U);
-        return;
+        return false;
     }
+
     list[0] = '\0';
     DiskFsListNames(list, sizeof(list));
+
     while (list[off] != '\0')
     {
         char name[64];
         uint32_t n = 0U;
-        while (list[off] != '\0' && list[off] != '\n' && n < sizeof(name) - 1U)
-        {
-            name[n++] = list[off++];
-        }
-        if (list[off] == '\n')
-        {
-            off++;
-        }
-        name[n] = '\0';
-        if (name[0] == '\0')
-        {
-            continue;
-        }
-        if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
-        {
-            continue;
-        }
 
-        strcpy(childSrc, srcDir);
-        CpStripTrailingSlash(childSrc);
-        strcat(childSrc, "/");
-        strcat(childSrc, name);
+        while (list[off] != '\0' && list[off] != '\n' && n < sizeof(name) - 1U)
+            name[n++] = list[off++];
+        if (list[off] == '\n') off++;
+        name[n] = '\0';
+
+        if (name[0] == '\0' || strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
+            continue;
 
         if (DiskFsIsDirectory(name))
         {
+            char childSrc[DISKFS_PATH_MAX];
+            char childDst[DISKFS_PATH_MAX];
+
+            if (strlen(srcDir) + strlen(name) + 2U >= sizeof(childSrc) ||
+                strlen(dstDir) + strlen(name) + 2U >= sizeof(childDst))
+            {
+                TerminalPrintLine32("cp: path too long", 0xFFFF0000U);
+                DiskFsChdirPath(saved);
+                return false;
+            }
+
+            strcpy(childSrc, srcDir);
+            CpStripTrailingSlash(childSrc);
+            strcat(childSrc, "/");
+            strcat(childSrc, name);
+
             strcpy(childDst, dstDir);
             CpStripTrailingSlash(childDst);
             strcat(childDst, "/");
             strcat(childDst, name);
-            DiskFsMkdirAll(childDst);
-            CpCopyTree(childSrc, childDst);
+
+            if (!CpCopyTree(childSrc, childDst))
+            {
+                DiskFsChdirPath(saved);
+                return false;
+            }
         }
         else
         {
-            uint32_t size = 0U;
-            uint8_t *buf;
-            uint32_t read = 0U;
-            char dDir[DISKFS_PATH_MAX];
-            char dName[DISKFS_PATH_MAX];
-            if (!DiskFsFileSize(name, &size))
+            char childSrc[DISKFS_PATH_MAX];
+            char childDst[DISKFS_PATH_MAX];
+
+            if (strlen(srcDir) + strlen(name) + 2U >= sizeof(childSrc) ||
+                strlen(dstDir) + strlen(name) + 2U >= sizeof(childDst))
             {
-                continue;
+                TerminalPrintLine32("cp: path too long", 0xFFFF0000U);
+                DiskFsChdirPath(saved);
+                return false;
             }
-            buf = (uint8_t *)kmalloc(size ? size : 1U);
-            if (buf == NULL)
-            {
-                continue;
-            }
-            if (!DiskFsRead(name, buf, size, &read))
-            {
-                kfree(buf);
-                continue;
-            }
+
+            strcpy(childSrc, srcDir);
+            CpStripTrailingSlash(childSrc);
+            strcat(childSrc, "/");
+            strcat(childSrc, name);
+
             strcpy(childDst, dstDir);
             CpStripTrailingSlash(childDst);
             strcat(childDst, "/");
             strcat(childDst, name);
-            CpSplit(childDst, dDir, sizeof(dDir), dName, sizeof(dName));
-            if (dDir[0] != '\0' && strcmp(dDir, ".") != 0)
+
+            if (!CpCopyFile(childSrc, childDst))
             {
-                DiskFsMkdirAll(dDir);
+                DiskFsChdirPath(saved);
+                return false;
             }
-            DiskFsWriteInPath(dDir, dName, buf, read);
-            kfree(buf);
         }
     }
+
     DiskFsChdirPath(saved);
+    return true;
 }
 
 void CmdCp(const char *Src, const char *Dst)
 {
-    if (Src == NULL || Dst == NULL)
+    char srcNorm[DISKFS_PATH_MAX];
+    char dstNorm[DISKFS_PATH_MAX];
+
+    if (Src == NULL || Dst == NULL || Src[0] == '\0' || Dst[0] == '\0')
     {
         TerminalPrintLine32("Usage: cp <source> <dest>", 0x00FF0000U);
         return;
@@ -2008,57 +2022,71 @@ void CmdCp(const char *Src, const char *Dst)
         TerminalPrintLine32("cp: no disk mounted", 0xFFFF0000U);
         return;
     }
+    if (strlen(Src) >= sizeof(srcNorm) || strlen(Dst) >= sizeof(dstNorm))
+    {
+        TerminalPrintLine32("cp: path too long", 0xFFFF0000U);
+        return;
+    }
 
-    if (CpIsDir(Src) || DiskFsIsDirectory(Src))
+    strcpy(srcNorm, Src);
+    strcpy(dstNorm, Dst);
+    CpStripTrailingSlash(srcNorm);
+    CpStripTrailingSlash(dstNorm);
+
+    if (strcmp(srcNorm, dstNorm) == 0)
+    {
+        TerminalPrintLine32("cp: source and destination are the same", 0xFFFF0000U);
+        return;
+    }
+
+    if (CpIsDir(srcNorm))
     {
         char finalDir[DISKFS_PATH_MAX];
         char base[DISKFS_PATH_MAX];
-        uint32_t len = strlen(Src);
-        uint32_t last = 0U;
-        uint32_t i;
-        for (i = 0U; i < len; i++)
+        const char *slash = srcNorm;
+
+        for (const char *p = srcNorm; *p != '\0'; p++)
+            if (*p == '/') slash = p + 1;
+
+        if (*slash == '\0') slash = srcNorm;
+
+        if (CpIsDir(dstNorm))
         {
-            if (Src[i] == '/')
+            if (CpSameOrChild(srcNorm, dstNorm))
             {
-                last = i;
+                TerminalPrintLine32("cp: cannot copy a directory into itself", 0xFFFF0000U);
+                return;
             }
-        }
-        if (len > 0U && Src[last] == '/')
-        {
-            strncpy(base, Src + last + 1U, sizeof(base) - 1U);
+            if (strlen(dstNorm) + strlen(slash) + 2U >= sizeof(finalDir))
+            {
+                TerminalPrintLine32("cp: destination path too long", 0xFFFF0000U);
+                return;
+            }
+            strcpy(finalDir, dstNorm);
+            CpStripTrailingSlash(finalDir);
+            strcat(finalDir, "/");
+            strcat(finalDir, slash);
         }
         else
         {
-            strcpy(base, Src);
+            strcpy(finalDir, dstNorm);
         }
-        base[sizeof(base) - 1U] = '\0';
 
+        if (CpSameOrChild(srcNorm, finalDir))
         {
-            char tmp[DISKFS_PATH_MAX];
-            uint32_t dlen = strlen(Dst);
-            strcpy(tmp, Dst);
-            CpStripTrailingSlash(tmp);
-            if ((dlen > 0U && Dst[dlen - 1U] == '/') || CpIsDir(Dst) ||
-                DiskFsIsDirectory(Dst))
-            {
-                strcpy(finalDir, tmp);
-                strcat(finalDir, "/");
-                strcat(finalDir, base);
-            }
-            else
-            {
-                strcpy(finalDir, Dst);
-            }
+            TerminalPrintLine32("cp: cannot copy a directory into itself", 0xFFFF0000U);
+            return;
         }
-        DiskFsMkdirAll(finalDir);
-        CpCopyTree(Src, finalDir);
+
+        strcpy(base, finalDir);
+        if (!CpCopyTree(srcNorm, base))
+            return;
+
         TerminalPrintLine32("cp: directory copied", 0x0057DB92U);
+        return;
     }
-    else
-    {
-        if (CpCopyFile(Src, Dst))
-        {
-            TerminalPrintLine32("cp: copied", 0x0057DB92U);
-        }
-    }
+
+    if (CpCopyFile(srcNorm, dstNorm))
+        TerminalPrintLine32("cp: copied", 0x0057DB92U);
 }
+
