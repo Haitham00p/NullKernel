@@ -47,6 +47,11 @@ void main(void)
     uint32_t j = 0;
     uint32_t col = 0;
     uint32_t len = 0;
+    term_screen_t *screen = TerminalGetScreen();
+    uint32_t pane_cols = (TerminalIsSplit() && screen != NULL)
+        ? screen->cols / 2U
+        : (screen != NULL ? screen->cols : 80U);
+    if (pane_cols < 1U) pane_cols = 1U;
 
     /* Optional path argument: ls [path] */
     char path[128];
@@ -89,7 +94,7 @@ void main(void)
                 {
                     len++;
                 }
-                if (col + len >= 80U)
+                if (col + len >= pane_cols)
                 {
                     TerminalPutChar32('\n', LS_COLOR_FILE);
                     col = 0U;
