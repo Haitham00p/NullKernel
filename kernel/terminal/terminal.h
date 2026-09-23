@@ -29,5 +29,6 @@ void TerminalSplitEnable(void);
 void TerminalSplitDisablePromote(uint32_t pane);
 
 term_screen_t *TerminalGetScreen(void);
+uint32_t TerminalGetPaneCols32(void);
 
 #endif /* TERMINAL_H */
