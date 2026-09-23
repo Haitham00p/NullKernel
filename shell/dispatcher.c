@@ -180,10 +180,6 @@ void DispatcherDispatch(const PARSED_COMMAND *Command){
         if (Command->ArgCount != 2U) { TerminalPrintLine32("Usage: isocopy <isopath> <diskpath>", 0x00FF0000); return; }
         CmdIsoCopy(Command->Args[0], Command->Args[1]); return;
     }
-    if (strcmp(Command->Command, "cp") == 0) {
-        if (Command->ArgCount != 2U) { TerminalPrintLine32("Usage: cp <source> <dest>", 0x00FF0000); return; }
-        CmdCp(Command->Args[0], Command->Args[1]); return;
-    }
     if (strcmp(Command->Command, "tt") == 0){
         CmdTickTestPIT();
         return;
