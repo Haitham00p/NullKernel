@@ -247,7 +247,7 @@ void TerminalBackspace32(uint32_t color) {
     cell->bg_color = CurBGColor;
     cell->attributes |= TERM_ATTR_DIRTY;
 
-    TerminalInvalidateCell(&g_screen, CurCol, abs_row);
+    TerminalInvalidateCell(&g_screen, abs_col, CurRow);
     g_pane_col[g_active_pane] = CurCol;
     TerminalSyncCursor();
     TerminalRender(&g_screen);
