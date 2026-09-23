@@ -6,6 +6,8 @@ global BootAsmRun
 ; SysV: RDI=code, RSI=regs
 ; The generated instruction must not modify RSP. The monitor appends RET.
 BootAsmRun:
+    ; Save the real caller state. The values in BootAsmRegs are a
+    ; separate "virtual" register state used by the monitor.
     push rbx
     push r12
     push r13
@@ -16,17 +18,18 @@ BootAsmRun:
     push rsi
 
     ; stack:
-    ; [rsp+00] = regs
-    ; [rsp+08] = code
-    ; [rsp+16] = old r15
-    ; [rsp+24] = old r14
-    ; [rsp+32] = old r13
-    ; [rsp+40] = old r12
-    ; [rsp+48] = old rbp
+    ; [rsp+00] = original RSI = regs
+    ; [rsp+08] = original RDI = code
+    ; [rsp+16] = old rbp
+    ; [rsp+24] = old r15
+    ; [rsp+32] = old r14
+    ; [rsp+40] = old r13
+    ; [rsp+48] = old r12
     ; [rsp+56] = old rbx
     ; [rsp+64] = return address
 
-    mov r10, [rsp+0]
+    ; Load the virtual register state.
+    mov r10, [rsp+0]       ; regs
 
     mov rax, [r10+0]
     mov rbx, [r10+8]
@@ -49,50 +52,67 @@ BootAsmRun:
     mov r15, [rsp+0]
     mov r15, [r15+112]
 
+    ; Execute exactly one generated instruction.
+    ; The monitor-generated code ends with RET, so this CALL returns here.
     call [rsp+8]
 
+    ; Save RAX/R10/R11 temporarily because RAX is also used as the
+    ; pointer to BootAsmRegs while writing the result back.
     push rax
     push r10
     push r11
 
-    mov rax, [rsp+24]
+    ; After the three pushes:
+    ; [rsp+00] = result R11
+    ; [rsp+08] = result R10
+    ; [rsp+16] = result RAX
+    ; [rsp+24] = regs
+    ; [rsp+32] = code
+    ; [rsp+40] = old rbp
+    ; [rsp+48] = old r15
+    ; [rsp+56] = old r14
+    ; [rsp+64] = old r13
+    ; [rsp+72] = old r12
+    ; [rsp+80] = old rbx
+    ; [rsp+88] = return address
 
-    mov r10, [rsp+16]
+    mov rax, [rsp+24]      ; rax = regs
+
+    mov r10, [rsp+16]      ; result RAX
     mov [rax+0], r10
-    mov [rax+8], rbx
-    mov [rax+16], rcx
-    mov [rax+24], rdx
-    mov [rax+32], rsi
-    mov [rax+40], rdi
-    mov [rax+48], rbp
-    mov [rax+56], r8
-    mov [rax+64], r9
-    mov r10, [rsp+8]
+
+    mov [rax+8], rbx       ; RBX
+    mov [rax+16], rcx      ; RCX
+    mov [rax+24], rdx      ; RDX
+    mov [rax+32], rsi      ; RSI
+    mov [rax+40], rdi      ; RDI
+    mov [rax+48], rbp      ; RBP
+    mov [rax+56], r8       ; R8
+    mov [rax+64], r9       ; R9
+
+    mov r10, [rsp+8]       ; result R10
     mov [rax+72], r10
-    mov r10, [rsp+0]
+
+    mov r10, [rsp+0]       ; result R11
     mov [rax+80], r10
-    mov [rax+88], r12
-    mov [rax+96], r13
-    mov [rax+104], r14
-    mov [rax+112], r15
+
+    mov [rax+88], r12      ; R12
+    mov [rax+96], r13      ; R13
+    mov [rax+104], r14     ; R14
+    mov [rax+112], r15     ; R15
 
     pop r11
     pop r10
     pop rax
 
-    mov r15, [rsp+16]
-    mov r14, [rsp+24]
-    mov r13, [rsp+32]
-    mov r12, [rsp+40]
-    mov rbp, [rsp+48]
-    mov rbx, [rsp+56]
-
-    add rsp, 8
+    ; Restore the real caller state and the original stack exactly.
+    ; Do NOT use the virtual register values here.
+    pop rsi
     pop rdi
+    pop rbp
     pop r15
     pop r14
     pop r13
     pop r12
-    pop rbp
     pop rbx
     ret
