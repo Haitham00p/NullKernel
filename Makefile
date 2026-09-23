@@ -102,7 +102,7 @@ C_SOURCES := \
 	lib/sound/sndbeep.c \
 	Graphic/graphic.c
 
-TTF_OBJECT := $(BUILD_DIR)/IBMPlexMono-Regular.ttf.o
+TTF_OBJECT := $(BUILD_DIR)/drivers/video_font/IBMPlexMono-Regular.ttf.o
 
 ASM_OBJECTS := \
 	$(BUILD_DIR)/arch/x86_64/interrupts/isr_asm.o \
@@ -140,7 +140,7 @@ vault: $(KERNEL)
 		touch .vault-stamp; \
 	fi
 
-$(TTF_OBJECT): IBMPlexMono-Regular.ttf
+$(TTF_OBJECT): drivers/video_font/IBMPlexMono-Regular.ttf
 	@mkdir -p $(@D)
 	$(LD) -r -b binary -o $@ $<
 
