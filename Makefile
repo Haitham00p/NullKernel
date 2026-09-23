@@ -105,7 +105,8 @@ C_SOURCES := \
 ASM_OBJECTS := \
 	$(BUILD_DIR)/arch/x86_64/interrupts/isr_asm.o \
 	$(BUILD_DIR)/arch/x86_64/interrupts/irq_asm.o \
-	$(BUILD_DIR)/arch/x86_64/program/run_asm.o
+	$(BUILD_DIR)/arch/x86_64/program/run_asm.o \
+	$(BUILD_DIR)/arch/x86_64/bootasm.o
 
 OBJECTS := $(C_SOURCES:%.c=$(BUILD_DIR)/%.o) $(ASM_OBJECTS)
 
@@ -151,6 +152,10 @@ $(BUILD_DIR)/arch/x86_64/interrupts/irq_asm.o: arch/x86_64/interrupts/irq.asm
 	$(NASM) -f elf64 $< -o $@
 
 $(BUILD_DIR)/arch/x86_64/program/run_asm.o: arch/x86_64/program/run.asm
+	@mkdir -p $(@D)
+	$(NASM) -f elf64 $< -o $@
+
+$(BUILD_DIR)/arch/x86_64/bootasm.o: arch/x86_64/bootasm.asm
 	@mkdir -p $(@D)
 	$(NASM) -f elf64 $< -o $@
 
