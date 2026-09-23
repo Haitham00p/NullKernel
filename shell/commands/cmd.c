@@ -1821,6 +1821,41 @@ static bool CpIsDir(const char *path)
     return (e.Attributes & FAT32_ATTRIBUTE_DIRECTORY) != 0U;
 }
 
+static bool CpMakeAbsolute(const char *path, char *out, uint32_t outN)
+{
+    char cwd[DISKFS_PATH_MAX];
+    uint32_t pathLen = strlen(path);
+    uint32_t cwdLen;
+
+    if (path == NULL || out == NULL || outN == 0U || pathLen >= outN)
+        return false;
+
+    if (path[0] == '/')
+    {
+        strcpy(out, path);
+        return true;
+    }
+
+    DiskFsPwd(cwd, sizeof(cwd));
+    cwdLen = strlen(cwd);
+
+    if (strcmp(cwd, "/") == 0)
+    {
+        if (pathLen + 2U > outN) return false;
+        out[0] = '/';
+        strcpy(out + 1U, path);
+        return true;
+    }
+
+    if (cwdLen + 1U + pathLen + 1U > outN)
+        return false;
+
+    strcpy(out, cwd);
+    out[cwdLen] = '/';
+    strcpy(out + cwdLen + 1U, path);
+    return true;
+}
+
 static bool CpSameOrChild(const char *src, const char *dst)
 {
     uint32_t n = strlen(src);
@@ -2028,8 +2063,12 @@ void CmdCp(const char *Src, const char *Dst)
         return;
     }
 
-    strcpy(srcNorm, Src);
-    strcpy(dstNorm, Dst);
+    if (!CpMakeAbsolute(Src, srcNorm, sizeof(srcNorm)) ||
+        !CpMakeAbsolute(Dst, dstNorm, sizeof(dstNorm)))
+    {
+        TerminalPrintLine32("cp: cannot resolve path", 0xFFFF0000U);
+        return;
+    }
     CpStripTrailingSlash(srcNorm);
     CpStripTrailingSlash(dstNorm);
 
