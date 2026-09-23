@@ -99,7 +99,8 @@ C_SOURCES := \
 	source/kterminal.c \
 	source/kshell.c \
 	lib/sound/sndbeep.c \
-	Graphic/graphic.c
+	Graphic/graphic.c \
+	bootmonitor/bootmonitor.c
 
 ASM_OBJECTS := \
 	$(BUILD_DIR)/arch/x86_64/interrupts/isr_asm.o \
