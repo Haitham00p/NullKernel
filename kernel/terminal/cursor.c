@@ -100,8 +100,9 @@ void CursorMoveTo(term_screen_t *screen, uint32_t col, uint32_t row) {
     cursor->pixel_x = col * screen->font_width;
     cursor->pixel_y = row * screen->font_height;
 
-    /* Reset blink phase on movement */
-    cursor->blink_state = false;
+    /* Any cursor movement is user activity: keep the cursor visible.
+       Blinking resumes only after the user becomes idle. */
+    cursor->blink_state = true;
     cursor->last_activity_ms = PITGetMilliseconds();
 
     /* Invalidate new position */
@@ -134,7 +135,8 @@ void CursorMoveUp(term_screen_t *screen, uint32_t delta) {
     c->col = target_col;
     c->pixel_x = c->col * screen->font_width;
     c->pixel_y = c->row * screen->font_height;
-    c->blink_state = false;
+    /* Arrow-key activity keeps the cursor continuously visible. */
+    c->blink_state = true;
     c->last_activity_ms = PITGetMilliseconds();
     TerminalInvalidateCell(screen, c->col, c->row);
 }
@@ -151,6 +153,7 @@ void CursorMoveDown(term_screen_t *screen, uint32_t delta) {
     c->col = target_col;
     c->pixel_x = c->col * screen->font_width;
     c->pixel_y = c->row * screen->font_height;
+    /* Arrow-key activity keeps the cursor continuously visible. */
     c->blink_state = true;
     c->last_activity_ms = PITGetMilliseconds();
     TerminalInvalidateCell(screen, c->col, c->row);
