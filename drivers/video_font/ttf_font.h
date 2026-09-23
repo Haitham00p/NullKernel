@@ -10,8 +10,8 @@
  */
 void TtfFontInit(void);
 
-#define TTF_FONT_WIDTH  16U
-#define TTF_FONT_HEIGHT 32U
+#define TTF_FONT_WIDTH  14U
+#define TTF_FONT_HEIGHT 28U
 
 const uint8_t *TtfFontGetAtlas(void);
 
