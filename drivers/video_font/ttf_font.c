@@ -381,30 +381,33 @@ static bool raster_glyph(uint16_t glyph, uint8_t out[FONT_HEIGHT])
     if (!g || glen < 10) return false;
 
     int16_t contours = bes16(g);
-    if (contours <= 0 || contours > 64) return false;
+    if (contours <= 0 || contours > 64) return false; /* composite/empty */
 
     uint32_t pos = 10;
     if (pos + (uint32_t)contours * 2U + 2U > glen) return false;
 
     uint16_t endPts[64];
     uint16_t total = 0;
+
     for (int ci = 0; ci < contours; ++ci) {
         endPts[ci] = be16(g + pos);
         pos += 2;
+
         if (endPts[ci] < total) return false;
         total = (uint16_t)(endPts[ci] + 1U);
     }
 
     uint16_t instruction_len = be16(g + pos);
     pos += 2;
-    if (pos + instruction_len > glen || total == 0 || total > 1024) return false;
+
+    if (pos + instruction_len > glen || total == 0 || total > 1024)
+        return false;
+
     pos += instruction_len;
 
     /*
-     * TrueType stores flags and coordinates as packed streams. Decode the
-     * complete logical point array first. The meaning of bit 4/5 is subtle:
-     * when SHORT is clear, the bit means "same as previous", not a sign.
-     * See the OpenType 'glyf' specification.
+     * Decode the packed TrueType point flags first. The coordinate streams
+     * come after ALL flags, so this must be completed before reading x/y.
      */
     static Point pts[1024];
     static unsigned char flags[1024];
@@ -418,9 +421,12 @@ static bool raster_glyph(uint16_t glyph, uint8_t out[FONT_HEIGHT])
 
         if (f & 0x08) {
             if (pos >= glen) return false;
+
             uint16_t repeat = g[pos++];
             if ((uint32_t)fi + repeat > total) return false;
-            while (repeat--) flags[fi++] = f;
+
+            while (repeat--)
+                flags[fi++] = f;
         }
     }
 
@@ -431,10 +437,13 @@ static bool raster_glyph(uint16_t glyph, uint8_t out[FONT_HEIGHT])
 
         if (f & 0x02) {
             if (pos >= glen) return false;
+
             dx = g[pos++];
-            if (!(f & 0x10)) dx = -dx;
+            if (!(f & 0x10))
+                dx = -dx;
         } else if (!(f & 0x10)) {
             if (pos + 1 >= glen) return false;
+
             dx = bes16(g + pos);
             pos += 2;
         }
@@ -451,10 +460,13 @@ static bool raster_glyph(uint16_t glyph, uint8_t out[FONT_HEIGHT])
 
         if (f & 0x04) {
             if (pos >= glen) return false;
+
             dy = g[pos++];
-            if (!(f & 0x20)) dy = -dy;
+            if (!(f & 0x20))
+                dy = -dy;
         } else if (!(f & 0x20)) {
             if (pos + 1 >= glen) return false;
+
             dy = bes16(g + pos);
             pos += 2;
         }
@@ -467,155 +479,155 @@ static bool raster_glyph(uint16_t glyph, uint8_t out[FONT_HEIGHT])
     int32_t yMin = bes16(g + 4);
     int32_t xMax = bes16(g + 6);
     int32_t yMax = bes16(g + 8);
+
     int32_t w = xMax - xMin;
     int32_t h = yMax - yMin;
-    if (w <= 0 || h <= 0) return true;
+
+    if (w <= 0 || h <= 0)
+        return true;
 
     static Edge edges[4096];
     uint32_t ec = 0;
 
     /*
-     * Convert every contour into a sequence of explicit line/quadratic
-     * segments. This is the canonical TrueType rule:
+     * Canonical contour state machine.
      *
-     *   on  -> on                 line
-     *   on  -> off -> on         quadratic
-     *   on  -> off -> off        quadratic to implicit midpoint
-     *   off -> off                the midpoint is the next on-curve point
+     * A contour always starts at an ON point. If the stored first point is
+     * OFF, the start is either the last ON point or the implicit midpoint of
+     * the last and first OFF points.
      *
-     * The important part is that the cursor always advances to the endpoint
-     * that was actually consumed. We never treat an off-curve point as an
-     * ordinary vertex.
+     * Crucial rule:
+     *
+     *   OFF + OFF => consume ONLY the first OFF point and make their midpoint
+     *                the endpoint. The second OFF point must be processed on
+     *                the next iteration.
+     *
+     * The previous implementation consumed both points here and then
+     * processed the second OFF point again, which corrupts the outline.
      */
     for (int ci = 0; ci < contours; ++ci) {
         uint16_t first = (ci == 0) ? 0 : (uint16_t)(endPts[ci - 1] + 1U);
         uint16_t last = endPts[ci];
-        if (first > last || last >= total) return false;
-
         uint16_t count = (uint16_t)(last - first + 1U);
 
-        /* Choose the canonical starting on-curve point. */
-        Point start;
+        if (first > last || last >= total || count == 0)
+            return false;
+
+        Point current;
         uint16_t idx;
+        uint16_t consumed;
 
         if (pts[first].on) {
-            start = pts[first];
-            idx = first;
+            current = pts[first];
+            idx = (first == last) ? first : (uint16_t)(first + 1U);
+            consumed = 1;
         } else if (pts[last].on) {
-            start = pts[last];
+            current = pts[last];
             idx = first;
+            consumed = 1;
         } else {
-            start = (Point){
+            current = (Point){
                 (pts[last].x + pts[first].x) / 2,
                 (pts[last].y + pts[first].y) / 2,
                 true
             };
             idx = first;
+            consumed = 0;
         }
 
-        Point current = start;
-        uint16_t consumed = 0;
-
         while (consumed < count) {
-            uint16_t pidx = idx;
-            Point p = pts[pidx];
+            Point p = pts[idx];
 
-            if (!p.on) {
-                /*
-                 * An off-curve point must be paired with the following point.
-                 * Its implicit midpoint is the endpoint when the next point is
-                 * also off-curve.
-                 */
-                uint16_t nidx = (pidx == last) ? first : (uint16_t)(pidx + 1U);
-                Point n = pts[nidx];
-
-                Point end;
-                if (n.on) {
-                    end = n;
-                    idx = nidx;
-                    consumed++;
-                } else {
-                    end = (Point){
-                        (p.x + n.x) / 2,
-                        (p.y + n.y) / 2,
-                        true
-                    };
-                    idx = nidx;
-                    consumed++;
-                }
-
-                ec = flatten_quad(edges, ec, 4096,
-                                  current.x, current.y,
-                                  p.x, p.y,
-                                  end.x, end.y);
-                current = end;
-                continue;
-            }
-
-            uint16_t nidx = (pidx == last) ? first : (uint16_t)(pidx + 1U);
-            Point n = pts[nidx];
-
-            if (n.on) {
+            if (p.on) {
                 if (ec >= 4096) return false;
-                edges[ec++] = (Edge){current.x, current.y, n.x, n.y};
-                current = n;
-                idx = nidx;
+
+                edges[ec++] = (Edge){
+                    current.x, current.y,
+                    p.x, p.y
+                };
+
+                current = p;
+                idx = (idx == last) ? first : (uint16_t)(idx + 1U);
                 consumed++;
                 continue;
             }
 
-            uint16_t n2idx = (nidx == last) ? first : (uint16_t)(nidx + 1U);
-            Point n2 = pts[n2idx];
+            uint16_t next = (idx == last) ? first : (uint16_t)(idx + 1U);
+            Point n = pts[next];
 
-            Point end;
-            uint16_t advance;
-            if (n2.on) {
-                end = n2;
-                advance = 2;
-                idx = n2idx;
+            if (n.on) {
+                /*
+                 * ON -> OFF -> ON
+                 */
+                ec = flatten_quad(edges, ec, 4096,
+                                  current.x, current.y,
+                                  p.x, p.y,
+                                  n.x, n.y);
+
+                current = n;
+                idx = (next == last) ? first : (uint16_t)(next + 1U);
+                consumed = (uint16_t)(consumed + 2U);
             } else {
-                end = (Point){
-                    (n.x + n2.x) / 2,
-                    (n.y + n2.y) / 2,
+                /*
+                 * ON -> OFF -> OFF
+                 *
+                 * The midpoint is an implicit ON point. Only p is consumed;
+                 * n becomes the next control point for the following segment.
+                 */
+                Point midpoint = {
+                    (p.x + n.x) / 2,
+                    (p.y + n.y) / 2,
                     true
                 };
-                advance = 2;
-                idx = n2idx;
-            }
 
-            ec = flatten_quad(edges, ec, 4096,
-                              current.x, current.y,
-                              n.x, n.y,
-                              end.x, end.y);
-            current = end;
-            consumed = (uint16_t)(consumed + advance);
+                ec = flatten_quad(edges, ec, 4096,
+                                  current.x, current.y,
+                                  p.x, p.y,
+                                  midpoint.x, midpoint.y);
+
+                current = midpoint;
+                idx = next;
+                consumed++;
+            }
         }
 
-        /*
-         * The segment builder above may have started at an implicit midpoint.
-         * Close the contour explicitly. For a normal contour current == start
-         * here, so this adds no edge.
-         */
-        if (current.x != start.x || current.y != start.y) {
+        if (current.x != ((pts[first].on) ? pts[first].x :
+                          (pts[last].on) ? pts[last].x :
+                          (pts[last].x + pts[first].x) / 2) ||
+            current.y != ((pts[first].on) ? pts[first].y :
+                          (pts[last].on) ? pts[last].y :
+                          (pts[last].y + pts[first].y) / 2)) {
             if (ec >= 4096) return false;
-            edges[ec++] = (Edge){current.x, current.y, start.x, start.y};
+
+            Point start = pts[first].on ? pts[first] :
+                          pts[last].on ? pts[last] :
+                          (Point){
+                              (pts[last].x + pts[first].x) / 2,
+                              (pts[last].y + pts[first].y) / 2,
+                              true
+                          };
+
+            edges[ec++] = (Edge){
+                current.x, current.y,
+                start.x, start.y
+            };
         }
     }
 
-    if (ec == 0) return false;
+    if (ec == 0)
+        return false;
 
     /*
-     * Scale the outline into the legacy 8x16 terminal cell. We deliberately
-     * keep the existing font8x16/Terminal API untouched.
-     *
-     * The outline's Y axis points upward; terminal row 0 is the top, so the
-     * sampled Y coordinate is mapped to FONT_HEIGHT-1-row.
+     * Scan-convert using the same pixel-center rule described by the
+     * TrueType rasterization model. The stored outline uses Y-up coordinates;
+     * terminal rows use Y-down, so invert the output row.
      */
     for (uint32_t py = 0; py < FONT_HEIGHT; ++py) {
         for (uint32_t px = 0; px < FONT_WIDTH; ++px) {
             int32_t sx = xMin +
                 (int32_t)(((uint64_t)(px * 2U + 1U) * (uint32_t)w) /
                           (FONT_WIDTH * 2U));
+
             int32_t sy = yMin +
                 (int32_t)(((uint64_t)(py * 2U + 1U) * (uint32_t)h) /
                           (FONT_HEIGHT * 2U));
@@ -631,13 +643,6 @@ static bool raster_glyph(uint16_t glyph, uint8_t out[FONT_HEIGHT])
                 if ((ay > sy) == (by > sy))
                     continue;
 
-                /*
-                 * Compare the X intersection with sx without division:
-                 *
-                 *   x_intersection > sx
-                 *
-                 * The sign depends on the direction of the edge.
-                 */
                 int64_t lhs = (int64_t)(sx - ax) * (by - ay);
                 int64_t rhs = (int64_t)(bx - ax) * (sy - ay);
 
