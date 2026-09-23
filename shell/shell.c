@@ -28,15 +28,15 @@ uint32_t PromptColor = 0xFFFFFFFFU;
 
 typedef struct
 {
-    char *ActiveContext->Command;
-    uint32_t ActiveContext->CommandCapacity;
-    uint32_t ActiveContext->CommandLength;
-    uint32_t ActiveContext->CommandPos;
-    char *ActiveContext->History[SHELL_HISTORY_SIZE];
-    char *ActiveContext->HistoryDraft;
-    uint32_t ActiveContext->HistoryCount;
-    uint32_t ActiveContext->HistoryPosition;
-    bool ActiveContext->HistoryBrowsing;
+    char *Command;
+    uint32_t CommandCapacity;
+    uint32_t CommandLength;
+    uint32_t CommandPos;
+    char *History[SHELL_HISTORY_SIZE];
+    char *HistoryDraft;
+    uint32_t HistoryCount;
+    uint32_t HistoryPosition;
+    bool HistoryBrowsing;
     char Cwd[SHELL_CWD_CAPACITY];
     bool Exists;
 } SHELL_CONTEXT;
