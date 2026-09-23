@@ -291,6 +291,7 @@ static void Help(void){
     P("  reboot                  reboot now");
     P("  halt                    halt CPU");
     P("  about                   show NPB identity");
+    P("  clear                   clear the NPB screen");
     P("  clear-selection         forget staged kernel");
     P("  clear-request           clear one-shot NPB request");
     P("  poweroff                halt after disabling interrupts");
@@ -445,6 +446,7 @@ static void Execute(char *line){
     if(Eq(cmd,"danger")){PrintDanger();return;}
     if(Eq(cmd,"ids")){P("IDs use KRNL1.0:0xN; kernel.elf is KRNL1.0:0x0.");return;}
     if(Eq(cmd,"about")){PC("NullOS PreBoot (NPB) // RAW BOOT CONTROL",NPB_ORANGE);PC("Disk-side preboot environment. No normal shell safety layer.",NPB_RED);return;}
+    if(Eq(cmd,"clear")){TerminalClear32(0x00000000U);return;}
     if(Eq(cmd,"clear-selection")){Unload();P("staged kernel cleared");return;}
     if(Eq(cmd,"clear-request")){BootMonitorClearRequest();P("NPB request cleared");return;}
     if(Eq(cmd,"poweroff")){__asm__ volatile("cli");for(;;)__asm__ volatile("hlt");}
@@ -492,12 +494,11 @@ void BootMonitorRun(void){
     char line[BM_MAX];
     BootMonitorClearRequest();
     PC("",NPB_DIM);
-    PC("==============================================================",NPB_RED);
-    PC("                    NullOS PreBoot",NPB_ORANGE);
-    PC("                         [ NPB ]",NPB_RED);
-    PC("==============================================================",NPB_RED);
-    PC("!! DANGER ZONE // RAW BOOT CONTROL // NO SAFETY NET !!",NPB_YELLOW);
-    PC("This environment can select the next kernel or execute native code.",NPB_DIM);
+    PC("Booted into NullOS PreBoot Stage",NPB_ORANGE);
+    PC("Select Kernel ID Image to load.",0x00FFFFFFU);
+    PC("Use 'jmp' for Normal-Mode or 'jmp-a' for Assembly-Mode.",0x00FFFFFFU);
+    PC("WARNING: Don't boot as Assembly-Mode if you don't know it.",NPB_RED);
+    PC("NPB might get corrupted.",NPB_RED);
     PC("",NPB_DIM);
     ShowKernels();
     PC("",NPB_DIM);
