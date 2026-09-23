@@ -164,7 +164,7 @@ static int32_t div_round(int64_t n, int32_t d)
     return (int32_t)((n - d / 2) / d);
 }
 
-static int32_t scale_coord(int32_t v, int32_t origin, int32_t extent, int32_t out)
+static int32_t __attribute__((unused)) scale_coord(int32_t v, int32_t origin, int32_t extent, int32_t out)
 {
     return div_round((int64_t)(v - origin) * out, extent);
 }
@@ -400,8 +400,8 @@ static bool raster_glyph(uint16_t glyph, uint8_t out[FONT_HEIGHT])
     if(pos+ins>glen || total==0 || total>1024) return false;
     pos+=ins;
 
-    Point pts[1024];
-    unsigned char flags[1024];
+    static Point pts[1024];
+    static unsigned char flags[1024];
     uint16_t fi=0;
     while(fi<total){
         if(pos>=glen) return false;
@@ -436,7 +436,7 @@ static bool raster_glyph(uint16_t glyph, uint8_t out[FONT_HEIGHT])
     int32_t w=xMax-xMin,h=yMax-yMin;
     if(w<=0||h<=0) return true;
 
-    Edge edges[4096]; uint32_t ec=0;
+    static Edge edges[4096]; uint32_t ec=0;
 
     /*
      * Convert every quadratic contour into line segments. This walk handles
@@ -562,7 +562,7 @@ static bool raster_glyph(uint16_t glyph, uint8_t out[FONT_HEIGHT])
     return true;
 }
 
-static uint16_t glyph_advance(uint16_t glyph)
+static uint16_t __attribute__((unused)) glyph_advance(uint16_t glyph)
 {
     if (!g_hmtx.off || g_num_hmetrics == 0) return 0;
     uint16_t idx = glyph < g_num_hmetrics ? glyph : (uint16_t)(g_num_hmetrics - 1U);
