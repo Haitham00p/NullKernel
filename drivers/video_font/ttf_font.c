@@ -109,17 +109,16 @@ static void bake_codepoint(const stbtt_fontinfo *font,
     if (!bitmap || w <= 0 || h <= 0)
         return;
 
-    int ascent, descent, line_gap;
-    stbtt_GetFontVMetrics(font, &ascent, &descent, &line_gap);
-    (void)descent;
-    (void)line_gap;
-    (void)xoff;
-
-    int baseline = ttf_ifloor((double)ascent * (double)scale + 0.5);
-    int dst_x = (TTF_FONT_WIDTH - w) / 2;
+    /*
+     * Center the actual rasterized glyph inside the terminal cell.
+     * Using the bitmap's own bounding box avoids depending on the font's
+     * ascent/descent sign convention for yoff.
+     */
+    int dst_x = ((int)TTF_FONT_WIDTH - w) / 2;
+    int dst_y = ((int)TTF_FONT_HEIGHT - h) / 2;
 
     for (int sy = 0; sy < h; ++sy) {
-        int dy = baseline + yoff + sy;
+        int dy = dst_y + sy;
         if (dy < 0 || dy >= (int)TTF_FONT_HEIGHT)
             continue;
 
@@ -128,15 +127,17 @@ static void bake_codepoint(const stbtt_fontinfo *font,
                    ? dst_x + sx
                    : sx - (w - (int)TTF_FONT_WIDTH) / 2;
 
-            if (bitmap[sy * w + sx] >= 80)
+            if (bitmap[sy * w + sx] != 0)
                 set_glyph_pixel(out, dx, dy);
         }
     }
 
+    (void)xoff;
+    (void)yoff;
     stbtt_FreeBitmap(bitmap, NULL);
 }
 
-static uint8_t terminal_font16x32[128][TTF_FONT_HEIGHT * 2U];
+
 
 static void build_fallback_atlas(void)
 {
@@ -191,7 +192,7 @@ void TtfFontInit(void)
                         stbtt_GetFontOffsetForIndex(ttf, 0)))
         return;
 
-    /* Large terminal mode: 16x32 cells. */
+    /* Rasterize IBM Plex Mono into the current 14x28 terminal cells. */
     float scale = stbtt_ScaleForPixelHeight(&font, 30.0f);
 
     for (int cp = 32; cp < 128; ++cp) {
