@@ -51,33 +51,34 @@ BootAsmRun:
 
     call [rsp+8]
 
-    ; R10 is now the instruction result, so first recover the context
-    ; pointer without destroying any output register except R10 itself.
-    mov rax, rax
+    push rax
+    push r10
+    push r11
+
+    mov rax, [rsp+24]
+
+    mov r10, [rsp+16]
+    mov [rax+0], r10
+    mov [rax+8], rbx
+    mov [rax+16], rcx
+    mov [rax+24], rdx
+    mov [rax+32], rsi
+    mov [rax+40], rdi
+    mov [rax+48], rbp
+    mov [rax+56], r8
+    mov [rax+64], r9
+    mov r10, [rsp+8]
+    mov [rax+72], r10
     mov r10, [rsp+0]
-    mov [r10+0], rax
-    mov [r10+8], rbx
-    mov [r10+16], rcx
-    mov [r10+24], rdx
-    mov [r10+32], rsi
-    mov [r10+40], rdi
-    mov [r10+48], rbp
-    mov [r10+56], r8
-    mov [r10+64], r9
-    ; R10 output is saved before R11, using the original value still
-    ; present in the CPU register file.
-    mov [r10+72], r10
-    ; R11 cannot be saved after R10 becomes the context pointer, so use
-    ; the temporary stack slot containing the context pointer and a second
-    ; scratch register is impossible without clobbering an output. Save R11
-    ; through the context pointer held in R10 by using RAX only after its
-    ; value has already been committed.
-    mov rax, [rsp+0]
-    mov [rax+80], r11
+    mov [rax+80], r10
     mov [rax+88], r12
     mov [rax+96], r13
     mov [rax+104], r14
     mov [rax+112], r15
+
+    pop r11
+    pop r10
+    pop rax
 
     mov r15, [rsp+16]
     mov r14, [rsp+24]
