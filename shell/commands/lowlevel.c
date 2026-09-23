@@ -153,20 +153,25 @@ void LL_Flags(void)
 void LL_Regs(void)
 {
     uint64_t rax, rbx, rcx, rdx, rsi, rdi, r8, r9, r10, r11, r12, r13, r14, r15;
-    __asm__ volatile(
-        "mov %%rax,%0; mov %%rbx,%1; mov %%rcx,%2; mov %%rdx,%3;"
-        "mov %%rsi,%4; mov %%rdi,%5; mov %%r8,%6; mov %%r9,%7;"
-        "mov %%r10,%8; mov %%r11,%9; mov %%r12,%10; mov %%r13,%11;"
-        "mov %%r14,%12; mov %%r15,%13"
-        : "=r"(rax), "=r"(rbx), "=r"(rcx), "=r"(rdx), "=r"(rsi), "=r"(rdi),
-          "=r"(r8), "=r"(r9), "=r"(r10), "=r"(r11), "=r"(r12), "=r"(r13),
-          "=r"(r14), "=r"(r15));
+    __asm__ volatile("mov %%rax,%0" : "=r"(rax));
+    __asm__ volatile("mov %%rbx,%0" : "=r"(rbx));
+    __asm__ volatile("mov %%rcx,%0" : "=r"(rcx));
+    __asm__ volatile("mov %%rdx,%0" : "=r"(rdx));
+    __asm__ volatile("mov %%rsi,%0" : "=r"(rsi));
+    __asm__ volatile("mov %%rdi,%0" : "=r"(rdi));
+    __asm__ volatile("mov %%r8,%0" : "=r"(r8));
+    __asm__ volatile("mov %%r9,%0" : "=r"(r9));
+    __asm__ volatile("mov %%r10,%0" : "=r"(r10));
+    __asm__ volatile("mov %%r11,%0" : "=r"(r11));
+    __asm__ volatile("mov %%r12,%0" : "=r"(r12));
+    __asm__ volatile("mov %%r13,%0" : "=r"(r13));
+    __asm__ volatile("mov %%r14,%0" : "=r"(r14));
+    __asm__ volatile("mov %%r15,%0" : "=r"(r15));
     LLHex("RAX = ", rax); LLHex("RBX = ", rbx); LLHex("RCX = ", rcx); LLHex("RDX = ", rdx);
     LLHex("RSI = ", rsi); LLHex("RDI = ", rdi); LLHex("R8  = ", r8); LLHex("R9  = ", r9);
     LLHex("R10 = ", r10); LLHex("R11 = ", r11); LLHex("R12 = ", r12); LLHex("R13 = ", r13);
     LLHex("R14 = ", r14); LLHex("R15 = ", r15);
 }
-
 void LL_Segs(void)
 {
     uint16_t cs, ds, es, fs, gs, ss;
@@ -245,20 +250,25 @@ void LL_Stack(const PARSED_COMMAND *Command)
 
 void LL_Bench(const PARSED_COMMAND *Command)
 {
-    uint64_t loops = 1000000U, start, end, i;
+    uint64_t loops = 1000000U, start, end;
+    uint32_t lo, hi;
+
     if (Command->ArgCount > 0U && !LLNum(Command->Args[0], &loops))
     {
         LLLine("Usage: tscbench [loops]");
         return;
     }
     if (loops > 100000000U) loops = 100000000U;
-    __asm__ volatile("rdtsc" : "=a"(*(uint32_t *)&start), "=d"(*((uint32_t *)&start + 1)));
-    for (i = 0; i < loops; i++) __asm__ volatile("pause");
-    __asm__ volatile("rdtsc" : "=a"(*(uint32_t *)&end), "=d"(*((uint32_t *)&end + 1)));
+
+    __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
+    start = ((uint64_t)hi << 32) | lo;
+    for (uint64_t i = 0; i < loops; i++) __asm__ volatile("pause");
+    __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
+    end = ((uint64_t)hi << 32) | lo;
+
     LLHex("loops = ", loops);
     LLHex("cycles = ", end - start);
 }
-
 void LL_Pause(void)
 {
     __asm__ volatile("pause");
