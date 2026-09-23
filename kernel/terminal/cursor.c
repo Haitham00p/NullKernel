@@ -218,7 +218,7 @@ static inline void RenderSingleCell(term_screen_t *screen, uint32_t col, uint32_
 
     const uint8_t *glyph_ptr = NULL;
     if (screen->font_glyph_data && cell->codepoint < 256) {
-        glyph_ptr = &screen->font_glyph_data[cell->codepoint * fh];
+        glyph_ptr = &screen->font_glyph_data[cell->codepoint * fh * ((fw > 8U) ? 2U : 1U)];
     }
 
     uint32_t start_x = col * fw;
@@ -226,10 +226,17 @@ static inline void RenderSingleCell(term_screen_t *screen, uint32_t col, uint32_
 
     for (uint8_t py = 0; py < fh; py++) {
         uint32_t *vram_scanline = &screen->framebuffer[(start_y + py) * pitch + start_x];
-        uint8_t glyph_row = glyph_ptr ? glyph_ptr[py] : 0;
+        uint16_t glyph_row = 0;
+        if (glyph_ptr) {
+            if (fw > 8U) {
+                glyph_row = (uint16_t)(((uint16_t)glyph_ptr[py * 2U] << 8) | glyph_ptr[py * 2U + 1U]);
+            } else {
+                glyph_row = glyph_ptr[py];
+            }
+        }
 
         for (uint8_t px = 0; px < fw; px++) {
-            bool is_glyph = (glyph_row >> (7 - px)) & 1;
+            bool is_glyph = (glyph_row >> (fw - 1U - px)) & 1;
             bool is_caret = false;
 
             if (is_cursor) {
