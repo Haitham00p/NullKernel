@@ -824,16 +824,31 @@ void CmdNcc(const PARSED_COMMAND *Command)
     }
     else if (!ObjOnly)
     {
-        char ExeName[13];
-        SelfHostExeName(Src, ExeName);
-        if (!DiskFsWrite(ExeName, Image, ImageSize))
+        char ExeName[32];
+        char OutPath[256];
+        uint32_t last = 0U, i2 = 0U, base = 0U;
+        while (Src[i2] != '\0') { if (Src[i2] == '/') last = i2; i2++; }
+        base = last ? last + 1U : 0U;
+        SelfHostExeName(Src + base, ExeName);
+        if (last)
+        {
+            uint32_t n = last < sizeof(OutPath) - 1U ? last : sizeof(OutPath) - 1U;
+            memcpy(OutPath, Src, n);
+            OutPath[n] = '/';
+            strcpy(OutPath + n + 1U, ExeName);
+        }
+        else
+        {
+            strcpy(OutPath, ExeName);
+        }
+        if (!DiskFsWrite(OutPath, Image, ImageSize))
         {
             TerminalPrintLine32("ncc: cannot write output", 0x00FF5C77);
             kfree(Image);
             return;
         }
         TerminalWrite32("ncc: wrote ", PromColor);
-        TerminalPrintLine32(ExeName, PromColor);
+        TerminalPrintLine32(OutPath, PromColor);
     }
     else
     {
