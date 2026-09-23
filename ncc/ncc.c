@@ -151,10 +151,7 @@ static void NccErrorAt(const char *msg, uint32_t line)
     TerminalPrintLine32(msg, ERR_COLOR);
 }
 
-static void NccError(const char *msg)
-{
-    NccErrorAt(msg, g_tok.line);
-}
+static void NccError(const char *msg);
 
 static bool NccIsIdentStart(char c)
 {
@@ -996,6 +993,11 @@ static uint32_t g_lex_line;
 static bool g_lex_line_start;
 static uint8_t g_strbuf[NCC_MAX_STR];
 static NccTok g_tok;
+
+static void NccError(const char *msg)
+{
+    NccErrorAt(msg, g_tok.line);
+}
 static NccTok g_peek;
 static bool g_peek_valid;
 
