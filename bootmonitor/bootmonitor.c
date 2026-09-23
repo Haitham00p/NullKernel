@@ -59,82 +59,67 @@ static void PC(const char *s,uint32_t color){TerminalPrintLine32(s,color);}
 
 static bool KernelIdForName(const char *name, char *id, uint32_t cap, uint32_t *slot)
 {
-    char out[4096]; char *p; uint32_t index=0, found=0;
-    if (!name || !id || cap < 16U || !DiskFsChdirPath(BM_DIR)) return false;
-    if (!DiskFsListNames(out,sizeof(out))) { DiskFsCdRoot(); return false; }
+    char out[4096]; char *p;
+    if(!name||!id||cap<16U||!DiskFsChdirPath(BM_DIR)) return false;
+    if(!DiskFsListNames(out,sizeof(out))){DiskFsCdRoot();return false;}
+    uint32_t current=0;
     p=out;
-    while (*p) {
-        uint32_t l=0;
-        while (p[l] && p[l]!='\\n' && p[l]!='\\r') l++;
-        if (l) {
-            char n[96]; uint32_t cp=l<95?l:95;
-            for(uint32_t i=0;i<cp;i++) n[i]=p[i]; n[cp]=0;
-            if (ElfName(n)) {
-                uint32_t current;
-                if (strcasecmp(n,"kernel.elf")==0) current=0;
-                else {
-                    current=1;
-                    char q[4096]; char *z=q;
-                    if (DiskFsListNames(q,sizeof(q))) {
-                        while (*z) {
-                            uint32_t zl=0; while(z[zl]&&z[zl]!='\\n'&&z[zl]!='\\r') zl++;
-                            if(zl) {
-                                char nn[96]; uint32_t nc=zl<95?zl:95;
-                                for(uint32_t k=0;k<nc;k++) nn[k]=z[k]; nn[nc]=0;
-                                if(ElfName(nn) && strcasecmp(nn,"kernel.elf")!=0) {
-                                    if(strcasecmp(nn,n)==0) break;
-                                    current++;
-                                }
-                            }
-                            z+=zl; while(*z=='\\n'||*z=='\\r') z++;
-                        }
-                    }
+    while(*p){
+        uint32_t l=0;while(p[l]&&p[l]!='\n'&&p[l]!='\r')l++;
+        if(l){
+            char n[96];uint32_t cp=l<95?l:95;for(uint32_t i=0;i<cp;i++)n[i]=p[i];n[cp]=0;
+            if(ElfName(n)){
+                uint32_t this_slot;
+                if(strcasecmp(n,"kernel.elf")==0) this_slot=0;
+                else { this_slot=current; if(current==0) current=1; }
+                if(strcasecmp(n,"kernel.elf")!=0 && this_slot==0) this_slot=1;
+                if(strcasecmp(n,name)==0){
+                    if(slot)*slot=this_slot;
+                    const char digs[]="0123456789ABCDEF";char hex[24];uint32_t hv=this_slot,hn=0,pos=0;
+                    const char *pre=BM_ID_PREFIX;while(pre[pos]&&pos+1<cap)id[pos]=pre[pos],pos++;
+                    do{hex[hn++]=digs[hv&15U];hv>>=4;}while(hv);
+                    while(hn){if(pos+1>=cap){DiskFsCdRoot();return false;}id[pos++]=hex[--hn];}
+                    id[pos]=0;DiskFsCdRoot();return true;
                 }
-                if (strcasecmp(n,name)==0) {
-                    if (slot) *slot=current;
-                    uint32_t pos=0; const char *pre=BM_ID_PREFIX;
-                    while(pre[pos] && pos+1<cap){id[pos]=pre[pos];pos++;}
-                    char hex[24]; uint32_t hv=current, hn=0;
-                    const char digs[]="0123456789ABCDEF";
-                    do {hex[hn++]=digs[hv&0xFU];hv>>=4;}while(hv);
-                    while(hn) { if(pos+1>=cap) {DiskFsCdRoot();return false;} id[pos++]=hex[--hn]; }
-                    id[pos]=0; DiskFsCdRoot(); return true;
-                }
+                if(strcasecmp(n,"kernel.elf")!=0 && current<0xFFFFFFFFU) current++;
             }
         }
-        p+=l; while(*p=='\\n'||*p=='\\r') p++;
+        p+=l;while(*p=='\n'||*p=='\r')p++;
     }
-    DiskFsCdRoot(); return false;
+    DiskFsCdRoot();return false;
 }
 
 static bool NameForKernelId(const char *id, char *name, uint32_t cap)
 {
-    char out[4096]; char *p;
-    if(!id || !name || cap<2U || strncasecmp(id,BM_ID_PREFIX,10)!=0) return false;
+    if(!id||!name||cap<2U||strncasecmp(id,BM_ID_PREFIX,10)!=0)return false;
+    const char *h=id+10;if(!*h)return false;
     uint32_t wanted=0;
-    const char *h=id+10;
-    if(!*h) return false;
-    while(*h){char ch=*h++; uint32_t v;
+    while(*h){char ch=*h++;uint32_t v;
         if(ch>='0'&&ch<='9')v=(uint32_t)(ch-'0');
         else if(ch>='a'&&ch<='f')v=(uint32_t)(ch-'a'+10);
         else if(ch>='A'&&ch<='F')v=(uint32_t)(ch-'A'+10);
         else return false;
-        if(wanted>0x0FFFFFFFU) return false;
+        if(wanted>0x0FFFFFFFU)return false;
         wanted=(wanted<<4)|v;
     }
-    if(!DiskFsChdirPath(BM_DIR)) return false;
-    if(!DiskFsListNames(out,sizeof(out))){DiskFsCdRoot();return false;}
-    p=out;
+    char out[4096];char *p;
+    if(!DiskFsChdirPath(BM_DIR)||!DiskFsListNames(out,sizeof(out))){DiskFsCdRoot();return false;}
+    uint32_t slot=0;p=out;
     while(*p){
-        uint32_t l=0;while(p[l]&&p[l]!='\\n'&&p[l]!='\\r')l++;
+        uint32_t l=0;while(p[l]&&p[l]!='\n'&&p[l]!='\r')l++;
         if(l){
             char n[96];uint32_t cp=l<95?l:95;for(uint32_t i=0;i<cp;i++)n[i]=p[i];n[cp]=0;
-            if(ElfName(n)){char got[32];uint32_t slot=0;if(KernelIdForName(n,got,sizeof(got),&slot)&&slot==wanted){
-                for(uint32_t i=0;i<cap-1&&n[i];i++)name[i]=n[i],name[i+1]=0;
-                DiskFsCdRoot();return true;
-            }}
+            if(ElfName(n)){
+                uint32_t this_slot=(strcasecmp(n,"kernel.elf")==0)?0U:slot;
+                if(strcasecmp(n,"kernel.elf")!=0&&slot==0)slot=1,this_slot=1;
+                if(this_slot==wanted){
+                    uint32_t i=0;while(i+1<cap&&n[i]){name[i]=n[i];i++;}name[i]=0;
+                    DiskFsCdRoot();return true;
+                }
+                if(strcasecmp(n,"kernel.elf")!=0&&slot<0xFFFFFFFFU)slot++;
+            }
         }
-        p+=l;while(*p=='\\n'||*p=='\\r')p++;
+        p+=l;while(*p=='\n'||*p=='\r')p++;
     }
     DiskFsCdRoot();return false;
 }
@@ -435,7 +420,12 @@ static void Execute(char *line){
         if(!ReadKernel(arg)){DiskFsCdRoot();P("load: rejected - invalid/unreadable NullOS kernel ELF");return;}
         DiskFsCdRoot();
     }return;}
-    if(Eq(cmd,"unload")){Unload();P("unloaded");return;}
+    if(Eq(cmd,"unload")){
+        if(!arg||!*arg){P("Usage: unload <KRNL1.0:0xN>");return;}
+        char resolved[96],current_id[32];uint32_t slot=0;
+        if(!g_name[0]||!KernelIdForName(g_name,current_id,sizeof(current_id),&slot)){P("unload: nothing staged");return;}
+        if(!NameForKernelId(arg,resolved,sizeof(resolved))||strcasecmp(resolved,g_name)!=0){P("unload: ID does not match the staged kernel");return;}
+        Unload();P("unloaded");return;}
     if(Eq(cmd,"jmp")){
         if(arg&&*arg){
             char resolved[96];
