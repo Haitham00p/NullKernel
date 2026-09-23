@@ -193,13 +193,24 @@ static void EditorDrawStatus(void)
     n = EditorAppendNum(St, n, Col + 1U);
     St[n] = '\0';
 
-    TerminalSetCursor32((scr->cols - EDITOR_STATUS_CELLS) * scr->font_width,
+    if (scr->cols == 0U || scr->rows == 0U)
+    {
+        return;
+    }
+
+    uint32_t status_cells = scr->cols < EDITOR_STATUS_CELLS
+                          ? scr->cols : EDITOR_STATUS_CELLS;
+    TerminalSetCursor32((scr->cols - status_cells) * scr->font_width,
                         (scr->rows - 1U) * scr->font_height);
     for (i = 0; i < EDITOR_STATUS_CELLS; i++)
     {
         TerminalPutChar32(' ', EDITOR_BG);
     }
-    Start = n < EDITOR_STATUS_CELLS ? scr->cols - n : scr->cols - EDITOR_STATUS_CELLS;
+    if (n > scr->cols)
+    {
+        n = scr->cols;
+    }
+    Start = n < scr->cols ? scr->cols - n : 0U;
     TerminalSetCursor32(Start * scr->font_width,
                         (scr->rows - 1U) * scr->font_height);
     TerminalWrite32(St, EDITOR_FG);
@@ -213,8 +224,17 @@ static void EditorCursorTo(void)
     uint32_t Row;
 
     EditorLineCol(EditorPos, &Line, &Col);
-    Row = Line - EditorTopLine;
-    if (Row > scr->rows - 2U)
+    if (scr->rows == 0U)
+    {
+        return;
+    }
+
+    Row = Line >= EditorTopLine ? Line - EditorTopLine : 0U;
+    if (scr->rows <= 1U)
+    {
+        Row = 0U;
+    }
+    else if (Row >= scr->rows - 1U)
     {
         Row = scr->rows - 2U;
     }
