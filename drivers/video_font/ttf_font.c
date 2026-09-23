@@ -76,16 +76,28 @@ static double ttf_sqrt(double x)
 
 static uint8_t terminal_font16x32[128][TTF_FONT_HEIGHT * 2U];
 
-static void clear_glyph(uint8_t out[FONT_HEIGHT])
+static void clear_glyph(uint8_t out[TTF_FONT_HEIGHT * 2U])
 {
-    for (uint32_t y = 0; y < FONT_HEIGHT; ++y)
-        out[y] = 0;
+    for (uint32_t i = 0; i < TTF_FONT_HEIGHT * 2U; ++i)
+        out[i] = 0;
+}
+
+static void set_glyph_pixel(uint8_t out[TTF_FONT_HEIGHT * 2U],
+                             int x, int y)
+{
+    if (x < 0 || x >= (int)TTF_FONT_WIDTH ||
+        y < 0 || y >= (int)TTF_FONT_HEIGHT)
+        return;
+
+    uint32_t bit = (uint32_t)(7 - (x & 7));
+    uint32_t byte = (uint32_t)y * 2U + (uint32_t)(x >> 3);
+    out[byte] |= (uint8_t)(1U << bit);
 }
 
 static void bake_codepoint(const stbtt_fontinfo *font,
                            int codepoint,
                            float scale,
-                           uint8_t out[FONT_HEIGHT])
+                           uint8_t out[TTF_FONT_HEIGHT * 2U])
 {
     int w, h, xoff, yoff;
     unsigned char *bitmap;
@@ -93,8 +105,7 @@ static void bake_codepoint(const stbtt_fontinfo *font,
     clear_glyph(out);
 
     bitmap = stbtt_GetCodepointBitmap(font, scale, scale,
-                                      codepoint,
-                                      &w, &h, &xoff, &yoff);
+                                      codepoint, &w, &h, &xoff, &yoff);
     if (!bitmap || w <= 0 || h <= 0)
         return;
 
@@ -105,57 +116,52 @@ static void bake_codepoint(const stbtt_fontinfo *font,
     (void)xoff;
 
     int baseline = ttf_ifloor((double)ascent * (double)scale + 0.5);
-    int dst_x = (FONT_WIDTH - w) / 2;
-
-    if (dst_x < 0)
-        dst_x = 0;
+    int dst_x = (TTF_FONT_WIDTH - w) / 2;
 
     for (int sy = 0; sy < h; ++sy) {
         int dy = baseline + yoff + sy;
-        if (dy < 0 || dy >= FONT_HEIGHT)
+        if (dy < 0 || dy >= (int)TTF_FONT_HEIGHT)
             continue;
 
         for (int sx = 0; sx < w; ++sx) {
-            int dx;
+            int dx = (w <= (int)TTF_FONT_WIDTH)
+                   ? dst_x + sx
+                   : sx - (w - (int)TTF_FONT_WIDTH) / 2;
 
-            if (w <= FONT_WIDTH)
-                dx = dst_x + sx;
-            else
-                dx = sx - (w - FONT_WIDTH) / 2;
-
-            if (dx < 0 || dx >= FONT_WIDTH)
-                continue;
-
-            /*
-             * The terminal atlas is 1bpp. A slightly lower threshold keeps
-             * thin IBM Plex Mono strokes visible at 8x16.
-             */
             if (bitmap[sy * w + sx] >= 80)
-                out[dy] |= (uint8_t)(1U << (7U - (uint32_t)dx));
+                set_glyph_pixel(out, dx, dy);
         }
     }
 
     stbtt_FreeBitmap(bitmap, NULL);
 }
 
+static uint8_t terminal_font16x32[128][TTF_FONT_HEIGHT * 2U];
+
 static void build_fallback_atlas(void)
 {
     for (uint32_t cp = 0; cp < 128U; ++cp) {
         for (uint32_t y = 0; y < FONT_HEIGHT; ++y) {
             uint8_t row = font8x16[cp][y];
-            uint8_t hi = 0;
-            uint8_t lo = 0;
-            for (uint32_t x = 0; x < FONT_WIDTH; ++x) {
-                if (!(row & (uint8_t)(1U << (7U - x)))) continue;
-                uint32_t dx = x * 2U;
-                if (dx < 8U) hi |= (uint8_t)(0xC0U >> dx);
-                else lo |= (uint8_t)(0xC0U >> (dx - 8U));
+
+            for (uint32_t sy = 0; sy < 2U; ++sy) {
+                uint32_t dy = y * 2U + sy;
+                terminal_font16x32[cp][dy * 2U] = 0;
+                terminal_font16x32[cp][dy * 2U + 1U] = 0;
+
+                for (uint32_t x = 0; x < FONT_WIDTH; ++x) {
+                    if (!(row & (uint8_t)(1U << (7U - x))))
+                        continue;
+
+                    uint32_t dx = x * 2U;
+                    uint32_t byte = dy * 2U + (dx >> 3);
+                    uint32_t bit = 7U - (dx & 7U);
+                    terminal_font16x32[cp][byte] |= (uint8_t)(1U << bit);
+                    bit = 7U - ((dx + 1U) & 7U);
+                    terminal_font16x32[cp][dy * 2U + ((dx + 1U) >> 3)] |=
+                        (uint8_t)(1U << bit);
+                }
             }
-            uint32_t dy = y * 2U;
-            terminal_font16x32[cp][dy * 2U] = hi;
-            terminal_font16x32[cp][dy * 2U + 1U] = lo;
-            terminal_font16x32[cp][(dy + 1U) * 2U] = hi;
-            terminal_font16x32[cp][(dy + 1U) * 2U + 1U] = lo;
         }
     }
 }
@@ -168,6 +174,7 @@ const uint8_t *TtfFontGetAtlas(void)
 void TtfFontInit(void)
 {
     build_fallback_atlas();
+
     const unsigned char *ttf =
         _binary_drivers_video_font_IBMPlexMono_Regular_ttf_start;
 
@@ -184,49 +191,24 @@ void TtfFontInit(void)
                         stbtt_GetFontOffsetForIndex(ttf, 0)))
         return;
 
-    /*
-     * 16px gives IBM Plex Mono a slightly larger, clearer glyph while leaving the
-     * existing 16px terminal cell intact.
-     */
+    /* Large terminal mode: 16x32 cells. */
     float scale = stbtt_ScaleForPixelHeight(&font, 30.0f);
 
     for (int cp = 32; cp < 128; ++cp) {
-        uint8_t glyph[FONT_HEIGHT];
-
+        uint8_t glyph[TTF_FONT_HEIGHT * 2U];
         bake_codepoint(&font, cp, scale, glyph);
 
         bool has_pixels = false;
-        for (uint32_t y = 0; y < FONT_HEIGHT; ++y) {
-            if (glyph[y] != 0) {
+        for (uint32_t i = 0; i < TTF_FONT_HEIGHT * 2U; ++i) {
+            if (glyph[i] != 0) {
                 has_pixels = true;
                 break;
             }
         }
 
-        /*
-         * Keep the old bitmap for unsupported/empty entries.
-         */
         if (has_pixels) {
-            for (uint32_t y = 0; y < FONT_HEIGHT; ++y)
-                font8x16[cp][y] = glyph[y];
-        }
-
-        /* Expand the baked 8x16-compatible glyph to the 16x32 terminal atlas. */
-        for (uint32_t y = 0; y < FONT_HEIGHT; ++y) {
-            uint8_t row = font8x16[cp][y];
-            uint8_t hi = 0, lo = 0;
-            for (uint32_t x = 0; x < FONT_WIDTH; ++x) {
-                if (!(row & (uint8_t)(1U << (7U - x)))) continue;
-                uint32_t dx = x * 2U;
-                if (dx < 8U) hi |= (uint8_t)(0xC0U >> dx);
-                else lo |= (uint8_t)(0xC0U >> (dx - 8U));
-            }
-            uint32_t dy = y * 2U;
-            terminal_font16x32[cp][dy * 2U] = hi;
-            terminal_font16x32[cp][dy * 2U + 1U] = lo;
-            terminal_font16x32[cp][(dy + 1U) * 2U] = hi;
-            terminal_font16x32[cp][(dy + 1U) * 2U + 1U] = lo;
-        }
+            for (uint32_t i = 0; i < TTF_FONT_HEIGHT * 2U; ++i)
+                terminal_font16x32[cp][i] = glyph[i];
         }
     }
 }
