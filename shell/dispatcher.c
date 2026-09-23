@@ -9,6 +9,14 @@
 #include "commands/lowlevel.h"
 
 void DispatcherDispatch(const PARSED_COMMAND *Command){
+    /* cp stays in the kernel: its recursive FAT32/path-safety implementation
+       must not be shadowed by the older /BIN/CP.EXE image. */
+    if (strcmp(Command->Command, "cp") == 0) {
+        if (Command->ArgCount != 2U) { TerminalPrintLine32("Usage: cp <source> <dest>", 0x00FF0000); return; }
+        CmdCp(Command->Args[0], Command->Args[1]);
+        return;
+    }
+
     /* Disk commands shadow the built-ins: when /BIN/<cmd>.EXE exists on
        the installed volume, it runs instead of the kernel built-in. */
     if (DispatcherTryDiskCommand(Command)) return;
