@@ -31,4 +31,13 @@ void TerminalSplitDisablePromote(uint32_t pane);
 term_screen_t *TerminalGetScreen(void);
 uint32_t TerminalGetPaneCols32(void);
 
+/*
+ * Redraws the active shell input line in one terminal render pass.
+ * Existing terminal APIs remain unchanged; this is an additive fast path
+ * used by shell line editing.
+ */
+void TerminalRedrawInputLine32(const char *prompt, uint32_t prompt_color,
+                               const char *command, uint32_t command_color,
+                               uint32_t command_pos);
+
 #endif /* TERMINAL_H */
