@@ -158,6 +158,8 @@ static void Help(void){
     P("  halt                    halt CPU");
 }
 
+static void ReadLine(char *line,uint32_t cap);
+
 static BootAsmRegs AsmRegs;
 
 static void AsmPrintReg(const char *name, uint64_t v)
