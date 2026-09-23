@@ -21,6 +21,7 @@
 #include "installer/installer.h"
 #include "libc/stdlib.h"
 #include "libc/stdio.h"
+#include "bootmonitor/bootmonitor.h"
 
 extern struct limine_memmap_request MemMapReq;
 
