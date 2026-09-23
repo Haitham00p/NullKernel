@@ -21,15 +21,38 @@ uint32_t OutColor = 0x00808080U;
 /* Prompt color, driven by /REG/color/p_fg.v (0xFFFFFFFF = default white) */
 uint32_t PromptColor = 0xFFFFFFFFU;
 
-static char *Command = NULL;
-static uint32_t CommandCapacity = 0;
-static uint32_t CommandLength = 0;
-static uint32_t CommandPos = 0;
-
+#define SHELL_MAX_SHELLS      2U
 #define SHELL_CMD_INIT_CAP   128U
 #define SHELL_HISTORY_SIZE   16U
-static char *History[SHELL_HISTORY_SIZE];
-static char *HistoryDraft = NULL;
+#define SHELL_CWD_CAPACITY   128U
+
+typedef struct
+{
+    char *Command;
+    uint32_t CommandCapacity;
+    uint32_t CommandLength;
+    uint32_t CommandPos;
+    char *History[SHELL_HISTORY_SIZE];
+    char *HistoryDraft;
+    uint32_t HistoryCount;
+    uint32_t HistoryPosition;
+    bool HistoryBrowsing;
+    char Cwd[SHELL_CWD_CAPACITY];
+    bool Exists;
+} SHELL_CONTEXT;
+
+static SHELL_CONTEXT Shells[SHELL_MAX_SHELLS];
+static uint32_t ActiveShell = 0;
+
+#define Command             (Shells[ActiveShell].Command)
+#define CommandCapacity     (Shells[ActiveShell].CommandCapacity)
+#define CommandLength       (Shells[ActiveShell].CommandLength)
+#define CommandPos          (Shells[ActiveShell].CommandPos)
+#define History             (Shells[ActiveShell].History)
+#define HistoryDraft        (Shells[ActiveShell].HistoryDraft)
+#define HistoryCount        (Shells[ActiveShell].HistoryCount)
+#define HistoryPosition     (Shells[ActiveShell].HistoryPosition)
+#define HistoryBrowsing     (Shells[ActiveShell].HistoryBrowsing)
 
 /* Grows the live command buffer so it can hold at least Need bytes
    (including the NUL terminator).  Returns false on allocation failure. */
@@ -63,10 +86,6 @@ static char *ShellCmdDup(const char *Src)
     for (uint32_t i = 0; i <= Len; i++) Out[i] = Src[i];
     return Out;
 }
-static uint32_t HistoryCount = 0;
-static uint32_t HistoryPosition = 0;
-static bool HistoryBrowsing = false;
-
 /**
  * @brief Reads base text color and applies channel math to generate
  * a harmonized, slightly shifted single color for the whole prompt.
@@ -243,15 +262,141 @@ static void ShellHistoryDown(void)
     ShellReplaceCommand(HistoryDraft != NULL ? HistoryDraft : "");
 }
 
+static void ShellSaveCwd(void)
+{
+    if (Shells[ActiveShell].Exists)
+        DiskFsPwd(Shells[ActiveShell].Cwd, SHELL_CWD_CAPACITY);
+}
+
+static void ShellRestoreCwd(uint32_t Index)
+{
+    if (Shells[Index].Exists)
+        DiskFsChdirPath(Shells[Index].Cwd);
+}
+
+static void ShellFreeContext(uint32_t Index)
+{
+    SHELL_CONTEXT *Ctx = &Shells[Index];
+    if (Ctx->Command != NULL) kfree(Ctx->Command);
+    for (uint32_t i = 0; i < SHELL_HISTORY_SIZE; i++)
+        if (Ctx->History[i] != NULL) kfree(Ctx->History[i]);
+    if (Ctx->HistoryDraft != NULL) kfree(Ctx->HistoryDraft);
+    Ctx->Command = NULL;
+    Ctx->HistoryDraft = NULL;
+    Ctx->CommandCapacity = Ctx->CommandLength = Ctx->CommandPos = 0;
+    Ctx->HistoryCount = Ctx->HistoryPosition = 0;
+    Ctx->HistoryBrowsing = false;
+    Ctx->Cwd[0] = '\0';
+    Ctx->Exists = false;
+    for (uint32_t i = 0; i < SHELL_HISTORY_SIZE; i++) Ctx->History[i] = NULL;
+}
+
+static void ShellInitContext(uint32_t Index, const char *Cwd)
+{
+    uint32_t Saved = ActiveShell;
+    SHELL_CONTEXT *Ctx = &Shells[Index];
+    Ctx->Command = NULL;
+    Ctx->CommandCapacity = Ctx->CommandLength = Ctx->CommandPos = 0;
+    Ctx->HistoryDraft = NULL;
+    Ctx->HistoryCount = Ctx->HistoryPosition = 0;
+    Ctx->HistoryBrowsing = false;
+    for (uint32_t i = 0; i < SHELL_HISTORY_SIZE; i++) Ctx->History[i] = NULL;
+    strncpy(Ctx->Cwd, Cwd, SHELL_CWD_CAPACITY - 1U);
+    Ctx->Cwd[SHELL_CWD_CAPACITY - 1U] = '\0';
+    Ctx->Exists = true;
+    ActiveShell = Index;
+    ShellCmdEnsure(SHELL_CMD_INIT_CAP);
+    if (Command != NULL) Command[0] = '\0';
+    ActiveShell = Saved;
+}
+
+static void ShellSwitchTo(uint32_t Index)
+{
+    if (Index >= SHELL_MAX_SHELLS || !Shells[Index].Exists || Index == ActiveShell || EditorIsActive())
+        return;
+    ShellSaveCwd();
+    ActiveShell = Index;
+    ShellRestoreCwd(Index);
+    TerminalSetActivePane(Index);
+    RedrawCommandPrompt();
+}
+
+static void ShellCreateSplit(void)
+{
+    if (Shells[1].Exists || EditorIsActive())
+        return;
+    ShellSaveCwd();
+    ShellInitContext(1, Shells[0].Cwd);
+    TerminalSplitEnable();
+
+    uint32_t Old = ActiveShell;
+    ActiveShell = 1;
+    ShellRestoreCwd(1);
+    TerminalSetActivePane(1);
+    TerminalClear32(0x00000000U);
+    WritePrompt();
+
+    ActiveShell = Old;
+    ShellRestoreCwd(Old);
+    TerminalSetActivePane(Old);
+    RedrawCommandPrompt();
+}
+
+static void ShellDeleteCurrent(void)
+{
+    if (!Shells[1].Exists || EditorIsActive())
+        return;
+
+    uint32_t Dead = ActiveShell;
+    uint32_t Other = Dead ^ 1U;
+    ShellSaveCwd();
+    TerminalSplitDisablePromote(Other);
+
+    SHELL_CONTEXT SavedOther = Shells[Other];
+    ShellFreeContext(Dead);
+    Shells[0] = SavedOther;
+    Shells[1].Command = NULL;
+    Shells[1].CommandCapacity = Shells[1].CommandLength = Shells[1].CommandPos = 0;
+    Shells[1].HistoryDraft = NULL;
+    Shells[1].HistoryCount = Shells[1].HistoryPosition = 0;
+    Shells[1].HistoryBrowsing = false;
+    Shells[1].Cwd[0] = '\0';
+    Shells[1].Exists = false;
+    for (uint32_t i = 0; i < SHELL_HISTORY_SIZE; i++) Shells[1].History[i] = NULL;
+
+    ActiveShell = 0;
+    ShellRestoreCwd(0);
+    TerminalSetActivePane(0);
+    RedrawCommandPrompt();
+}
+
+static void ShellHandleFunctionKey(uint8_t Key)
+{
+    if (Key == KBD_KEY_F2) ShellCreateSplit();
+    else if (Key == KBD_KEY_F3 && Shells[1].Exists) ShellSwitchTo(ActiveShell ^ 1U);
+    else if (Key == KBD_KEY_F1) ShellDeleteCurrent();
+}
+
 void ShellInitialize(void)
 {
     ShellLoadPromptConfig();
+    for (uint32_t i = 0; i < SHELL_MAX_SHELLS; i++)
+    {
+        Shells[i].Command = NULL;
+        Shells[i].CommandCapacity = Shells[i].CommandLength = Shells[i].CommandPos = 0;
+        Shells[i].HistoryDraft = NULL;
+        Shells[i].HistoryCount = Shells[i].HistoryPosition = 0;
+        Shells[i].HistoryBrowsing = false;
+        Shells[i].Cwd[0] = '\0';
+        Shells[i].Exists = false;
+        for (uint32_t j = 0; j < SHELL_HISTORY_SIZE; j++) Shells[i].History[j] = NULL;
+    }
+    ActiveShell = 0;
+    Shells[0].Exists = true;
+    DiskFsPwd(Shells[0].Cwd, SHELL_CWD_CAPACITY);
     ShellCmdEnsure(SHELL_CMD_INIT_CAP);
     CommandLength = 0;
     CommandPos = 0;
-    HistoryCount = 0;
-    HistoryPosition = 0;
-    HistoryBrowsing = false;
     if (Command != NULL) Command[0] = '\0';
     WritePrompt();
 }
@@ -262,6 +407,12 @@ void ShellUpdate(void)
     {
         uint8_t Key = KbdReadKey();
         char Character = (char)Key;
+
+        if (Key == KBD_KEY_F1 || Key == KBD_KEY_F2 || Key == KBD_KEY_F3)
+        {
+            ShellHandleFunctionKey(Key);
+            continue;
+        }
 
         if (EditorIsActive())
         {
@@ -346,6 +497,7 @@ void ShellUpdate(void)
             ParserParse(Command, &Parsed);
             DispatcherDispatch(&Parsed);
             ParserFree(&Parsed);
+            ShellSaveCwd();
 
             CommandLength = 0;
             CommandPos = 0;

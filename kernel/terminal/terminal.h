@@ -22,6 +22,11 @@ void TerminalPrintHex64Compact(uintptr_t Value);
 void TerminalWriteScaled32(const char *str, uint32_t x, uint32_t y,
                            uint32_t scale, uint32_t color);
 void TerminalBlinkUpdate(void);
+void TerminalSetActivePane(uint32_t pane);
+uint32_t TerminalGetActivePane(void);
+bool TerminalIsSplit(void);
+void TerminalSplitEnable(void);
+void TerminalSplitDisablePromote(uint32_t pane);
 
 term_screen_t *TerminalGetScreen(void);
 

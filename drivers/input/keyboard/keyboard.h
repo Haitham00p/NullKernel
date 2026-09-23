@@ -16,6 +16,9 @@
 #define KBD_KEY_PAGE_UP  0x87U
 #define KBD_KEY_PAGE_DN  0x88U
 #define KBD_KEY_INSERT   0x89U
+#define KBD_KEY_F1       0x8AU
+#define KBD_KEY_F2       0x8BU
+#define KBD_KEY_F3       0x8CU
 
 typedef struct
 {
