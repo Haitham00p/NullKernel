@@ -45,15 +45,6 @@ static SHELL_CONTEXT Shells[SHELL_MAX_SHELLS];
 static uint32_t ActiveShell = 0;
 #define ActiveContext (&Shells[ActiveShell])
 
-#define ActiveContext->Command             (Shells[ActiveShell].Command)
-#define ActiveContext->CommandCapacity     (Shells[ActiveShell].CommandCapacity)
-#define ActiveContext->CommandLength       (Shells[ActiveShell].CommandLength)
-#define ActiveContext->CommandPos          (Shells[ActiveShell].CommandPos)
-#define ActiveContext->History             (Shells[ActiveShell].History)
-#define ActiveContext->HistoryDraft        (Shells[ActiveShell].HistoryDraft)
-#define ActiveContext->HistoryCount        (Shells[ActiveShell].HistoryCount)
-#define ActiveContext->HistoryPosition     (Shells[ActiveShell].HistoryPosition)
-#define ActiveContext->HistoryBrowsing     (Shells[ActiveShell].HistoryBrowsing)
 
 /* Grows the live command buffer so it can hold at least Need bytes
    (including the NUL terminator).  Returns false on allocation failure. */
