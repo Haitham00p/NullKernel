@@ -203,7 +203,7 @@ static uint32_t flatten_quad(Edge *edges, uint32_t count, uint32_t cap,
     return count;
 }
 
-static bool raster_simple(uint16_t glyph)
+static bool __attribute__((unused)) raster_simple(uint16_t glyph)
 {
     uint32_t glen = 0;
     const unsigned char *g = glyph_ptr(glyph, &glen);
@@ -571,8 +571,8 @@ static uint16_t __attribute__((unused)) glyph_advance(uint16_t glyph)
 
 void TtfFontInit(void)
 {
-    g_ttf = _binary_IBMPlexMono_Regular_ttf_start;
-    g_ttf_size = (uint32_t)(_binary_IBMPlexMono_Regular_ttf_end - _binary_IBMPlexMono_Regular_ttf_start);
+    g_ttf = _binary_drivers_video_font_IBMPlexMono_Regular_ttf_start;
+    g_ttf_size = (uint32_t)(_binary_drivers_video_font_IBMPlexMono_Regular_ttf_end - _binary_drivers_video_font_IBMPlexMono_Regular_ttf_start);
 
     if (g_ttf_size < 12) return;
 
