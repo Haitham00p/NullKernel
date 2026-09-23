@@ -82,6 +82,7 @@ C_SOURCES := \
 	n64a/n64a_obj.c \
 	nld/link_core.c \
 	shell/commands/cmd.c \
+	shell/commands/lowlevel.c \
 	shell/dispatcher.c \
 	shell/diskfs.c \
 	shell/editor/editor.c \
