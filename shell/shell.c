@@ -187,8 +187,11 @@ static void RedrawCommandPrompt(void)
     WritePrompt();
     TerminalWrite32(ActiveContext->Command, PromptColor);
 
-    /* Fill remaining line length with spaces to clean up deleted chars */
-    for (uint32_t i = PromptTextLength + ActiveContext->CommandLength; i < scr->cols; i++) {
+    /* Fill only the active pane. Never erase the other shell or the divider. */
+    uint32_t pane_cols = TerminalIsSplit()
+        ? (scr->cols / 2U)
+        : scr->cols;
+    for (uint32_t i = PromptTextLength + ActiveContext->CommandLength; i < pane_cols; i++) {
         TerminalPutChar32(' ', PromptColor);
     }
 
