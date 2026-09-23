@@ -51,6 +51,17 @@ term_screen_t *TerminalGetScreen(void) {
     return &g_screen;
 }
 
+uint32_t TerminalGetPaneCols32(void)
+{
+    uint32_t cols = g_screen.cols;
+    if (g_split)
+    {
+        uint32_t half = cols / 2U;
+        if (half > 0U) return half;
+    }
+    return cols;
+}
+
 void TerminalInit32(void) {
     uint32_t fb_w = FbGetWidth32();
     uint32_t fb_h = FbGetHeight32();
