@@ -365,10 +365,13 @@ void LL_PciDump(const PARSED_COMMAND *Command)
 
 void LL_Pit(void)
 {
-    uint8_t status;
-    Outb(0x43, 0xE2);
-    status = Inb(0x40);
-    LLHex("PIT channel0 status/data = ", status);
+    uint16_t count;
+    /* Counter latch command for channel 0, then read low/high bytes. */
+    Outb(0x43, 0x00);
+    count = Inb(0x40);
+    count |= (uint16_t)Inb(0x40) << 8;
+    LLHex("PIT channel0 current count = ", count);
+    LLHex("PIT input clock ~= ", 1193182U);
 }
 
 void LL_Pic(void)
