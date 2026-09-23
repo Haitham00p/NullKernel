@@ -199,6 +199,82 @@ void TerminalIntWrite32(uint64_t Int, uint32_t color) {
     (void)color;
 }
 
+void TerminalRedrawInputLine32(const char *prompt, uint32_t prompt_color,
+                               const char *command, uint32_t command_color,
+                               uint32_t command_pos)
+{
+    if (!g_initialized) return;
+
+    uint32_t start = TerminalPaneStartCol(g_active_pane);
+    uint32_t cols = TerminalPaneCols(g_active_pane);
+    uint32_t row = CurRow;
+
+    if (cols == 0U || row >= g_screen.rows) return;
+
+    /* Do not let the cursor itself cause an intermediate framebuffer render. */
+    CursorSetVisible(&g_screen, false);
+
+    /* Rebuild only the active input row in the terminal cell buffer. */
+    for (uint32_t i = 0; i < cols; i++)
+    {
+        term_cell_t *cell = &g_term_cells[row][start + i];
+        cell->codepoint = ' ';
+        cell->fg_color = TerminalContrastColor(prompt_color, CurBGColor);
+        cell->bg_color = CurBGColor;
+        cell->attributes |= TERM_ATTR_DIRTY;
+    }
+
+    uint32_t col = 0;
+
+    if (prompt != NULL)
+    {
+        while (*prompt != '\0' && col < cols)
+        {
+            term_cell_t *cell = &g_term_cells[row][start + col++];
+            cell->codepoint = (uint8_t)*prompt++;
+            cell->fg_color = TerminalContrastColor(prompt_color, CurBGColor);
+            cell->bg_color = CurBGColor;
+            cell->attributes |= TERM_ATTR_DIRTY;
+        }
+    }
+
+    uint32_t command_start = col;
+    if (command != NULL)
+    {
+        while (*command != '\0' && col < cols)
+        {
+            term_cell_t *cell = &g_term_cells[row][start + col++];
+            cell->codepoint = (uint8_t)*command++;
+            cell->fg_color = TerminalContrastColor(command_color, CurBGColor);
+            cell->bg_color = CurBGColor;
+            cell->attributes |= TERM_ATTR_DIRTY;
+        }
+    }
+
+    /*
+     * command_pos is measured in command characters, not screen columns.
+     * Clamp it to the visible command area so a long command cannot move
+     * the cursor outside this pane.
+     */
+    uint32_t visible_pos = command_pos;
+    if (command_start + visible_pos >= cols)
+        visible_pos = (command_start < cols) ? (cols - command_start - 1U) : 0U;
+
+    CurCol = command_start + visible_pos;
+    g_pane_col[g_active_pane] = CurCol;
+    g_pane_row[g_active_pane] = row;
+
+    g_term_lines[row].is_dirty = true;
+    g_term_lines[row].first_dirty = (uint16_t)start;
+    g_term_lines[row].last_dirty = (uint16_t)(start + cols - 1U);
+
+    TerminalSyncCursor();
+    CursorSetVisible(&g_screen, true);
+
+    /* Exactly one render pass for the entire edited line. */
+    TerminalRenderWithDivider();
+}
+
 void TerminalClear32(uint32_t color) {
     if (!g_initialized) return;
 
