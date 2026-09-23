@@ -24,11 +24,15 @@ static int is_dir(const char *path){
 /* Split path into directory part (no trailing slash) and final name. */
 static void split_path(const char *path, char *dir, char *name){
     const char *sl = my_rchr(path, '/');
+    uint32_t pos = 0;
+    uint32_t scan;
     if(sl == 0){
         my_cpy(dir, ".");
         my_cpy(name, path);
     } else {
-        uint32_t pos = (uint32_t)(sl - path);
+        scan = 0;
+        while (path[scan] != '\0' && &path[scan] != sl) scan++;
+        pos = scan;
         if(pos == 0){
             my_cpy(dir, "/");
             my_cpy(name, path + 1);
@@ -50,7 +54,8 @@ static int copy_file(const char *src, const char *dst){
         printf("cp: cannot stat %s\n", src);
         return 0;
     }
-    buf = malloc(size ? size : 1);
+    if (size == 0U) buf = malloc(1);
+    else buf = malloc(size);
     if(!buf){ printf("cp: out of memory\n"); return 0; }
     if(!DiskFsReadInPath(sdir, sname, buf, size, &got)){
         printf("cp: read failed %s\n", src);
