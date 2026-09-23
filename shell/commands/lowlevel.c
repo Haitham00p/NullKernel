@@ -503,6 +503,7 @@ void LL_Align(const PARSED_COMMAND *Command)
     uint64_t value=0,align=4096;
     if(Command->ArgCount<1U || !LLNum(Command->Args[0],&value)) { LLLine("Usage: align <addr> [alignment]"); return; }
     if(Command->ArgCount>1U && (!LLNum(Command->Args[1],&align)||align==0U)) { LLLine("align: invalid alignment"); return; }
+    if((align & (align - 1U)) != 0U) { LLLine("align: alignment must be a power of two"); return; }
     LLHex("address      = ",value);
     LLHex("aligned down = ",value & ~(align-1U));
     LLHex("aligned up   = ",(value + align - 1U) & ~(align-1U));
