@@ -1,2 +1,0 @@
-Hello from /home/Root
-This file was born on the disk, not in the kernel.
