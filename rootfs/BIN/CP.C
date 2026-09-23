@@ -115,7 +115,8 @@ static void copy_tree(const char *srcDir, const char *dstDir){
             void *buf;
             char cd[MAXP], ddir[MAXP], dname[MAXP];
             if(!DiskFsFileSize(name, &size)) continue;
-            buf = malloc(size ? size : 1);
+            if (size == 0U) buf = malloc(1);
+    else buf = malloc(size);
             if(!buf) continue;
             if(!DiskFsRead(name, buf, size, &got)){
                 free(buf);
