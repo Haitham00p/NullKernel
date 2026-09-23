@@ -230,8 +230,8 @@ void TerminalClear32(uint32_t color) {
 
 void TerminalSetCursor32(uint32_t x, uint32_t y) {
     if (!g_initialized) return;
-    uint32_t col = x / FONT_WIDTH;
-    uint32_t row = y / FONT_HEIGHT;
+    uint32_t col = x / TTF_FONT_WIDTH;
+    uint32_t row = y / TTF_FONT_HEIGHT;
     uint32_t cols = TerminalPaneCols(g_active_pane);
     if (col >= cols) col = cols ? cols - 1U : 0U;
     CurCol = col;
