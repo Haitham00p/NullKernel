@@ -226,17 +226,20 @@ static inline void RenderSingleCell(term_screen_t *screen, uint32_t col, uint32_
 
     for (uint8_t py = 0; py < fh; py++) {
         uint32_t *vram_scanline = &screen->framebuffer[(start_y + py) * pitch + start_x];
-        uint16_t glyph_row = 0;
-        if (glyph_ptr) {
-            if (fw > 8U) {
-                glyph_row = (uint16_t)(((uint16_t)glyph_ptr[py * 2U] << 8) | glyph_ptr[py * 2U + 1U]);
-            } else {
-                glyph_row = glyph_ptr[py];
-            }
-        }
-
         for (uint8_t px = 0; px < fw; px++) {
-            bool is_glyph = (glyph_row >> (fw - 1U - px)) & 1;
+            /*
+             * Atlas rows are packed MSB-first into ceil(fw/8) bytes.
+             * Do not assemble a 14-bit row into the low bits of a uint16_t:
+             * that shifts every glyph horizontally and can make narrow
+             * glyphs disappear.
+             */
+            bool is_glyph = false;
+            if (glyph_ptr) {
+                uint32_t bytes_per_row = ((uint32_t)fw + 7U) / 8U;
+                uint8_t glyph_byte = glyph_ptr[(uint32_t)py * bytes_per_row +
+                                              ((uint32_t)px >> 3)];
+                is_glyph = (glyph_byte & (uint8_t)(1U << (7U - (px & 7U)))) != 0;
+            }
             bool is_caret = false;
 
             if (is_cursor) {
