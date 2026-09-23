@@ -106,7 +106,7 @@ ASM_OBJECTS := \
 	$(BUILD_DIR)/arch/x86_64/interrupts/irq_asm.o \
 	$(BUILD_DIR)/arch/x86_64/program/run_asm.o
 
-OBJECTS := $(C_SOURCES:%.c=$(BUILD_DIR)/%.o) $(ASM_OBJECTS)
+OBJECTS := $(C_SOURCES:%.c=$(BUILD_DIR)/%.o) $(ASM_OBJECTS) $(TTF_OBJECT)
 
 -include $(C_SOURCES:%.c=$(BUILD_DIR)/%.d)
 
@@ -137,7 +137,7 @@ vault: $(KERNEL)
 		touch .vault-stamp; \
 	fi
 
-$(BUILD_DIR)/%.o: %.c
+$(TTF_OBJECT): IBMPlexMono-Regular.ttf\n\t@mkdir -p $(@D)\n\tld -r -b binary -o $@ $<\n\n$(BUILD_DIR)/%.o: %.c
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c $< -o $@
 
