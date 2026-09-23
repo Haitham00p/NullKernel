@@ -202,9 +202,8 @@ void TerminalSetCursor32(uint32_t x, uint32_t y) {
     if (!g_initialized) return;
     uint32_t col = x / FONT_WIDTH;
     uint32_t row = y / FONT_HEIGHT;
-    uint32_t rows = TerminalPaneRows(g_active_pane);
-    if (col > g_screen.cols) col = g_screen.cols;
-    if (row >= rows) row = rows ? rows - 1U : 0U;
+    uint32_t cols = TerminalPaneCols(g_active_pane);
+    if (col >= cols) col = cols ? cols - 1U : 0U;
     CurCol = col;
     CurRow = row;
     g_pane_col[g_active_pane] = CurCol;
@@ -352,8 +351,8 @@ void TerminalSetActivePane(uint32_t pane)
     g_active_pane = pane;
     CurCol = g_pane_col[pane];
     CurRow = g_pane_row[pane];
-    if (CurRow >= TerminalPaneRows(pane))
-        CurRow = TerminalPaneRows(pane) ? TerminalPaneRows(pane) - 1U : 0U;
+    if (CurCol >= TerminalPaneCols(pane))
+        CurCol = TerminalPaneCols(pane) ? TerminalPaneCols(pane) - 1U : 0U;
     TerminalSyncCursor();
     TerminalRender(&g_screen);
 }
