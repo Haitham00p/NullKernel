@@ -1,5 +1,6 @@
 #include "lowlevel.h"
 #include "kernel/terminal/terminal.h"
+#include "drivers/video_framebuffer/framebuffer.h"
 #include "arch/x86_64/cpu/io.h"
 #include "lib/string/string.h"
 #include "mm/heap/heap.h"
@@ -501,6 +502,39 @@ void LL_MemFill(const PARSED_COMMAND *Command)
     if(count>0x100000U) count=0x100000U;
     for(uint64_t i=0;i<count;i++) *(volatile uint8_t *)(uintptr_t)(addr+i)=(uint8_t)value;
     LLLine("memory fill complete");
+}
+
+void LL_PMemFill(const PARSED_COMMAND *Command)
+{
+    uint64_t physical=0,count=0,value=0;
+    if(Command->ArgCount<3U || !LLNum(Command->Args[0],&physical) ||
+       !LLNum(Command->Args[1],&count) || !LLNum(Command->Args[2],&value))
+    {
+        LLLine("Usage: pmemfill <phys_addr> <bytes> <byte>");
+        return;
+    }
+
+    if(count>0x100000U) count=0x100000U;
+
+    uint64_t hhdm=FbGetHhdmOffset32();
+    if(hhdm==0U)
+    {
+        LLLine("pmemfill: HHDM is unavailable.");
+        return;
+    }
+
+    if(physical > UINT64_MAX - hhdm ||
+       count > UINT64_MAX - (hhdm + physical))
+    {
+        LLLine("pmemfill: address range overflow.");
+        return;
+    }
+
+    uint64_t virtual_addr=hhdm + physical;
+    for(uint64_t i=0;i<count;i++)
+        *(volatile uint8_t *)(uintptr_t)(virtual_addr+i)=(uint8_t)value;
+
+    LLLine("physical memory fill complete");
 }
 
 void LL_MemXor(const PARSED_COMMAND *Command)
