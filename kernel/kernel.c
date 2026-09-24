@@ -31,6 +31,7 @@
 #include "kernel/process/process.h"
 #include "kernel/syscall/syscall.h"
 #include "kernel/sched/scheduler.h"
+#include "kernel/registry/registry.h"
 
 extern struct limine_memmap_request MemMapReq;
 
@@ -151,8 +152,11 @@ void kernel_main(void)
     if (BootMonitorShouldEnter())
         BootMonitorRun();
 
+    RegistryInitialize();
+    { uint64_t q = 0; if (RegistryReadU64("/REG/SCHED/QUANTUM.V", &q) && q != 0) SchedulerSetQuantum(q); }
     ShellApplyRegistry();
     ShellBootRunRAB();
+    ShellBootRunROB();
     ShellApplyDefDir();
     ShellInitialize();
 
