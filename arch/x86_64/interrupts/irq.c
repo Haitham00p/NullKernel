@@ -7,6 +7,7 @@
 #include "../../../drivers/timer/PIT.h"
 #include "../Kernel/kernel/terminal/terminal.h"
 #include "../program/run.h"
+#include "kernel/sched/scheduler.h"
 
 /* Frame present: blit the composited back buffer to the front buffer on every
    PIT tick (raw timer fps, no refresh-rate pacing). */
@@ -16,6 +17,7 @@ void IRQHandler(uint32_t IRQ, IRQFrame *Frame)
     if (IRQ == IRQ_TIMER)
     {
         PITTick();
+        SchedulerTick();
         TerminalBlinkUpdate();
         /* Present only the region that changed since the last present. When
            nothing was drawn (idle guest / tight loop) this is a no-op, so it
