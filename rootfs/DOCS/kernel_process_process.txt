@@ -1,0 +1,5 @@
+#include kernel/process/process.h
+
+API: ProcessSystemInitialize, ProcessCreate, ProcessDestroy, ProcessCurrent,
+ProcessCount, ProcessCurrentId, ProcessCreateAddressSpace,
+ProcessSwitchAddressSpace, ProcessCr3.
