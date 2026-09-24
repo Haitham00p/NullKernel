@@ -689,32 +689,47 @@ static bool SelfHostRunExeInDir(const char *Dir, const char *Name)
     ElfLoadInfo Info;
     uint64_t Result;
 
+    DbgSerialWrite("[EXEC] find ");
+    DbgSerialWrite(Dir);
+    DbgSerialWrite("/");
+    DbgSerialWrite(Name);
+    DbgSerialWrite("\n");
+
     if (!DiskFsFindInPath(Dir, Name, &Entry))
     {
+        DbgSerialWrite("[EXEC] ERROR: file not found\n");
         return false;
     }
     if (Entry.FileSize == 0 || Entry.FileSize > SELFHOST_MAX_IMAGE)
     {
+        DbgSerialWrite("[EXEC] ERROR: invalid image size\n");
         return false;
     }
+    DbgSerialWrite("[EXEC] size ok, reading image\n");
     Image = (uint8_t *)kmalloc(Entry.FileSize);
     if (Image == NULL)
     {
+        DbgSerialWrite("[EXEC] ERROR: kmalloc failed\n");
         return false;
     }
     if (!DiskFsReadInPath(Dir, Name, Image, Entry.FileSize, &Bytes))
     {
+        DbgSerialWrite("[EXEC] ERROR: disk read failed\n");
         kfree(Image);
         return false;
     }
+    DbgSerialWrite("[EXEC] image read, loading ELF\n");
     if (!ElfLoadImage(Image, Bytes, &Info))
     {
+        DbgSerialWrite("[EXEC] ERROR: ELF load failed\n");
         kfree(Image);
         return false;
     }
+    DbgSerialWrite("[EXEC] ELF valid, entering program\n");
     g_ArgCount = 0;
     KbdAbortClear();
     Result = RunProgramOnStack(Info.Entry, NULLOS_GUEST_STACK_TOP);
+    DbgSerialWrite("[EXEC] program returned\n");
     kfree(Image);
     if (Result == NULLOS_GUEST_ABORTED)
     {
