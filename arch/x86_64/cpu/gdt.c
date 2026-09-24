@@ -15,4 +15,6 @@ void GdtInitialize(void){
     GDTR gdtr={(uint16_t)(sizeof(Raw)-1),(uint64_t)Raw};__asm__ volatile("lgdt %0"::"m"(gdtr));__asm__ volatile("pushq $0x08;lea 1f(%%rip),%%rax;pushq %%rax;lretq;1:":::"rax","memory");
     __asm__ volatile("mov $0x10,%%ax;mov %%ax,%%ds;mov %%ax,%%es;mov %%ax,%%ss;mov %%ax,%%fs;mov %%ax,%%gs;mov $0x48,%%ax;ltr %%ax":::"rax","memory");
 }
-uint16_t GdtKernelCode(void){return 0x08;} uint16_t GdtKernelData(void){return 0x10;} uint16_t GdtRing1Data(void){return 0x18|1;} uint16_t GdtRing1Code(void){return 0x20|1;}\nuint16_t GdtRing2Data(void){return 0x28|2;} uint16_t GdtRing2Code(void){return 0x30|2;}\nuint16_t GdtUserData(void){return 0x38|3;} uint16_t GdtUserCode(void){return 0x40|3;}
+uint16_t GdtKernelCode(void){return 0x08;} uint16_t GdtKernelData(void){return 0x10;} uint16_t GdtRing1Data(void){return 0x18|1;} uint16_t GdtRing1Code(void){return 0x20|1;}
+uint16_t GdtRing2Data(void){return 0x28|2;} uint16_t GdtRing2Code(void){return 0x30|2;}
+uint16_t GdtUserData(void){return 0x38|3;} uint16_t GdtUserCode(void){return 0x40|3;}
