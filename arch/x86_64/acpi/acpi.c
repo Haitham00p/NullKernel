@@ -1,0 +1,15 @@
+#include "acpi.h"
+#include "vendor/limine/limine.h"
+#include "kernel/debug/debug.h"
+#include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
+#define RSDP_MAGIC "RSD PTR "
+typedef struct __attribute__((packed)){char sig[8];uint8_t checksum;char oem[6];uint8_t rev;uint32_t rsdt;uint32_t len;uint64_t xsdt;uint8_t ext;uint8_t rsv[3];} RSDP2;
+typedef struct __attribute__((packed)){char sig[4];uint32_t len;uint8_t rev;uint8_t csum;char oem[6];char oemtab[8];uint32_t oemrev;uint32_t creator;uint32_t creatorrev;} SDTH;
+struct limine_rsdp_request RsdpReq={.id=LIMINE_RSDP_REQUEST,.revision=0,.response=NULL};
+static uint64_t XsdtAddr; static bool Ready;
+static bool checksum(void *p,uint32_t n){uint8_t s=0,*b=p;for(uint32_t i=0;i<n;i++)s=(uint8_t)(s+b[i]);return s==0;}
+void AcpiInitialize(void){Ready=false;XsdtAddr=0;if(!RsdpReq.response)return;RSDP2*r=(RSDP2*)RsdpReq.response->address;if(!r||memcmp(r->sig,RSDP_MAGIC,8)!=0)return;if(!checksum(r,20)||r->rev>=2&&!checksum(r,r->len))return;if(r->rev>=2&&r->xsdt)XsdtAddr=r->xsdt;Ready=XsdtAddr!=0;if(Ready)DbgInfo("ACPI XSDT online",(uintptr_t)XsdtAddr);}
+bool AcpiReady(void){return Ready;}uint64_t AcpiXsdt(void){return XsdtAddr;}
+uint64_t AcpiFindTable(const char Sig[4]){if(!Ready)return 0;SDTH*h=(SDTH*)(uintptr_t)XsdtAddr;if(memcmp(h->sig,"XSDT",4)!=0)return 0;uint32_t n=(h->len-sizeof(SDTH))/8;uint64_t*e=(uint64_t*)((uint8_t*)h+sizeof(SDTH));for(uint32_t i=0;i<n;i++){SDTH*t=(SDTH*)(uintptr_t)e[i];if(t&&memcmp(t->sig,Sig,4)==0)return e[i];}return 0;}
