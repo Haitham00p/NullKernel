@@ -13,3 +13,15 @@ static bool checksum(void *p,uint32_t n){uint8_t s=0,*b=p;for(uint32_t i=0;i<n;i
 void AcpiInitialize(void){Ready=false;XsdtAddr=0;if(!RsdpReq.response)return;RSDP2*r=(RSDP2*)RsdpReq.response->address;if(!r||memcmp(r->sig,RSDP_MAGIC,8)!=0)return;if(!checksum(r,20)||r->rev>=2&&!checksum(r,r->len))return;if(r->rev>=2&&r->xsdt)XsdtAddr=r->xsdt;Ready=XsdtAddr!=0;if(Ready)DbgInfo("ACPI XSDT online",(uintptr_t)XsdtAddr);}
 bool AcpiReady(void){return Ready;}uint64_t AcpiXsdt(void){return XsdtAddr;}
 uint64_t AcpiFindTable(const char Sig[4]){if(!Ready)return 0;SDTH*h=(SDTH*)(uintptr_t)XsdtAddr;if(memcmp(h->sig,"XSDT",4)!=0)return 0;uint32_t n=(h->len-sizeof(SDTH))/8;uint64_t*e=(uint64_t*)((uint8_t*)h+sizeof(SDTH));for(uint32_t i=0;i<n;i++){SDTH*t=(SDTH*)(uintptr_t)e[i];if(t&&memcmp(t->sig,Sig,4)==0)return e[i];}return 0;}
+
+uint64_t AcpiLocalApicAddress(void){
+    typedef struct __attribute__((packed)){SDTH h;uint32_t lapic;uint32_t flags;} MADT;
+    MADT*m=(MADT*)(uintptr_t)AcpiFindTable("APIC"); return m?m->lapic:0;
+}
+uint64_t AcpiCpuCount(void){
+    typedef struct __attribute__((packed)){uint8_t type,len,acpi_id,apic_id;uint32_t flags;} LAPIC;
+    typedef struct __attribute__((packed)){SDTH h;uint32_t lapic;uint32_t flags;} MADT;
+    MADT*m=(MADT*)(uintptr_t)AcpiFindTable("APIC"); if(!m)return 0;
+    uint64_t n=0;uint8_t*p=(uint8_t*)m+sizeof(MADT);uint8_t*end=(uint8_t*)m+m->h.len;
+    while(p+2<=end&&p[1]>=2&&p+p[1]<=end){if(p[0]==0&&p[1]>=8){LAPIC*l=(LAPIC*)p;if(l->flags&1)n++;}p+=p[1];}return n;
+}
