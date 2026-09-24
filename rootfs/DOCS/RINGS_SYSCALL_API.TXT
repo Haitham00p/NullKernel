@@ -1,0 +1,26 @@
+NullOS Rings and Syscall API
+==========================
+GDT:
+ GdtInitialize()
+ GdtKernelCode(), GdtKernelData()
+ GdtRing1Code(), GdtRing1Data()
+ GdtRing2Code(), GdtRing2Data()
+ GdtUserCode(), GdtUserData()
+ GdtSetRsp0(rsp)
+
+Ring 3:
+ Ring3Enter(rip,rsp)
+ Ring3Demo()
+
+Syscalls:
+ SyscallInitialize()
+ SyscallDispatch(number,a1,a2,a3,a4)
+ SyscallCount()
+
+Current syscall numbers:
+ 0 SYS_NULL
+ 1 SYS_WRITE
+ 2 SYS_GETPID
+ 3 SYS_YIELD
+
+0x80 is the Ring 3 syscall gate; 0x81 is the kernel task-yield gate.
