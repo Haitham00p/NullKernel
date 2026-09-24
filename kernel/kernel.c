@@ -53,11 +53,6 @@ void kernel_main(void)
 
     DbgBoot("Kernel entry point reached", (uintptr_t)kernel_main);
 
-    PmmInitialize(Response);
-    PmmReserveRange(HeapBase, HeapLength);
-    VmmInitialize();
-    DbgInfo("Physical/virtual memory managers online", (uintptr_t)VmmInitialize);
-
     GdtInitialize();
     DbgInfo("GDT/TSS and ring descriptors online", (uintptr_t)GdtInitialize);
 
@@ -103,6 +98,11 @@ void kernel_main(void)
 
     if (HeapBase == 0)
         PanicKernel("No Usable Entry Found For Heap", (uintptr_t)HeapInitialize);
+
+    PmmInitialize(Response);
+    PmmReserveRange(HeapBase, HeapLength);
+    VmmInitialize();
+    DbgInfo("Physical/virtual memory managers online", (uintptr_t)VmmInitialize);
 
     HeapInitialize(HeapBase, HeapLength);
     TaskSystemInitialize();
