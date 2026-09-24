@@ -240,20 +240,48 @@ static bool VerifyLoaded(void)
 
 static bool GrantControl(const char *name)
 {
-    if(!name||!*name){P("gc: Usage: gc <kernel.elf>");return false;}
+    uint8_t *check;
+    uint32_t got=0;
+    uint64_t e,l,h;
+
+    if(!name||!*name){P("gc: Usage: gc kernel.elf");return false;}
     if(!g_image||!g_name[0]){P("gc: no kernel is loaded");return false;}
-    if(!SafeName(name)){P("gc: invalid kernel name");return false;}
-    if(strcasecmp(name,g_name)!=0){
-        P("gc: kernel does not match the loaded image");
-        TerminalWrite32("  loaded: ",NPB_DIM);TerminalPrintLine32(g_name,NPB_CYAN);
-        TerminalWrite32("  asked : ",NPB_DIM);TerminalPrintLine32(name,NPB_YELLOW);
+    if(!Eq(name,"kernel.elf")){
+        P("gc: destination must be kernel.elf");
+        P("gc: load a kernelXX.elf first, then gc kernel.elf");
         return false;
     }
     if(!VerifyLoaded()) return false;
-    strcpy(g_control_name,g_name);
+
+    /* GC is the commit step: the staged image becomes the canonical
+       boot image. It is deliberately separate from load(). */
+    if(!DiskFsWriteInPath(BM_DIR,"kernel.elf",g_image,g_size)){
+        P("gc: failed to commit staged image as /BOOT/kernel.elf");
+        return false;
+    }
+
+    check=(uint8_t*)kmalloc(g_size);
+    if(!check){
+        P("gc: committed, but verification buffer allocation failed");
+        return false;
+    }
+
+    if(!DiskFsReadInPath(BM_DIR,"kernel.elf",check,g_size,&got) || got!=g_size ||
+       !Validate(check,got,&e,&l,&h)){
+        kfree(check);
+        P("gc: committed kernel.elf failed post-write verification");
+        return false;
+    }
+    kfree(check);
+
+    strcpy(g_control_name,"kernel.elf");
     g_control_granted=true;
-    TerminalWrite32("GC -> control granted to ",NPB_ORANGE);
-    TerminalPrintLine32(g_control_name,NPB_GREEN);
+
+    TerminalWrite32("GC -> committed ",NPB_ORANGE);
+    TerminalWrite32(g_name,NPB_CYAN);
+    TerminalWrite32(" as /BOOT/kernel.elf",NPB_ORANGE);
+    TerminalNewLine32(0);
+    PC("GC -> boot control granted",NPB_GREEN);
     return true;
 }
 
@@ -285,16 +313,16 @@ static void PrintDanger(void)
 static void ContinueBoot(void){
     if(!g_image||!g_name[0]){
         P("jmp: no kernel loaded");
-        P("required: load <kernel.elf> -> gc <kernel.elf> -> jmp");
+        P("required: load <kernelXX.elf> -> gc kernel.elf -> jmp");
         return;
     }
     if(!g_control_granted||!g_control_name[0]){
         P("jmp: control not granted");
-        P("required: gc <loaded-kernel.elf>");
+        P("required: gc kernel.elf");
         return;
     }
     if(strcasecmp(g_control_name,g_name)!=0){
-        P("jmp: control grant does not match the loaded kernel");
+        P("jmp: boot control has not been committed to kernel.elf");
         return;
     }
     const char *name=g_name;
@@ -315,7 +343,7 @@ static void Help(void){
     P("  help                    show this help");
     P("  ShowKernels             list /BOOT/*.ELF");
     P("  load <kernel.elf|KRNL1.0:0xN> validate and stage a kernel");
-    P("  gc <kernel.elf>          grant boot control to the loaded kernel");
+    P("  gc kernel.elf            commit staged kernel as the boot kernel");
     P("  unload                  discard staged kernel");
     P("  jmp <ID>                select an ID only if already loaded");
     P("  jmp                     reboot into the granted kernel");
@@ -479,7 +507,7 @@ static void Execute(char *line){
             if(!NameForKernelId(arg,resolved,sizeof(resolved))){P("jmp: unknown kernel ID");return;}
             if(!g_image||!g_name[0]||strcasecmp(g_name,resolved)!=0){
                 P("jmp: requested kernel is not the currently loaded kernel");
-                P("required: load <kernel.elf> -> gc <kernel.elf> -> jmp");
+                P("required: load <kernelXX.elf> -> gc kernel.elf -> jmp");
                 return;
             }
         }
@@ -501,7 +529,7 @@ static void Execute(char *line){
     if(Eq(cmd,"meminfo")){TerminalWrite32("loaded=",0x00FFFFFFU);TerminalPrintHex64Compact(g_image?g_size:0);TerminalPrintLine32(" bytes",0x00808080U);return;}
     if(Eq(cmd,"map")){uint64_t e,l,h;if(!g_image){P("map: nothing loaded");return;}if(Validate(g_image,g_size,&e,&l,&h)){TerminalPrintHex64Compact(l);TerminalWrite32(" - ",0x00808080U);TerminalPrintHex64Compact(h);TerminalNewLine32(0);}return;}
     if(Eq(cmd,"entry")){if(!g_image)P("entry: nothing loaded");else{TerminalWrite32("entry=",0x00FFFFFFU);TerminalPrintHex64Compact(g_entry);TerminalNewLine32(0);}return;}
-    if(Eq(cmd,"reboot")){Reboot();return;}
+    if(Eq(cmd,"reboot")){P("reboot: blocked; complete load -> gc kernel.elf -> jmp first");return;}
     if(Eq(cmd,"halt")){__asm__ volatile("cli");for(;;)__asm__ volatile("hlt");}
     P("unknown command; type help");
 }
