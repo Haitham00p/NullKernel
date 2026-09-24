@@ -19,8 +19,7 @@ bool RegistryEnsureLayout(void)
     static const char *dirs[]={
         "/REG","/REG/color","/REG/SYSTEM","/REG/SHELL","/REG/BOOT",
         "/REG/PROCESS","/REG/SCHED","/REG/SYSCALL","/REG/MEMORY",
-        "/REG/ACPI","/REG/PCI","/REG/NullOS","/REG/NullOS/RAB",
-        "/REG/NullOS/ROB","/REG/NullOS/TASKS"
+        "/REG/ACPI","/REG/PCI","/REG/NullOS","/REG/NullOS/ROB","/REG/NullOS/TASKS"
     };
     if(!DiskFsIsMounted()) return false;
     for(uint32_t i=0;i<sizeof(dirs)/sizeof(dirs[0]);i++)
@@ -79,7 +78,6 @@ bool RegistryInitialize(void)
     if(!RegistryPathExists("/REG/SYSCALL/VERSION.V")) RegistryWriteU64("/REG/SYSCALL/VERSION.V",1);
     if(!RegistryPathExists("/REG/MEMORY/PAGE_SIZE.V")) RegistryWriteU64("/REG/MEMORY/PAGE_SIZE.V",4096);
     if(!RegistryPathExists("/REG/BOOT/ROB.ENABLED.V")) RegistryWriteText("/REG/BOOT/ROB.ENABLED.V","1");
-    if(!RegistryPathExists("/REG/BOOT/RAB.ENABLED.V")) RegistryWriteText("/REG/BOOT/RAB.ENABLED.V","1");
     if(!RegistryPathExists("/REG/NullOS/ROB/README.V"))
         RegistryWriteText("/REG/NullOS/ROB/README.V","ELF executables in this directory run at boot.");
     g_Ready=true; return true;
