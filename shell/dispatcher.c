@@ -36,6 +36,7 @@ void DispatcherDispatch(const PARSED_COMMAND *Command){
         if (AcpiReady()) { TerminalWrite32("XSDT: ", PromColor); TerminalPrintHex64Compact(AcpiXsdt()); TerminalNewLine32(BackSpaceColor); }
         return;
     }
+    if (strcmp(Command->Command, "taskdemo") == 0) { if (Command->ArgCount != 0U) { TerminalPrintLine32("Usage: taskdemo", 0x00FF0000U); return; } TaskRunDemo(); return; }
     if (strcmp(Command->Command, "tasks") == 0) {
         TerminalWrite32("Tasks: ", PromColor); TerminalPrintHex64Compact(TaskCount()); TerminalNewLine32(BackSpaceColor);
         TerminalWrite32("Scheduler ticks: ", PromColor); TerminalPrintHex64Compact(SchedulerTicks()); TerminalNewLine32(BackSpaceColor);
