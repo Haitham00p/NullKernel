@@ -62,6 +62,9 @@ C_SOURCES := \
 	kernel/terminal/terminal.c \
 	kernel/terminal/cursor.c \
 	kernel/kernel.c \
+	kernel/ring/ring3.c \
+	kernel/task/task.c \
+	kernel/sched/scheduler.c \
 	kernel/elf/elf_loader.c \
 	installer/installer.c \
 	lib/delay/delay.c \
@@ -70,6 +73,8 @@ C_SOURCES := \
 	libc/stdio.c \
 	libc/stdlib.c \
 	libc/string.c \
+	mm/pmm.c \
+	mm/vmm.c \
 	mm/heap/heap.c \
 	ncc/ncc.c \
 	ncc/vault_gen.c \
@@ -156,6 +161,10 @@ $(BUILD_DIR)/arch/x86_64/program/run_asm.o: arch/x86_64/program/run.asm
 	$(NASM) -f elf64 $< -o $@
 
 $(BUILD_DIR)/arch/x86_64/bootasm.o: arch/x86_64/bootasm.asm
+	@mkdir -p $(@D)
+	$(NASM) -f elf64 $< -o $@
+
+$(BUILD_DIR)/arch/x86_64/cpu/ring3.o: arch/x86_64/cpu/ring3.asm
 	@mkdir -p $(@D)
 	$(NASM) -f elf64 $< -o $@
 
