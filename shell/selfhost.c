@@ -680,8 +680,7 @@ void ShellBootBuild(void)
     }
 }
 
-/* Load and execute an .EXE stored at Dir/Name. Used by the RAB startup
-   directory. Returns false if the file is missing or not a valid image. */
+/* Load and execute an executable stored at Dir/Name. */
 static bool SelfHostRunExeInDir(const char *Dir, const char *Name)
 {
     FAT32DirectoryEntry Entry;
@@ -963,7 +962,6 @@ void ShellApplyRegistry(void)
     DiskFsMkdirAll("/REG");
     DiskFsMkdirAll("/REG/color");
     DiskFsMkdirAll("/REG/NULLOS");
-    DiskFsMkdirAll("/REG/NULLOS/RAB");
     DiskFsChdirPath(SavedCwd);
     DbgReg("registry scan started", (uintptr_t)ShellApplyRegistry);
 
@@ -1034,61 +1032,6 @@ void ShellApplyRegistry(void)
         }
         PromptColor = Prompt;
     }
-}
-
-/* Runs every .EXE found in /REG/NULLOS/RAB once the OS has booted
-   successfully (analogous to Windows startup items). */
-void ShellBootRunRAB(void)
-{
-    char *List = NULL;
-    uint32_t Index = 0;
-    char SavedCwd[64];
-
-    if (!DiskFsIsMounted())
-    {
-        return;
-    }
-    List = (char *)kmalloc(SELFHOST_MAX_LIST);
-    if (List == NULL)
-    {
-        return;
-    }
-    DiskFsPwd(SavedCwd, sizeof(SavedCwd));
-    if (!DiskFsChdirPath("/REG/NULLOS/RAB"))
-    {
-        kfree(List);
-        return;
-    }
-    DiskFsListNames(List, SELFHOST_MAX_LIST);
-    DiskFsChdirPath(SavedCwd);
-    while (List[Index] != '\0')
-    {
-        uint32_t Start = Index;
-        char Name[FAT32_SHORT_NAME_MAX + 1U];
-        uint32_t Length;
-
-        while (List[Index] != '\0' && List[Index] != '\n')
-        {
-            Index++;
-        }
-        Length = Index - Start;
-        if (Length > 0 && Length < sizeof(Name))
-        {
-            memcpy(Name, &List[Start], Length);
-            Name[Length] = '\0';
-            if (SelfHostHasExtension(Name, ".EXE"))
-            {
-                TerminalWrite32("RAB: running startup item ", PromColor);
-                TerminalPrintLine32(Name, PromColor);
-                SelfHostRunExeInDir("/REG/NULLOS/RAB", Name);
-            }
-        }
-        if (List[Index] == '\n')
-        {
-            Index++;
-        }
-    }
-    kfree(List);
 }
 
 /* Reads /REG/DEFDIR.V (an absolute path such as "/HOME") and changes the
