@@ -103,6 +103,7 @@ void kernel_main(void)
         PanicKernel("No Usable Entry Found For Heap", (uintptr_t)HeapInitialize);
 
     PmmInitialize(Response);
+    PmmReserveRange(0x100000, 0x100000);
     PmmReserveRange(HeapBase, HeapLength);
     VmmInitialize();
     DbgInfo("Physical/virtual memory managers online", (uintptr_t)VmmInitialize);
@@ -135,7 +136,7 @@ void kernel_main(void)
 
     __asm__ volatile("sti");
 
-    TerminalPrintLine32("INTERRUPTS ENABLED", 0xFFFFFFFF);
+    TerminalPrintLine32("InterruptSys online", 0xFFFFFFFF);
 
     DriversInitAll();
 
