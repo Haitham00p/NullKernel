@@ -6,6 +6,7 @@
 #define PS 4096ULL
 #define MASK 0x000FFFFFFFFFF000ULL
 static uint64_t Root;
+static uint64_t KernelRoot;
 static inline uint64_t rdcr3(void){uint64_t x;__asm__ volatile("mov %%cr3,%0":"=r"(x));return x&MASK;}
 static inline void wrcr3(uint64_t x){__asm__ volatile("mov %0,%%cr3"::"r"(x):"memory");}
 static uint64_t *table(uint64_t p){return (uint64_t*)(uintptr_t)p;}
@@ -17,7 +18,9 @@ static uint64_t *next(uint64_t *t,uint64_t i,bool create){
 void VmmInitialize(void){
     uint64_t old=rdcr3(), p=PmmAllocPage(); if(!p)return;
     memcpy((void*)(uintptr_t)p,(void*)(uintptr_t)old,PS);
-    Root=p;wrcr3(Root);
+    Root=p;
+    KernelRoot=p;
+    wrcr3(Root);
 }
 bool VmmMapPage(uint64_t v,uint64_t phys,uint64_t flags){
     if((v&(PS-1))||(phys&(PS-1)))return false;
@@ -38,4 +41,5 @@ uint64_t VmmGetPhysical(uint64_t v){
 }
 bool VmmMapUserPage(uint64_t v,uint64_t flags){uint64_t p=PmmAllocPage();return p && VmmMapPage(v,p,flags|VMM_U);}
 uint64_t VmmCurrentRoot(void){return Root;}
+uint64_t VmmKernelRoot(void){return KernelRoot;}
 void VmmLoadRoot(uint64_t p){Root=p&MASK;wrcr3(Root);}

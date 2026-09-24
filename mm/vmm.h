@@ -10,6 +10,7 @@
 #define VMM_GLOBAL (1ULL<<8)
 void VmmInitialize(void);
 uint64_t VmmCurrentRoot(void);
+uint64_t VmmKernelRoot(void);
 bool VmmMapPage(uint64_t Virtual,uint64_t Physical,uint64_t Flags);
 bool VmmUnmapPage(uint64_t Virtual,bool FreePhysical);
 uint64_t VmmGetPhysical(uint64_t Virtual);
