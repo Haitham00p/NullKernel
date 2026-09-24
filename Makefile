@@ -70,6 +70,7 @@ C_SOURCES := \
 	kernel/process/process.c \
 	kernel/syscall/syscall.c \
 	kernel/sched/scheduler.c \
+	kernel/registry/registry.c \
 	kernel/elf/elf_loader.c \
 	installer/installer.c \
 	lib/delay/delay.c \
