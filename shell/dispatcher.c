@@ -16,8 +16,35 @@
 #include "arch/x86_64/acpi/acpi.h"
 #include "kernel/task/task.h"
 #include "kernel/sched/scheduler.h"
+#include "kernel/process/process.h"
+#include "kernel/syscall/syscall.h"
 
 void DispatcherDispatch(const PARSED_COMMAND *Command){
+    if (strcmp(Command->Command, "proc") == 0) {
+        TerminalWrite32("Processes: ", PromColor); TerminalPrintHex64Compact(ProcessCount()); TerminalNewLine32(BackSpaceColor);
+        TerminalWrite32("Current PID: ", PromColor); TerminalPrintHex64Compact(ProcessCurrentId()); TerminalNewLine32(BackSpaceColor);
+        return;
+    }
+    if (strcmp(Command->Command, "procnew") == 0) {
+        if (Command->ArgCount != 0U) { TerminalPrintLine32("Usage: procnew", 0x00FF0000U); return; }
+        NullProcess *p=ProcessCreate();
+        TerminalPrintLine32(p ? "process created" : "process creation failed", p ? PromColor : 0x00FF0000U);
+        return;
+    }
+    if (strcmp(Command->Command, "syscalls") == 0) {
+        TerminalWrite32("Syscalls: ", PromColor); TerminalPrintHex64Compact(SyscallCount()); TerminalNewLine32(BackSpaceColor);
+        return;
+    }
+    if (strcmp(Command->Command, "sched") == 0) {
+        TerminalWrite32("Ticks: ", PromColor); TerminalPrintHex64Compact(SchedulerTicks());
+        TerminalWrite32(" Quantum: ", PromColor); TerminalPrintHex64Compact(SchedulerQuantum()); TerminalNewLine32(BackSpaceColor);
+        return;
+    }
+    if (strcmp(Command->Command, "quantum") == 0) {
+        if (Command->ArgCount != 1U) { TerminalPrintLine32("Usage: quantum <ticks>", 0x00FF0000U); return; }
+        uint64_t q=0; if(!ShellArgToUInt64(Command->Args[0],&q)||q==0){TerminalPrintLine32("quantum: invalid value",0x00FF0000U);return;}
+        SchedulerSetQuantum(q); TerminalPrintLine32("scheduler quantum updated",PromColor); return;
+    }
     if (strcmp(Command->Command, "ring3") == 0) {
         if (Command->ArgCount != 0U) { TerminalPrintLine32("Usage: ring3", 0x00FF0000U); return; }
         Ring3Demo();
