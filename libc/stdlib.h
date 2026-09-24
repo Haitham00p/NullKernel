@@ -37,6 +37,7 @@ bool     ShellArgGet(uint32_t Index, char *Out, uint32_t MaxOut);
 void     ShellApplyRegistry(void);
 void     ShellApplyDefDir(void);
 void     ShellBootBuild(void);
+void     ShellBootRunROB(void);
 void     SelfHostExeName(const char *SourceName, char *ExeName);
 
 /* n64a / nld toolchain entry points (shell commands and guests). */
