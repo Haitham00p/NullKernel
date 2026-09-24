@@ -60,7 +60,7 @@ void DispatcherDispatch(const PARSED_COMMAND *Command){
     if (strcmp(Command->Command, "acpi") == 0) {
         TerminalWrite32("ACPI: ", PromColor);
         TerminalPrintLine32(AcpiReady() ? "ready" : "not available", PromColor);
-        if (AcpiReady()) { TerminalWrite32("XSDT: ", PromColor); TerminalPrintHex64Compact(AcpiXsdt()); TerminalNewLine32(BackSpaceColor); }
+        if (AcpiReady()) { TerminalWrite32("XSDT: ", PromColor); TerminalPrintHex64Compact(AcpiXsdt()); TerminalNewLine32(BackSpaceColor); TerminalWrite32("LAPIC: ", PromColor); TerminalPrintHex64Compact(AcpiLocalApicAddress()); TerminalNewLine32(BackSpaceColor); TerminalWrite32("CPUs: ", PromColor); TerminalPrintHex64Compact(AcpiCpuCount()); TerminalNewLine32(BackSpaceColor); }
         return;
     }
     if (strcmp(Command->Command, "taskdemo") == 0) { if (Command->ArgCount != 0U) { TerminalPrintLine32("Usage: taskdemo", 0x00FF0000U); return; } TaskRunDemo(); return; }
