@@ -11,7 +11,7 @@ uint64_t Ring3SyscallCount(void){return Syscalls;}
 static const uint8_t Code[]={0xB8,0x01,0,0,0,0xCD,0x80,0xEB,0xFE};
 void Ring3Initialize(void){ }
 void Ring3Demo(void){
-    uint64_t code=0x400000,stack=0x700000,p=VmmGetPhysical(code);
+    uint64_t code=0x8000000000ULL,stack=0x8000001000ULL,p=VmmGetPhysical(code);
     if(!p){if(!VmmMapUserPage(code,VMM_W|VMM_U))return;p=VmmGetPhysical(code);}
     uint64_t sp=VmmGetPhysical(stack);
     if(!sp){if(!VmmMapUserPage(stack,VMM_W|VMM_U))return;}
