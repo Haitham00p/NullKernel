@@ -19,6 +19,13 @@ static uint32_t CurCol = 0;
 static uint32_t CurRow = 0;
 static uint32_t CurBGColor = 0x00000000;
 
+/*
+ * Rendering is decoupled from terminal state mutation. Shell commands can
+ * emit thousands of characters, so rendering once per character is avoided.
+ */
+static uint32_t g_render_batch_depth = 0;
+static bool g_render_pending = false;
+
 static void TerminalRenderWithDivider(void);
 
 #define TERMINAL_MAX_PANES 2U
@@ -109,6 +116,12 @@ void TerminalInit32(void) {
 
 static void TerminalRenderWithDivider(void)
 {
+    if (g_render_batch_depth != 0U)
+    {
+        g_render_pending = true;
+        return;
+    }
+
     TerminalRender(&g_screen);
     if (!g_split || g_screen.cols == 0U || g_screen.rows == 0U) return;
 
@@ -186,6 +199,25 @@ void TerminalPutChar32(char c, uint32_t color) {
     TerminalRenderWithDivider();
 }
 
+void TerminalBeginBatch32(void)
+{
+    if (g_render_batch_depth != UINT32_MAX)
+        g_render_batch_depth++;
+}
+
+void TerminalEndBatch32(void)
+{
+    if (g_render_batch_depth == 0U)
+        return;
+
+    g_render_batch_depth--;
+    if (g_render_batch_depth == 0U && g_render_pending)
+    {
+        g_render_pending = false;
+        TerminalRenderWithDivider();
+    }
+}
+
 void TerminalWrite32(const char *str, uint32_t color) {
     if (!str) return;
     while (*str != '\0') {
@@ -214,41 +246,47 @@ void TerminalRedrawInputLine32(const char *prompt, uint32_t prompt_color,
     /* Do not let the cursor itself cause an intermediate framebuffer render. */
     CursorSetVisible(&g_screen, false);
 
-    /* Rebuild only the active input row in the terminal cell buffer. */
-    for (uint32_t i = 0; i < cols; i++)
-    {
-        term_cell_t *cell = &g_term_cells[row][start + i];
-        cell->codepoint = ' ';
-        cell->fg_color = TerminalContrastColor(prompt_color, CurBGColor);
-        cell->bg_color = CurBGColor;
-        cell->attributes |= TERM_ATTR_DIRTY;
-    }
-
+    /*
+     * Rebuild the logical input row, but only invalidate cells whose visible
+     * contents actually changed.  In split mode this is especially important:
+     * a key press normally changes one cell, not the entire pane.
+     */
+    uint32_t first_changed = cols;
+    uint32_t last_changed = 0;
     uint32_t col = 0;
+    const char *prompt_ptr = prompt;
+    const char *command_ptr = command;
+    uint32_t prompt_fg = TerminalContrastColor(prompt_color, CurBGColor);
+    uint32_t command_fg = TerminalContrastColor(command_color, CurBGColor);
 
-    if (prompt != NULL)
+    while (col < cols)
     {
-        while (*prompt != '\0' && col < cols)
+        uint8_t desired_codepoint = ' ';
+        uint32_t desired_fg = prompt_fg;
+
+        if (prompt_ptr != NULL && *prompt_ptr != '\0')
         {
-            term_cell_t *cell = &g_term_cells[row][start + col++];
-            cell->codepoint = (uint8_t)*prompt++;
-            cell->fg_color = TerminalContrastColor(prompt_color, CurBGColor);
+            desired_codepoint = (uint8_t)*prompt_ptr++;
+        }
+        else if (command_ptr != NULL && *command_ptr != '\0')
+        {
+            desired_codepoint = (uint8_t)*command_ptr++;
+            desired_fg = command_fg;
+        }
+
+        term_cell_t *cell = &g_term_cells[row][start + col];
+        if (cell->codepoint != desired_codepoint ||
+            cell->fg_color != desired_fg ||
+            cell->bg_color != CurBGColor)
+        {
+            cell->codepoint = desired_codepoint;
+            cell->fg_color = desired_fg;
             cell->bg_color = CurBGColor;
             cell->attributes |= TERM_ATTR_DIRTY;
+            if (col < first_changed) first_changed = col;
+            if (col > last_changed) last_changed = col;
         }
-    }
-
-    uint32_t command_start = col;
-    if (command != NULL)
-    {
-        while (*command != '\0' && col < cols)
-        {
-            term_cell_t *cell = &g_term_cells[row][start + col++];
-            cell->codepoint = (uint8_t)*command++;
-            cell->fg_color = TerminalContrastColor(command_color, CurBGColor);
-            cell->bg_color = CurBGColor;
-            cell->attributes |= TERM_ATTR_DIRTY;
-        }
+        col++;
     }
 
     /*
@@ -264,9 +302,16 @@ void TerminalRedrawInputLine32(const char *prompt, uint32_t prompt_color,
     g_pane_col[g_active_pane] = CurCol;
     g_pane_row[g_active_pane] = row;
 
-    g_term_lines[row].is_dirty = true;
-    g_term_lines[row].first_dirty = (uint16_t)start;
-    g_term_lines[row].last_dirty = (uint16_t)(start + cols - 1U);
+    if (first_changed < cols)
+    {
+        uint32_t first_abs = start + first_changed;
+        uint32_t last_abs = start + last_changed;
+        g_term_lines[row].is_dirty = true;
+        if (first_abs < g_term_lines[row].first_dirty)
+            g_term_lines[row].first_dirty = (uint16_t)first_abs;
+        if (last_abs > g_term_lines[row].last_dirty)
+            g_term_lines[row].last_dirty = (uint16_t)last_abs;
+    }
 
     TerminalSyncCursor();
     CursorSetVisible(&g_screen, true);

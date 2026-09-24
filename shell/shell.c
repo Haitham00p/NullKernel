@@ -169,7 +169,9 @@ static void ComposePrompt(void)
 static void WritePrompt(void) {
     uint32_t prompt_color = ComputePromptColor(PromptColor);
     ComposePrompt();
+    TerminalBeginBatch32();
     TerminalWrite32(PromptText, prompt_color);
+    TerminalEndBatch32();
 }
 
 static void RedrawCommandPrompt(void)
@@ -315,6 +317,8 @@ static void ShellCreateSplit(void)
 {
     if (Shells[1].Exists || EditorIsActive())
         return;
+
+    TerminalBeginBatch32();
     ShellSaveCwd();
     ShellInitContext(1, Shells[0].Cwd);
     TerminalSplitEnable();
@@ -329,6 +333,7 @@ static void ShellCreateSplit(void)
     ActiveShell = Old;
     ShellRestoreCwd(Old);
     TerminalSetActivePane(Old);
+    TerminalEndBatch32();
     RedrawCommandPrompt();
 }
 
@@ -337,6 +342,7 @@ static void ShellDeleteCurrent(void)
     if (!Shells[1].Exists || EditorIsActive())
         return;
 
+    TerminalBeginBatch32();
     uint32_t Dead = ActiveShell;
     uint32_t Other = Dead ^ 1U;
     ShellSaveCwd();
@@ -357,6 +363,7 @@ static void ShellDeleteCurrent(void)
     ActiveShell = 0;
     ShellRestoreCwd(0);
     TerminalSetActivePane(0);
+    TerminalEndBatch32();
     RedrawCommandPrompt();
 }
 
@@ -479,6 +486,13 @@ void ShellUpdate(void)
         /* Enter Key */
         if (Character == '\n')
         {
+            /*
+             * A command can print hundreds or millions of characters.
+             * Mutate the terminal grid freely, then present the accumulated
+             * damage once. This is the same core idea used by fast terminal
+             * emulators: batch input/output and consume dirty regions once.
+             */
+            TerminalBeginBatch32();
             TerminalPutChar32('\n', PromColor);
             ShellSaveHistory();
             ActiveContext->Command[ActiveContext->CommandLength] = '\0';
@@ -488,6 +502,7 @@ void ShellUpdate(void)
             DispatcherDispatch(&Parsed);
             ParserFree(&Parsed);
             ShellSaveCwd();
+            TerminalEndBatch32();
 
             ActiveContext->CommandLength = 0;
             ActiveContext->CommandPos = 0;
