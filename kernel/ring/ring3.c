@@ -3,11 +3,12 @@
 #include "mm/vmm.h"
 #include "mm/pmm.h"
 #include "kernel/terminal/terminal.h"
+#include "kernel/syscall/syscall.h"
 #include <stdint.h>
 extern void Ring3Enter(uint64_t Rip,uint64_t Rsp);
-static volatile uint64_t Syscalls;
-void Ring3SyscallHandler(void){Syscalls++;TerminalPrintLine32("[ring3] int 0x80 reached kernel",0xFFFFFFFF);}
-uint64_t Ring3SyscallCount(void){return Syscalls;}
+
+uint64_t Ring3SyscallHandler(uint64_t n,uint64_t a1,uint64_t a2,uint64_t a3,uint64_t a4){return SyscallDispatch(n,a1,a2,a3,a4);}
+uint64_t Ring3SyscallCount(void){return SyscallCount();}
 static const uint8_t Code[]={0xB8,0x01,0,0,0,0xCD,0x80,0xEB,0xFE};
 void Ring3Initialize(void){ }
 void Ring3Demo(void){
