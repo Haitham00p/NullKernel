@@ -321,11 +321,11 @@ static void ContinueBoot(void){
         P("required: gc kernel.elf");
         return;
     }
-    if(strcasecmp(g_control_name,g_name)!=0){
+    if(!Eq(g_control_name,"kernel.elf")){
         P("jmp: boot control has not been committed to kernel.elf");
         return;
     }
-    const char *name=g_name;
+    const char *name=g_control_name;
     if(!SafeName(name)){P("continue: invalid kernel name");return;}
     if(!VerifyLoaded()) return;
     if(!DiskFsWriteInPath(BM_DIR,BM_SEL,name,Len(name))){P("jmp: cannot save selection");return;}
@@ -345,8 +345,7 @@ static void Help(void){
     P("  load <kernel.elf|KRNL1.0:0xN> validate and stage a kernel");
     P("  gc kernel.elf            commit staged kernel as the boot kernel");
     P("  unload                  discard staged kernel");
-    P("  jmp <ID>                select an ID only if already loaded");
-    P("  jmp                     reboot into the granted kernel");
+    P("  jmp                     reboot into committed /BOOT/kernel.elf");
     P("  jmp-a                   enter raw instruction AsmMode");
     P("  meminfo                 show staged image size");
     P("  status                  show NPB state");
