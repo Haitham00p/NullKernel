@@ -1,0 +1,18 @@
+NullOS ACPI / PCI API
+===================
+ACPI:
+ AcpiInitialize()
+ AcpiReady()
+ AcpiXsdt()
+ AcpiFindTable(signature)
+ AcpiLocalApicAddress()
+ AcpiCpuCount()
+
+PCI:
+ PciInitialize()
+ PciConfigRead32(bus,device,function,offset)
+ PciVendor(bus,device,function)
+ PciScan()
+
+ACPI describes platform hardware; PCI provides device discovery/configuration.
+These APIs are foundations for later LAPIC/driver binding work.
