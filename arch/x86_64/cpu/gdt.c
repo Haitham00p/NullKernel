@@ -9,7 +9,7 @@ static void desc(int n,uint32_t base,uint32_t limit,uint8_t access,uint8_t gran)
 static void tssdesc(void){uint64_t b=(uint64_t)&Tss,l=sizeof(Tss)-1;TssDesc[0]=(l&0xFFFF)|((b&0xFFFFFF)<<16)|(0x89ULL<<40)|((l>>16&0xF)<<48)|((b>>24&0xFF)<<56);TssDesc[1]=b>>32;}
 void GdtSetRsp0(uint64_t rsp){Tss.rsp0=rsp;}
 void GdtInitialize(void){
-    desc(0,0,0,0,0);desc(1,0,0xFFFFF,0x9A,0xA0);desc(2,0,0xFFFFF,0x92,0xA0);desc(3,0,0xFFFFF,0xF2,0xA0);desc(4,0,0xFFFFF,0xFA,0xA0);
+    desc(0,0,0,0,0);desc(1,0,0xFFFFF,0x9A,0xA0);desc(2,0,0xFFFFF,0x92,0x80);desc(3,0,0xFFFFF,0xF2,0x80);desc(4,0,0xFFFFF,0xFA,0xA0);
     Tss.rsp0=(uint64_t)(Stack+sizeof(Stack));Tss.iomap=sizeof(TSS);tssdesc();
     static uint8_t Raw[sizeof(Gdt)+sizeof(TssDesc)];for(uint32_t i=0;i<sizeof(Gdt);i++)Raw[i]=((uint8_t*)Gdt)[i];for(uint32_t i=0;i<sizeof(TssDesc);i++)Raw[sizeof(Gdt)+i]=((uint8_t*)TssDesc)[i];
     GDTR gdtr={(uint16_t)(sizeof(Raw)-1),(uint64_t)Raw};__asm__ volatile("lgdt %0"::"m"(gdtr));__asm__ volatile("pushq $0x08;lea 1f(%%rip),%%rax;pushq %%rax;lretq;1:":::"rax","memory");
