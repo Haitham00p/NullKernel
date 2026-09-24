@@ -1,0 +1,1 @@
+ACPI runtime state namespace.
