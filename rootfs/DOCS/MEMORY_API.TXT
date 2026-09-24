@@ -1,0 +1,21 @@
+NullOS Memory API
+================
+PMM:
+ PmmInitialize(memory_map)
+ PmmAllocPage()
+ PmmFreePage(physical_page)
+ PmmReserveRange(base, length)
+ PmmTotalPages()
+ PmmFreePages()
+
+VMM:
+ VmmInitialize()
+ VmmMapPage(virtual, physical, flags)
+ VmmUnmapPage(virtual)
+ VmmGetPhysical(virtual)
+ VmmMapUserPage(virtual, flags)
+ VmmLoadRoot(cr3)
+ VmmCurrentRoot()
+
+PMM owns physical 4 KiB frames. VMM owns page-table mappings.
+Do not assume two PMM allocations are physically adjacent.
