@@ -1,0 +1,5 @@
+#include kernel/registry/registry.h
+
+API: RegistryInitialize, RegistryEnsureLayout, RegistryReadText, RegistryWriteText,
+RegistryReadU64, RegistryWriteU64, RegistryPathExists, RegistryVersion.
+See REGISTRY_API.TXT for semantics and managed namespaces.
