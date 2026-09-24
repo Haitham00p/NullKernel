@@ -115,7 +115,8 @@ ASM_OBJECTS := \
 	$(BUILD_DIR)/arch/x86_64/interrupts/irq_asm.o \
 	$(BUILD_DIR)/arch/x86_64/program/run_asm.o \
 	$(BUILD_DIR)/arch/x86_64/bootasm.o \
-	$(BUILD_DIR)/arch/x86_64/cpu/ring3.o
+	$(BUILD_DIR)/arch/x86_64/cpu/ring3.o \
+	$(BUILD_DIR)/arch/x86_64/cpu/context.o
 
 OBJECTS := $(C_SOURCES:%.c=$(BUILD_DIR)/%.o) $(ASM_OBJECTS)
 
@@ -221,3 +222,6 @@ play: $(ISO)
 
 clean:
 	rm -rf $(BUILD_DIR) .vault-stamp
+$(BUILD_DIR)/arch/x86_64/cpu/context.o: arch/x86_64/cpu/context.asm
+	@mkdir -p $(@D)
+	$(NASM) -f elf64 $< -o $@
