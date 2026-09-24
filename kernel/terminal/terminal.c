@@ -302,9 +302,16 @@ void TerminalRedrawInputLine32(const char *prompt, uint32_t prompt_color,
     g_pane_col[g_active_pane] = CurCol;
     g_pane_row[g_active_pane] = row;
 
-    g_term_lines[row].is_dirty = true;
-    g_term_lines[row].first_dirty = (uint16_t)start;
-    g_term_lines[row].last_dirty = (uint16_t)(start + cols - 1U);
+    if (first_changed < cols)
+    {
+        uint32_t first_abs = start + first_changed;
+        uint32_t last_abs = start + last_changed;
+        g_term_lines[row].is_dirty = true;
+        if (first_abs < g_term_lines[row].first_dirty)
+            g_term_lines[row].first_dirty = (uint16_t)first_abs;
+        if (last_abs > g_term_lines[row].last_dirty)
+            g_term_lines[row].last_dirty = (uint16_t)last_abs;
+    }
 
     TerminalSyncCursor();
     CursorSetVisible(&g_screen, true);
