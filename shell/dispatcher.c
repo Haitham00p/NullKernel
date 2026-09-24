@@ -239,6 +239,7 @@ void DispatcherDispatch(const PARSED_COMMAND *Command){
     if (strcmp(Command->Command, "portwatch") == 0) { LL_PortWatch(Command); return; }
     if (strcmp(Command->Command, "memscan") == 0) { LL_MemScan(Command); return; }
     if (strcmp(Command->Command, "memfill") == 0) { LL_MemFill(Command); return; }
+    if (strcmp(Command->Command, "pmemfill") == 0) { LL_PMemFill(Command); return; }
     if (strcmp(Command->Command, "memxor") == 0) { LL_MemXor(Command); return; }
     if (strcmp(Command->Command, "bits") == 0) { LL_Bits(Command); return; }
     if (strcmp(Command->Command, "endian") == 0) { LL_Endian(Command); return; }

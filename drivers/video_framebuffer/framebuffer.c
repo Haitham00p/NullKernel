@@ -110,6 +110,15 @@ void FbInit32(void)
     fb_active = fb_address;
 }
 
+/* Return the Limine HHDM offset used to translate physical addresses into
+   directly mapped kernel virtual addresses. */
+uint64_t FbGetHhdmOffset32(void)
+{
+    if (HhdmReq.response == NULL)
+        return 0;
+    return HhdmReq.response->offset;
+}
+
 /* Allocate the off-screen back buffer and switch compositing to it. Must be
    called AFTER HeapInitialize() because it kmalloc()s a full-screen buffer.
    Runs front->back copy so the first present shows the current display. */
@@ -369,10 +378,10 @@ void FbPrintString32(const char *str,
 }
 
 void FbFillRect32(uint32_t x,
-                   uint32_t y,
-                   uint32_t width,
-                   uint32_t height,
-                   uint32_t color)
+                  uint32_t y,
+                  uint32_t width,
+                  uint32_t height,
+                  uint32_t color)
 {
     FbMarkDirty(x, y, x + width - 1U, y + height - 1U);
     for (uint32_t Row = 0; Row < height; Row++)

@@ -30,6 +30,7 @@ void LL_E9(const PARSED_COMMAND *Command);
 void LL_PortWatch(const PARSED_COMMAND *Command);
 void LL_MemScan(const PARSED_COMMAND *Command);
 void LL_MemFill(const PARSED_COMMAND *Command);
+void LL_PMemFill(const PARSED_COMMAND *Command);
 void LL_MemXor(const PARSED_COMMAND *Command);
 void LL_Bits(const PARSED_COMMAND *Command);
 void LL_Endian(const PARSED_COMMAND *Command);
