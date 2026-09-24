@@ -9,6 +9,9 @@
 void TerminalInit32(void);
 void TerminalPutChar32(char c, uint32_t color);
 void TerminalWrite32(const char *str, uint32_t color);
+/* Coalesce terminal mutations into one framebuffer render. */
+void TerminalBeginBatch32(void);
+void TerminalEndBatch32(void);
 void TerminalIntWrite32(uint64_t Int, uint32_t color);
 void TerminalClear32(uint32_t color);
 void TerminalSetCursor32(uint32_t x, uint32_t y);
