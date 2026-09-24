@@ -18,8 +18,21 @@
 #include "kernel/sched/scheduler.h"
 #include "kernel/process/process.h"
 #include "kernel/syscall/syscall.h"
+#include "kernel/registry/registry.h"
 
 void DispatcherDispatch(const PARSED_COMMAND *Command){
+    if (strcmp(Command->Command, "rob") == 0) {
+        if (Command->ArgCount != 0U) { TerminalPrintLine32("Usage: rob", 0x00FF0000U); return; }
+        ShellBootRunROB();
+        return;
+    }
+    if (strcmp(Command->Command, "registry") == 0) {
+        if (Command->ArgCount != 0U) { TerminalPrintLine32("Usage: registry", 0x00FF0000U); return; }
+        TerminalWrite32("Registry version: ", PromColor);
+        TerminalPrintHex64Compact(RegistryVersion());
+        TerminalNewLine32(BackSpaceColor);
+        return;
+    }
     if (strcmp(Command->Command, "proc") == 0) {
         TerminalWrite32("Processes: ", PromColor); TerminalPrintHex64Compact(ProcessCount()); TerminalNewLine32(BackSpaceColor);
         TerminalWrite32("Current PID: ", PromColor); TerminalPrintHex64Compact(ProcessCurrentId()); TerminalNewLine32(BackSpaceColor);
