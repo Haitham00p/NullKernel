@@ -5,11 +5,11 @@ extern Ring3SyscallHandler
 Ring3Enter:
     cli
     mov rax, rsp
-    push qword 0x18|3
+    push qword 0x3B
     push rsi
     pushfq
     or qword [rsp], 0x200
-    push qword 0x20|3
+    push qword 0x43
     push rdi
     iretq
 Ring3Int80:
