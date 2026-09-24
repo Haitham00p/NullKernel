@@ -9,7 +9,6 @@ void FbInit32(void);
 void FbInitDoubleBuffer(void);
 
 
-
 void FbPresent32(void);
 
 /* Mark a region of the back buffer as changed so the next present blits it.
@@ -47,6 +46,10 @@ uint32_t FbGetWidth32(void);
 uint32_t FbGetHeight32(void);
 uint32_t *FbGetAddress32(void);
 uint32_t FbGetPitchPixels32(void);
+
+/* Return the Limine HHDM offset used to translate physical addresses into
+   directly mapped kernel virtual addresses. */
+uint64_t FbGetHhdmOffset32(void);
 
 void FbDrawRect32(uint32_t x,
                   uint32_t y,
