@@ -18,6 +18,11 @@ Ring3Int80:
     push rdx
     push rsi
     push rdi
+    mov r8, rcx
+    mov rcx, rdx
+    mov rdx, rsi
+    mov rsi, rdi
+    mov rdi, rax
     call Ring3SyscallHandler
     pop rdi
     pop rsi
