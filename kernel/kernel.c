@@ -28,6 +28,8 @@
 #include "arch/x86_64/acpi/acpi.h"
 #include "arch/x86_64/pci/pci.h"
 #include "kernel/task/task.h"
+#include "kernel/process/process.h"
+#include "kernel/syscall/syscall.h"
 #include "kernel/sched/scheduler.h"
 
 extern struct limine_memmap_request MemMapReq;
@@ -106,6 +108,8 @@ void kernel_main(void)
 
     HeapInitialize(HeapBase, HeapLength);
     TaskSystemInitialize();
+    ProcessSystemInitialize();
+    SyscallInitialize();
     SchedulerInitialize();
     AcpiInitialize();
     PciInitialize();
