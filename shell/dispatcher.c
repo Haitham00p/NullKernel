@@ -10,8 +10,38 @@
 #include "commands/lowlevel.h"
 #include "bootmonitor/bootmonitor.h"
 #include "arch/x86_64/power/pwr.h"
+#include "kernel/ring/ring3.h"
+#include "mm/pmm.h"
+#include "mm/vmm.h"
+#include "arch/x86_64/acpi/acpi.h"
+#include "kernel/task/task.h"
+#include "kernel/sched/scheduler.h"
 
 void DispatcherDispatch(const PARSED_COMMAND *Command){
+    if (strcmp(Command->Command, "ring3") == 0) {
+        if (Command->ArgCount != 0U) { TerminalPrintLine32("Usage: ring3", 0x00FF0000U); return; }
+        Ring3Demo();
+        return;
+    }
+    if (strcmp(Command->Command, "mm") == 0) {
+        TerminalWrite32("PMM total/free pages: ", PromColor);
+        TerminalPrintHex64Compact(PmmTotalPages()); TerminalWrite32("/", PromColor);
+        TerminalPrintHex64Compact(PmmFreePages()); TerminalNewLine32(BackSpaceColor);
+        TerminalWrite32("VMM root: ", PromColor); TerminalPrintHex64Compact(VmmCurrentRoot()); TerminalNewLine32(BackSpaceColor);
+        return;
+    }
+    if (strcmp(Command->Command, "acpi") == 0) {
+        TerminalWrite32("ACPI: ", PromColor);
+        TerminalPrintLine32(AcpiReady() ? "ready" : "not available", PromColor);
+        if (AcpiReady()) { TerminalWrite32("XSDT: ", PromColor); TerminalPrintHex64Compact(AcpiXsdt()); TerminalNewLine32(BackSpaceColor); }
+        return;
+    }
+    if (strcmp(Command->Command, "tasks") == 0) {
+        TerminalWrite32("Tasks: ", PromColor); TerminalPrintHex64Compact(TaskCount()); TerminalNewLine32(BackSpaceColor);
+        TerminalWrite32("Scheduler ticks: ", PromColor); TerminalPrintHex64Compact(SchedulerTicks()); TerminalNewLine32(BackSpaceColor);
+        return;
+    }
+
     if (strcmp(Command->Command, "reboot-c") == 0)
     {
         if (Command->ArgCount != 0U)
