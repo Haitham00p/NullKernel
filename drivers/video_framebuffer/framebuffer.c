@@ -57,18 +57,38 @@ static bool FbMapHardwareBuffer(void)
     if (bytes == 0)
         return false;
 
+    /*
+     * The framebuffer is a kernel resource. Never create its mapping in a
+     * process/task address space. Temporarily enter KernelRoot, map every
+     * framebuffer page there, then restore the real interrupted CR3.
+     */
+    uint64_t saved_root = VmmCurrentRoot();
+    uint64_t kernel_root = VmmKernelRoot();
+    if (kernel_root == 0)
+        return false;
+
+    if (saved_root != kernel_root)
+        VmmLoadRoot(kernel_root);
+
     uint64_t virtual_page = virtual_start & ~0xFFFULL;
     uint64_t physical_page = physical_start & ~0xFFFULL;
     uint64_t end = (virtual_start + bytes + 0xFFFULL) & ~0xFFFULL;
 
+    bool ok = true;
     for (; virtual_page < end;
          virtual_page += 0x1000ULL, physical_page += 0x1000ULL)
     {
         if (!VmmMapPage(virtual_page, physical_page, VMM_W | VMM_NX))
-            return false;
+        {
+            ok = false;
+            break;
+        }
     }
 
-    return true;
+    if (saved_root != kernel_root)
+        VmmLoadRoot(saved_root);
+
+    return ok;
 }
 
 void FbInit32(void)
