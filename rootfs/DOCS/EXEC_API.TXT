@@ -1,0 +1,19 @@
+NullOS Executable API
+====================
+exec(path)
+ execl(format,...)
+ DispatcherTryDiskCommand(command)
+ RunProgramOnStack(entry,stack_top)
+
+Executable resolution:
+ bare command -> /BIN/<name>.EXE
+ ./name -> current directory executable
+ explicit path -> that path
+
+ROB:
+ /REG/NullOS/ROB is scanned during boot. Every non-directory file is loaded
+ with the ELF loader. Valid ELF images are executed; non-ELF files are skipped
+ so configuration/readme files cannot break boot.
+
+RAB:
+ /REG/NullOS/RAB remains unchanged and is processed separately.
