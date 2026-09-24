@@ -1,4 +1,0 @@
-# Nmap 7.92 scan initiated Fri Sep 18 05:47:48 2026 as: nmap -sV -sC -T4 --script vuln -oA lacewin_nmap lacewin.com
-Host: 62.60.226.245 ()	Status: Up
-Host: 62.60.226.245 ()	Ports: 22/open/tcp//ssh//OpenSSH 8.2p1 Ubuntu 4ubuntu0.13 (Ubuntu Linux; protocol 2.0)/, 53/open/tcp//domain//Unbound/, 80/open/tcp//http///, 443/open/tcp//ssl|https///	Ignored State: filtered (996)
-# Nmap done at Fri Sep 18 05:57:44 2026 -- 1 IP address (1 host up) scanned in 595.99 seconds
