@@ -199,7 +199,8 @@ void CmdHelp(const char *Category)
         TerminalPrintLine32("  e9 <text...>                    Write QEMU/Bochs debug port", PromColor);
         TerminalPrintLine32("  portwatch <port> [reads]        Sample an I/O port", PromColor);
         TerminalPrintLine32("  memscan <addr> <bytes> <byte>   Scan raw memory", PromColor);
-        TerminalPrintLine32("  memfill <addr> <bytes> <byte>   Write raw memory", PromColor);
+        TerminalPrintLine32("  memfill <addr> <bytes> <byte>   Write virtual memory", PromColor);
+        TerminalPrintLine32("  pmemfill <phys> <bytes> <byte>   Write physical memory via HHDM", PromColor);
         TerminalPrintLine32("  memxor <addr> <bytes> <byte>    XOR raw memory", PromColor);
         TerminalPrintLine32("  bits <value>                    Binary bit view", PromColor);
         TerminalPrintLine32("  endian <value>                  Byte-swap 64-bit value", PromColor);
