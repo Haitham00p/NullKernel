@@ -114,7 +114,8 @@ ASM_OBJECTS := \
 	$(BUILD_DIR)/arch/x86_64/interrupts/isr_asm.o \
 	$(BUILD_DIR)/arch/x86_64/interrupts/irq_asm.o \
 	$(BUILD_DIR)/arch/x86_64/program/run_asm.o \
-	$(BUILD_DIR)/arch/x86_64/bootasm.o
+	$(BUILD_DIR)/arch/x86_64/bootasm.o \
+	$(BUILD_DIR)/arch/x86_64/cpu/ring3.o
 
 OBJECTS := $(C_SOURCES:%.c=$(BUILD_DIR)/%.o) $(ASM_OBJECTS)
 
