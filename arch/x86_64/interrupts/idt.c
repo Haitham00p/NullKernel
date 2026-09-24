@@ -1,5 +1,6 @@
 #include "idt.h"
 #include "lib/string/string.h"
+extern void Ring3Int80(void);
 
 static IDT_ENTRY IDT[IDT_ENTRIES];
 static IDT_POINTER IDTP;
