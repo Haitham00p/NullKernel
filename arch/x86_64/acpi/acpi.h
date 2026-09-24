@@ -6,4 +6,6 @@ void AcpiInitialize(void);
 bool AcpiReady(void);
 uint64_t AcpiXsdt(void);
 uint64_t AcpiFindTable(const char Sig[4]);
+uint64_t AcpiLocalApicAddress(void);
+uint64_t AcpiCpuCount(void);
 #endif
