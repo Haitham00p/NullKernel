@@ -8,6 +8,7 @@
 #include "../program/run.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/task/task.h"
+#include "mm/vmm.h"
 
 IRQContext *IRQHandler(uint32_t IRQ, IRQContext *Frame)
 {
@@ -16,7 +17,22 @@ IRQContext *IRQHandler(uint32_t IRQ, IRQContext *Frame)
         PITTick();
         SchedulerTick();
         TerminalBlinkUpdate();
+
+        /*
+         * IRQ0 may interrupt code running with a process/task CR3.
+         * FbPresent32() writes to the kernel's HHDM framebuffer mapping,
+         * so enter the kernel address space for the present operation.
+         * Restore the interrupted CR3 before scheduling/returning.
+         */
+        uint64_t interrupted_root = VmmCurrentRoot();
+        uint64_t kernel_root = VmmKernelRoot();
+        if (kernel_root != 0 && interrupted_root != kernel_root)
+            VmmLoadRoot(kernel_root);
+
         FbPresent32();
+
+        if (kernel_root != 0 && interrupted_root != kernel_root)
+            VmmLoadRoot(interrupted_root);
 
         if (RunGuestActive && KbdAbortRequested())
         {
