@@ -162,6 +162,28 @@ void FbPresent32(void)
     if (!g_dirty)
         return; /* nothing changed; cheap no-op */
 
+    /*
+     * The timer IRQ can run while a different task/process CR3 is active.
+     * The framebuffer lives in Limine's HHDM, so make sure that mapping exists
+     * in the page-table root that is actually active at the moment of present.
+     */
+    uint64_t framebuffer_virtual = (uint64_t)(uintptr_t)fb_address;
+    uint64_t framebuffer_physical = 0;
+    if (HhdmReq.response != NULL)
+    {
+        uint64_t hhdm = HhdmReq.response->offset;
+        if (framebuffer_virtual >= hhdm)
+            framebuffer_physical = framebuffer_virtual - hhdm;
+    }
+
+    if (framebuffer_physical == 0 ||
+        VmmGetPhysical(framebuffer_virtual & ~0xFFFULL) !=
+            (framebuffer_physical & ~0xFFFULL))
+    {
+        if (!FbMapHardwareBuffer())
+            return;
+    }
+
     uint32_t x0 = g_dx0, y0 = g_dy0, x1 = g_dx1, y1 = g_dy1;
     if (x1 >= fb_width)  x1 = (uint32_t)fb_width - 1U;
     if (y1 >= fb_height) y1 = (uint32_t)fb_height - 1U;
