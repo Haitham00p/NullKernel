@@ -22,6 +22,13 @@
 #include "libc/stdlib.h"
 #include "libc/stdio.h"
 #include "bootmonitor/bootmonitor.h"
+#include "mm/pmm.h"
+#include "mm/vmm.h"
+#include "arch/x86_64/cpu/gdt.h"
+#include "arch/x86_64/acpi/acpi.h"
+#include "arch/x86_64/pci/pci.h"
+#include "kernel/task/task.h"
+#include "kernel/sched/scheduler.h"
 
 extern struct limine_memmap_request MemMapReq;
 
@@ -45,6 +52,14 @@ void kernel_main(void)
         PanicKernel("Memory Map Not Found", (uintptr_t)kernel_main);
 
     DbgBoot("Kernel entry point reached", (uintptr_t)kernel_main);
+
+    PmmInitialize(Response);
+    PmmReserveRange(HeapBase, HeapLength);
+    VmmInitialize();
+    DbgInfo("Physical/virtual memory managers online", (uintptr_t)VmmInitialize);
+
+    GdtInitialize();
+    DbgInfo("GDT/TSS and ring descriptors online", (uintptr_t)GdtInitialize);
 
     IDTInitialize();
     DbgInfo("Interrupt descriptor table online", (uintptr_t)IDTInitialize);
@@ -90,6 +105,10 @@ void kernel_main(void)
         PanicKernel("No Usable Entry Found For Heap", (uintptr_t)HeapInitialize);
 
     HeapInitialize(HeapBase, HeapLength);
+    TaskSystemInitialize();
+    SchedulerInitialize();
+    AcpiInitialize();
+    PciInitialize();
     FbInitDoubleBuffer();
     TerminalInit32();
     TerminalClear32(0x00000000);
