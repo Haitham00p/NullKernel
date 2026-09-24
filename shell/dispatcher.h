@@ -4,6 +4,7 @@
 #include "lib/string/string.h"
 
 extern uint32_t PromColor;
+extern uint32_t BackSpaceColor;
 
 void DispatcherDispatch(const PARSED_COMMAND *Command);
 
