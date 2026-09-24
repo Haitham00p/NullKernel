@@ -41,6 +41,8 @@ static uint8_t *g_image;
 static uint32_t g_size;
 static uint64_t g_entry;
 static char g_name[96];
+static bool g_control_granted;
+static char g_control_name[96];
 
 static uint32_t Len(const char *s) { uint32_t n=0; while(s && s[n]) n++; return n; }
 static bool Eq(const char *a,const char *b){return strcasecmp(a,b)==0;}
@@ -162,7 +164,9 @@ static bool Validate(const uint8_t *img,uint32_t size,uint64_t *entry,
 }
 
 static void Unload(void){
-    if(g_image)kfree(g_image); g_image=NULL;g_size=0;g_entry=0;g_name[0]=0;
+    if(g_image)kfree(g_image);
+    g_image=NULL;g_size=0;g_entry=0;g_name[0]=0;
+    g_control_granted=false;g_control_name[0]=0;
 }
 
 static bool ReadKernel(const char *name){
@@ -234,6 +238,25 @@ static bool VerifyLoaded(void)
     PC("verify: staged ELF is valid",NPB_GREEN);return true;
 }
 
+static bool GrantControl(const char *name)
+{
+    if(!name||!*name){P("gc: Usage: gc <kernel.elf>");return false;}
+    if(!g_image||!g_name[0]){P("gc: no kernel is loaded");return false;}
+    if(!SafeName(name)){P("gc: invalid kernel name");return false;}
+    if(strcasecmp(name,g_name)!=0){
+        P("gc: kernel does not match the loaded image");
+        TerminalWrite32("  loaded: ",NPB_DIM);TerminalPrintLine32(g_name,NPB_CYAN);
+        TerminalWrite32("  asked : ",NPB_DIM);TerminalPrintLine32(name,NPB_YELLOW);
+        return false;
+    }
+    if(!VerifyLoaded()) return false;
+    strcpy(g_control_name,g_name);
+    g_control_granted=true;
+    TerminalWrite32("GC -> control granted to ",NPB_ORANGE);
+    TerminalPrintLine32(g_control_name,NPB_GREEN);
+    return true;
+}
+
 static void PrintStatus(void)
 {
     PC("NPB STATUS",NPB_ORANGE);
@@ -242,6 +265,9 @@ static void PrintStatus(void)
     else TerminalPrintLine32("none",NPB_YELLOW);
     TerminalWrite32("  staged file   : ",NPB_DIM);TerminalPrintLine32(g_name[0]?g_name:"none",0x00FFFFFFU);
     TerminalWrite32("  staged bytes  : ",NPB_DIM);TerminalPrintHex64Compact(g_image?g_size:0);TerminalNewLine32(0);
+    TerminalWrite32("  control       : ",NPB_DIM);
+    if(g_control_granted)TerminalPrintLine32(g_control_name,NPB_GREEN);
+    else TerminalPrintLine32("not granted",NPB_YELLOW);
     TerminalWrite32("  entry         : ",NPB_DIM);TerminalPrintHex64Compact(g_image?g_entry:0);TerminalNewLine32(0);
     char path[256];
     TerminalWrite32("  Limine path   : ",NPB_DIM);
@@ -257,9 +283,23 @@ static void PrintDanger(void)
 }
 
 static void ContinueBoot(void){
-    const char *name=g_name[0]?g_name:"kernel.elf";
+    if(!g_image||!g_name[0]){
+        P("jmp: no kernel loaded");
+        P("required: load <kernel.elf> -> gc <kernel.elf> -> jmp");
+        return;
+    }
+    if(!g_control_granted||!g_control_name[0]){
+        P("jmp: control not granted");
+        P("required: gc <loaded-kernel.elf>");
+        return;
+    }
+    if(strcasecmp(g_control_name,g_name)!=0){
+        P("jmp: control grant does not match the loaded kernel");
+        return;
+    }
+    const char *name=g_name;
     if(!SafeName(name)){P("continue: invalid kernel name");return;}
-    if(!VerifyLoaded() && g_name[0]) return;
+    if(!VerifyLoaded()) return;
     if(!DiskFsWriteInPath(BM_DIR,BM_SEL,name,Len(name))){P("jmp: cannot save selection");return;}
     if(!StageLimine(name)){
         P("jmp: selection saved, but installed Limine config was not changed");
@@ -274,10 +314,11 @@ static void Help(void){
     PC("NullOS PreBoot (NPB) command set",NPB_ORANGE);
     P("  help                    show this help");
     P("  ShowKernels             list /BOOT/*.ELF");
-    P("  load <KRNL1.0:0xN>       validate and stage a kernel by ID");
+    P("  load <kernel.elf|KRNL1.0:0xN> validate and stage a kernel");
+    P("  gc <kernel.elf>          grant boot control to the loaded kernel");
     P("  unload                  discard staged kernel");
-    P("  jmp <ID>                stage/select kernel ID and reboot");
-    P("  jmp                     reboot into staged/default kernel");
+    P("  jmp <ID>                select an ID only if already loaded");
+    P("  jmp                     reboot into the granted kernel");
     P("  jmp-a                   enter raw instruction AsmMode");
     P("  meminfo                 show staged image size");
     P("  status                  show NPB state");
@@ -414,14 +455,18 @@ static void Execute(char *line){
     for(char *p=cmd;*p;p++)if(*p==' '||*p=='\t'){*p=0;arg=p+1;while(*arg==' '||*arg=='\t')arg++;break;}
     if(Eq(cmd,"help")){Help();return;}
     if(Eq(cmd,"ShowKernels")||Eq(cmd,"showkernels")){ShowKernels();return;}
-    if(Eq(cmd,"load")){if(!arg||!*arg)P("Usage: load <KRNL1.0:0xID>");else{
+    if(Eq(cmd,"load")){
+        if(!arg||!*arg){P("Usage: load <kernel.elf|KRNL1.0:0xN>");return;}
         char resolved[96];
-        if(!NameForKernelId(arg,resolved,sizeof(resolved))){P("load: unknown kernel ID");return;}
-        arg=resolved;Unload();
+        if(NameForKernelId(arg,resolved,sizeof(resolved))) arg=resolved;
+        else if(!SafeName(arg)){P("load: expected a kernel ELF filename or kernel ID");return;}
+        Unload();
         if(!DiskFsChdirPath(BM_DIR)){P("load: /BOOT unavailable");return;}
         if(!ReadKernel(arg)){DiskFsCdRoot();P("load: rejected - invalid/unreadable NullOS kernel ELF");return;}
         DiskFsCdRoot();
-    }return;}
+        return;
+    }
+    if(Eq(cmd,"gc")){GrantControl(arg);return;}
     if(Eq(cmd,"unload")){
         if(!arg||!*arg){P("Usage: unload <KRNL1.0:0xN>");return;}
         char resolved[96],current_id[32];uint32_t slot=0;
@@ -432,9 +477,11 @@ static void Execute(char *line){
         if(arg&&*arg){
             char resolved[96];
             if(!NameForKernelId(arg,resolved,sizeof(resolved))){P("jmp: unknown kernel ID");return;}
-            Unload();
-            if(!DiskFsChdirPath(BM_DIR)||!ReadKernel(resolved)){DiskFsCdRoot();P("jmp: failed to stage selected kernel");return;}
-            DiskFsCdRoot();
+            if(!g_image||!g_name[0]||strcasecmp(g_name,resolved)!=0){
+                P("jmp: requested kernel is not the currently loaded kernel");
+                P("required: load <kernel.elf> -> gc <kernel.elf> -> jmp");
+                return;
+            }
         }
         ContinueBoot();return;
     }
@@ -447,7 +494,7 @@ static void Execute(char *line){
     if(Eq(cmd,"ids")){P("IDs use KRNL1.0:0xN; kernel.elf is KRNL1.0:0x0.");return;}
     if(Eq(cmd,"about")){PC("NullOS PreBoot (NPB) // RAW BOOT CONTROL",NPB_ORANGE);PC("Disk-side preboot environment. No normal shell safety layer.",NPB_RED);return;}
     if(Eq(cmd,"clear")){TerminalClear32(0x00000000U);return;}
-    if(Eq(cmd,"clear-selection")){Unload();P("staged kernel cleared");return;}
+    if(Eq(cmd,"clear-selection")){Unload();P("staged kernel and control grant cleared");return;}
     if(Eq(cmd,"clear-request")){BootMonitorClearRequest();P("NPB request cleared");return;}
     if(Eq(cmd,"poweroff")){__asm__ volatile("cli");for(;;)__asm__ volatile("hlt");}
 
@@ -497,6 +544,7 @@ void BootMonitorRun(void){
     PC("",NPB_DIM);
     PC("Booted into NullOS PreBoot Stage",NPB_ORANGE);
     PC("Select Kernel ID Image to load.",0x00FFFFFFU);
+    PC("Normal boot is locked: load -> gc -> jmp.",NPB_YELLOW);
     PC("Use 'jmp' for Normal-Mode or 'jmp-a' for Assembly-Mode.",0x00FFFFFFU);
     PC("WARNING: Don't boot as Assembly-Mode if you don't know it.",NPB_RED);
     PC("NPB might get corrupted.",NPB_RED);
