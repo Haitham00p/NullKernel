@@ -1,5 +1,4 @@
 #include "scheduler.h"
-#include "task/task.h"
 #include "kernel/debug/debug.h"
 #include <stdint.h>
 
