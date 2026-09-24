@@ -3,6 +3,7 @@
 #include "lib/delay/delay.h"
 #include "vendor/limine/limine.h"
 #include "mm/heap/heap.h"
+#include "mm/vmm.h"
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
@@ -14,6 +15,10 @@ __attribute__((used, section(".requests"))) volatile struct limine_memmap_reques
 
 __attribute__((used, section(".requests"))) static volatile struct limine_framebuffer_request FrBuf32 = {
     .id = LIMINE_FRAMEBUFFER_REQUEST,
+    .revision = 0};
+
+__attribute__((used, section(".requests"))) static volatile struct limine_hhdm_request HhdmReq = {
+    .id = LIMINE_HHDM_REQUEST,
     .revision = 0};
 
 static struct limine_framebuffer *framebuffer;
@@ -35,9 +40,36 @@ static uint32_t g_dx0, g_dy0, g_dx1, g_dy1;
 
 void FbMarkDirty(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1);
 
+static bool FbMapHardwareBuffer(void)
+{
+    if (framebuffer == NULL || framebuffer->address == NULL)
+        return false;
+    if (HhdmReq.response == NULL)
+        return false;
 
+    uint64_t virtual_start = (uint64_t)(uintptr_t)framebuffer->address;
+    uint64_t hhdm = HhdmReq.response->offset;
+    if (virtual_start < hhdm)
+        return false;
 
+    uint64_t physical_start = virtual_start - hhdm;
+    uint64_t bytes = framebuffer->pitch * framebuffer->height;
+    if (bytes == 0)
+        return false;
 
+    uint64_t virtual_page = virtual_start & ~0xFFFULL;
+    uint64_t physical_page = physical_start & ~0xFFFULL;
+    uint64_t end = (virtual_start + bytes + 0xFFFULL) & ~0xFFFULL;
+
+    for (; virtual_page < end;
+         virtual_page += 0x1000ULL, physical_page += 0x1000ULL)
+    {
+        if (!VmmMapPage(virtual_page, physical_page, VMM_W | VMM_NX))
+            return false;
+    }
+
+    return true;
+}
 
 void FbInit32(void)
 {
@@ -65,6 +97,14 @@ void FbInitDoubleBuffer(void)
 {
     if (fb_address == NULL)
         return;
+
+    /*
+     * Limine gives framebuffer->address as an HHDM virtual pointer.
+     * Re-establish that mapping after NullOS switches to its own VMM root.
+     */
+    if (!FbMapHardwareBuffer())
+        return;
+
     size_t fb_bytes = (size_t)fb_pitch * (size_t)fb_height;
     fb_back = (uint32_t *)kmalloc(fb_bytes);
     if (fb_back != NULL)
