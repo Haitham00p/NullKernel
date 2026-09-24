@@ -22,6 +22,16 @@
 #include "libc/stdlib.h"
 #include "libc/stdio.h"
 #include "bootmonitor/bootmonitor.h"
+#include "mm/pmm.h"
+#include "mm/vmm.h"
+#include "arch/x86_64/cpu/gdt.h"
+#include "arch/x86_64/acpi/acpi.h"
+#include "arch/x86_64/pci/pci.h"
+#include "kernel/task/task.h"
+#include "kernel/process/process.h"
+#include "kernel/syscall/syscall.h"
+#include "kernel/sched/scheduler.h"
+#include "kernel/registry/registry.h"
 
 extern struct limine_memmap_request MemMapReq;
 
@@ -45,6 +55,9 @@ void kernel_main(void)
         PanicKernel("Memory Map Not Found", (uintptr_t)kernel_main);
 
     DbgBoot("Kernel entry point reached", (uintptr_t)kernel_main);
+
+    GdtInitialize();
+    DbgInfo("GDT/TSS and ring descriptors online", (uintptr_t)GdtInitialize);
 
     IDTInitialize();
     DbgInfo("Interrupt descriptor table online", (uintptr_t)IDTInitialize);
@@ -89,7 +102,18 @@ void kernel_main(void)
     if (HeapBase == 0)
         PanicKernel("No Usable Entry Found For Heap", (uintptr_t)HeapInitialize);
 
+    PmmInitialize(Response);
+    PmmReserveRange(HeapBase, HeapLength);
+    VmmInitialize();
+    DbgInfo("Physical/virtual memory managers online", (uintptr_t)VmmInitialize);
+
     HeapInitialize(HeapBase, HeapLength);
+    TaskSystemInitialize();
+    ProcessSystemInitialize();
+    SyscallInitialize();
+    SchedulerInitialize();
+    AcpiInitialize();
+    PciInitialize();
     FbInitDoubleBuffer();
     TerminalInit32();
     TerminalClear32(0x00000000);
@@ -128,8 +152,11 @@ void kernel_main(void)
     if (BootMonitorShouldEnter())
         BootMonitorRun();
 
+    RegistryInitialize();
+    { uint64_t q = 0; if (RegistryReadU64("/REG/SCHED/QUANTUM.V", &q) && q != 0) SchedulerSetQuantum(q); }
     ShellApplyRegistry();
     ShellBootRunRAB();
+    ShellBootRunROB();
     ShellApplyDefDir();
     ShellInitialize();
 

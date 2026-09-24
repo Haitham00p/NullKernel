@@ -208,7 +208,7 @@ void ISRInitialize(void)
     {
         IDTSetGate(Vector,
                    (uint64_t)g_IsrStubs[Vector],
-                   0x28,
+                   0x08,
                    0x8E);
     }
 }

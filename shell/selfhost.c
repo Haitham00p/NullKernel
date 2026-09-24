@@ -18,6 +18,7 @@
 #include "kernel/terminal/terminal.h"
 #include "drivers/input/keyboard/keyboard.h"
 #include "kernel/debug/debug.h"
+#include "kernel/registry/registry.h"
 
 extern uint32_t PromColor;
 extern uint32_t BackSpaceColor;
@@ -1094,6 +1095,78 @@ void ShellBootRunRAB(void)
    shell's working directory to it once the OS has booted, so the user lands
    in their preferred directory instead of the filesystem root.  If the
    directory does not yet exist it is created first. */
+void ShellBootRunROB(void)
+{
+    char *List = NULL;
+    uint32_t Index = 0;
+    uint32_t Ran = 0;
+    char SavedCwd[DISKFS_PATH_MAX];
+    char Enabled[8];
+
+    if (!DiskFsIsMounted())
+        return;
+
+    /* ROB is controlled by the registry but its path is fixed and preserved. */
+    if (RegistryReadText("/REG/BOOT/ROB.ENABLED.V", Enabled, sizeof(Enabled)) &&
+        Enabled[0] == '0')
+        return;
+
+    List = (char *)kmalloc(SELFHOST_MAX_LIST);
+    if (!List)
+        return;
+
+    DiskFsPwd(SavedCwd, sizeof(SavedCwd));
+    if (!DiskFsChdirPath("/REG/NullOS/ROB"))
+    {
+        kfree(List);
+        return;
+    }
+
+    DiskFsListNames(List, SELFHOST_MAX_LIST);
+    DiskFsChdirPath(SavedCwd);
+
+    while (List[Index] != '\0')
+    {
+        uint32_t Start = Index;
+        char Name[FAT32_SHORT_NAME_MAX + 1U];
+        uint32_t Length;
+
+        while (List[Index] != '\0' && List[Index] != '\n')
+            Index++;
+
+        Length = Index - Start;
+        if (Length > 0 && Length < sizeof(Name))
+        {
+            memcpy(Name, &List[Start], Length);
+            Name[Length] = '\0';
+
+            /* Directories are namespaces, not executable images. Every
+               regular file is offered to the ELF loader; non-ELF files are
+               simply ignored, so README/config files cannot break boot. */
+            if (!DiskFsIsDirectory(Name))
+            {
+                FAT32DirectoryEntry Entry;
+                if (DiskFsFindInPath("/REG/NullOS/ROB", Name, &Entry) &&
+                    Entry.FileSize > 0 && Entry.FileSize <= SELFHOST_MAX_IMAGE)
+                {
+                    if (SelfHostRunExeInDir("/REG/NullOS/ROB", Name))
+                        Ran++;
+                }
+            }
+        }
+
+        if (List[Index] == '\n')
+            Index++;
+    }
+
+    DiskFsChdirPath(SavedCwd);
+    kfree(List);
+
+    TerminalWrite32("ROB: executable scan complete, ran ", PromColor);
+    SelfHostPrintUInt32(Ran);
+    TerminalPrintLine32(" image(s)", PromColor);
+}
+
 void ShellApplyDefDir(void)
 {
     uint8_t Buf[DISKFS_PATH_MAX];

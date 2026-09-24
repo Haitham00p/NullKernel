@@ -10,8 +10,79 @@
 #include "commands/lowlevel.h"
 #include "bootmonitor/bootmonitor.h"
 #include "arch/x86_64/power/pwr.h"
+#include "kernel/ring/ring3.h"
+#include "mm/pmm.h"
+#include "mm/vmm.h"
+#include "arch/x86_64/acpi/acpi.h"
+#include "kernel/task/task.h"
+#include "kernel/sched/scheduler.h"
+#include "kernel/process/process.h"
+#include "kernel/syscall/syscall.h"
+#include "kernel/registry/registry.h"
 
 void DispatcherDispatch(const PARSED_COMMAND *Command){
+    if (strcmp(Command->Command, "rob") == 0) {
+        if (Command->ArgCount != 0U) { TerminalPrintLine32("Usage: rob", 0x00FF0000U); return; }
+        ShellBootRunROB();
+        return;
+    }
+    if (strcmp(Command->Command, "registry") == 0) {
+        if (Command->ArgCount != 0U) { TerminalPrintLine32("Usage: registry", 0x00FF0000U); return; }
+        TerminalWrite32("Registry version: ", PromColor);
+        TerminalPrintHex64Compact(RegistryVersion());
+        TerminalNewLine32(BackSpaceColor);
+        return;
+    }
+    if (strcmp(Command->Command, "proc") == 0) {
+        TerminalWrite32("Processes: ", PromColor); TerminalPrintHex64Compact(ProcessCount()); TerminalNewLine32(BackSpaceColor);
+        TerminalWrite32("Current PID: ", PromColor); TerminalPrintHex64Compact(ProcessCurrentId()); TerminalNewLine32(BackSpaceColor);
+        return;
+    }
+    if (strcmp(Command->Command, "procnew") == 0) {
+        if (Command->ArgCount != 0U) { TerminalPrintLine32("Usage: procnew", 0x00FF0000U); return; }
+        NullProcess *p=ProcessCreate();
+        TerminalPrintLine32(p ? "process created" : "process creation failed", p ? PromColor : 0x00FF0000U);
+        return;
+    }
+    if (strcmp(Command->Command, "syscalls") == 0) {
+        TerminalWrite32("Syscalls: ", PromColor); TerminalPrintHex64Compact(SyscallCount()); TerminalNewLine32(BackSpaceColor);
+        return;
+    }
+    if (strcmp(Command->Command, "sched") == 0) {
+        TerminalWrite32("Ticks: ", PromColor); TerminalPrintHex64Compact(SchedulerTicks());
+        TerminalWrite32(" Quantum: ", PromColor); TerminalPrintHex64Compact(SchedulerQuantum()); TerminalNewLine32(BackSpaceColor);
+        return;
+    }
+    if (strcmp(Command->Command, "quantum") == 0) {
+        if (Command->ArgCount != 1U) { TerminalPrintLine32("Usage: quantum <ticks>", 0x00FF0000U); return; }
+        uint64_t q=0; if(!ShellArgToUInt64(Command->Args[0],&q)||q==0){TerminalPrintLine32("quantum: invalid value",0x00FF0000U);return;}
+        SchedulerSetQuantum(q); TerminalPrintLine32("scheduler quantum updated",PromColor); return;
+    }
+    if (strcmp(Command->Command, "ring3") == 0) {
+        if (Command->ArgCount != 0U) { TerminalPrintLine32("Usage: ring3", 0x00FF0000U); return; }
+        Ring3Demo();
+        return;
+    }
+    if (strcmp(Command->Command, "mm") == 0) {
+        TerminalWrite32("PMM total/free pages: ", PromColor);
+        TerminalPrintHex64Compact(PmmTotalPages()); TerminalWrite32("/", PromColor);
+        TerminalPrintHex64Compact(PmmFreePages()); TerminalNewLine32(BackSpaceColor);
+        TerminalWrite32("VMM root: ", PromColor); TerminalPrintHex64Compact(VmmCurrentRoot()); TerminalNewLine32(BackSpaceColor);
+        return;
+    }
+    if (strcmp(Command->Command, "acpi") == 0) {
+        TerminalWrite32("ACPI: ", PromColor);
+        TerminalPrintLine32(AcpiReady() ? "ready" : "not available", PromColor);
+        if (AcpiReady()) { TerminalWrite32("XSDT: ", PromColor); TerminalPrintHex64Compact(AcpiXsdt()); TerminalNewLine32(BackSpaceColor); TerminalWrite32("LAPIC: ", PromColor); TerminalPrintHex64Compact(AcpiLocalApicAddress()); TerminalNewLine32(BackSpaceColor); TerminalWrite32("CPUs: ", PromColor); TerminalPrintHex64Compact(AcpiCpuCount()); TerminalNewLine32(BackSpaceColor); }
+        return;
+    }
+    if (strcmp(Command->Command, "taskdemo") == 0) { if (Command->ArgCount != 0U) { TerminalPrintLine32("Usage: taskdemo", 0x00FF0000U); return; } TaskRunDemo(); return; }
+    if (strcmp(Command->Command, "tasks") == 0) {
+        TerminalWrite32("Tasks: ", PromColor); TerminalPrintHex64Compact(TaskCount()); TerminalNewLine32(BackSpaceColor);
+        TerminalWrite32("Scheduler ticks: ", PromColor); TerminalPrintHex64Compact(SchedulerTicks()); TerminalNewLine32(BackSpaceColor);
+        return;
+    }
+
     if (strcmp(Command->Command, "reboot-c") == 0)
     {
         if (Command->ArgCount != 0U)

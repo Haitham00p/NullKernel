@@ -36,6 +36,9 @@ LDFLAGS := \
 
 C_SOURCES := \
 	arch/x86_64/cpu/io.c \
+	arch/x86_64/cpu/gdt.c \
+	arch/x86_64/acpi/acpi.c \
+	arch/x86_64/pci/pci.c \
 	arch/x86_64/interrupts/idt.c \
 	arch/x86_64/interrupts/isr.c \
 	arch/x86_64/interrupts/irq.c \
@@ -62,6 +65,12 @@ C_SOURCES := \
 	kernel/terminal/terminal.c \
 	kernel/terminal/cursor.c \
 	kernel/kernel.c \
+	kernel/ring/ring3.c \
+	kernel/task/task.c \
+	kernel/process/process.c \
+	kernel/syscall/syscall.c \
+	kernel/sched/scheduler.c \
+	kernel/registry/registry.c \
 	kernel/elf/elf_loader.c \
 	installer/installer.c \
 	lib/delay/delay.c \
@@ -70,6 +79,8 @@ C_SOURCES := \
 	libc/stdio.c \
 	libc/stdlib.c \
 	libc/string.c \
+	mm/pmm.c \
+	mm/vmm.c \
 	mm/heap/heap.c \
 	ncc/ncc.c \
 	ncc/vault_gen.c \
@@ -106,7 +117,9 @@ ASM_OBJECTS := \
 	$(BUILD_DIR)/arch/x86_64/interrupts/isr_asm.o \
 	$(BUILD_DIR)/arch/x86_64/interrupts/irq_asm.o \
 	$(BUILD_DIR)/arch/x86_64/program/run_asm.o \
-	$(BUILD_DIR)/arch/x86_64/bootasm.o
+	$(BUILD_DIR)/arch/x86_64/bootasm.o \
+	$(BUILD_DIR)/arch/x86_64/cpu/ring3.o \
+	$(BUILD_DIR)/arch/x86_64/cpu/context.o
 
 OBJECTS := $(C_SOURCES:%.c=$(BUILD_DIR)/%.o) $(ASM_OBJECTS)
 
@@ -159,6 +172,10 @@ $(BUILD_DIR)/arch/x86_64/bootasm.o: arch/x86_64/bootasm.asm
 	@mkdir -p $(@D)
 	$(NASM) -f elf64 $< -o $@
 
+$(BUILD_DIR)/arch/x86_64/cpu/ring3.o: arch/x86_64/cpu/ring3.asm
+	@mkdir -p $(@D)
+	$(NASM) -f elf64 $< -o $@
+
 ROOTFS_FILES := $(shell find rootfs -type f 2>/dev/null)
 
 $(ISO): $(KERNEL) $(ROOTFS_FILES) iso/boot/limine/limine.conf iso/EFI/BOOT/BOOTX64.EFI
@@ -208,3 +225,6 @@ play: $(ISO)
 
 clean:
 	rm -rf $(BUILD_DIR) .vault-stamp
+$(BUILD_DIR)/arch/x86_64/cpu/context.o: arch/x86_64/cpu/context.asm
+	@mkdir -p $(@D)
+	$(NASM) -f elf64 $< -o $@

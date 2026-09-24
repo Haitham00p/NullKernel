@@ -1,0 +1,4 @@
+#include kernel/syscall/syscall.h
+
+API: SyscallInitialize, SyscallDispatch, SyscallCount.
+Current ABI numbers: 0 NULL, 1 WRITE, 2 GETPID, 3 YIELD.

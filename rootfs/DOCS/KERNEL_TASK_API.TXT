@@ -1,0 +1,37 @@
+NullOS Task / Scheduler / Process API
+====================================
+Task:
+ TaskSystemInitialize()
+ TaskCreate(entry)
+ TaskYield()
+ TaskExit()
+ TaskRunDemo()
+ TaskScheduleFromInterrupt(frame)
+ TaskYieldFromInterrupt(frame)
+ TaskCurrent()
+ TaskCount()
+ TaskCurrentId()
+ TaskCurrentCr3()
+
+Scheduler:
+ SchedulerInitialize()
+ SchedulerTick()
+ SchedulerTicks()
+ SchedulerSetQuantum(ticks)
+ SchedulerQuantum()
+ SchedulerShouldSwitch()
+
+Process:
+ ProcessSystemInitialize()
+ ProcessCreate()
+ ProcessDestroy(process)
+ ProcessCurrent()
+ ProcessCount()
+ ProcessCurrentId()
+ ProcessCreateAddressSpace()
+ ProcessSwitchAddressSpace(process)
+ ProcessCr3(process)
+
+A task is an execution context. A process owns an address-space/resource
+context. The timer interrupt saves the current IRQ frame and can return another
+task's frame; this is the mechanism used for preemption.

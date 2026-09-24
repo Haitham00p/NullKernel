@@ -1,0 +1,4 @@
+#include kernel/sched/scheduler.h
+
+API: SchedulerInitialize, SchedulerTick, SchedulerTicks,
+SchedulerSetQuantum, SchedulerQuantum, SchedulerShouldSwitch.
