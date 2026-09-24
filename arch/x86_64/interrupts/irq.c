@@ -52,24 +52,24 @@ void IRQInitialize(void)
         Install IRQ gates
     */
 
-    IDTSetGate(32, (uint64_t)IRQ0, 0x28, 0x8E);
-    IDTSetGate(33, (uint64_t)IRQ1, 0x28, 0x8E);
+    IDTSetGate(32, (uint64_t)IRQ0, 0x08, 0x8E);
+    IDTSetGate(33, (uint64_t)IRQ1, 0x08, 0x8E);
 
-    IDTSetGate(34, (uint64_t)IRQ2, 0x28, 0x8E);
-    IDTSetGate(35, (uint64_t)IRQ3, 0x28, 0x8E);
-    IDTSetGate(36, (uint64_t)IRQ4, 0x28, 0x8E);
-    IDTSetGate(37, (uint64_t)IRQ5, 0x28, 0x8E);
-    IDTSetGate(38, (uint64_t)IRQ6, 0x28, 0x8E);
-    IDTSetGate(39, (uint64_t)IRQ7, 0x28, 0x8E);
+    IDTSetGate(34, (uint64_t)IRQ2, 0x08, 0x8E);
+    IDTSetGate(35, (uint64_t)IRQ3, 0x08, 0x8E);
+    IDTSetGate(36, (uint64_t)IRQ4, 0x08, 0x8E);
+    IDTSetGate(37, (uint64_t)IRQ5, 0x08, 0x8E);
+    IDTSetGate(38, (uint64_t)IRQ6, 0x08, 0x8E);
+    IDTSetGate(39, (uint64_t)IRQ7, 0x08, 0x8E);
 
-    IDTSetGate(40, (uint64_t)IRQ8, 0x28, 0x8E);
-    IDTSetGate(41, (uint64_t)IRQ9, 0x28, 0x8E);
-    IDTSetGate(42, (uint64_t)IRQ10, 0x28, 0x8E);
-    IDTSetGate(43, (uint64_t)IRQ11, 0x28, 0x8E);
-    IDTSetGate(44, (uint64_t)IRQ12, 0x28, 0x8E);
-    IDTSetGate(45, (uint64_t)IRQ13, 0x28, 0x8E);
-    IDTSetGate(46, (uint64_t)IRQ14, 0x28, 0x8E);
-    IDTSetGate(47, (uint64_t)IRQ15, 0x28, 0x8E);
+    IDTSetGate(40, (uint64_t)IRQ8, 0x08, 0x8E);
+    IDTSetGate(41, (uint64_t)IRQ9, 0x08, 0x8E);
+    IDTSetGate(42, (uint64_t)IRQ10, 0x08, 0x8E);
+    IDTSetGate(43, (uint64_t)IRQ11, 0x08, 0x8E);
+    IDTSetGate(44, (uint64_t)IRQ12, 0x08, 0x8E);
+    IDTSetGate(45, (uint64_t)IRQ13, 0x08, 0x8E);
+    IDTSetGate(46, (uint64_t)IRQ14, 0x08, 0x8E);
+    IDTSetGate(47, (uint64_t)IRQ15, 0x08, 0x8E);
 
 
 
