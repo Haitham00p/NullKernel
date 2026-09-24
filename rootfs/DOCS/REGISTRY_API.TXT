@@ -1,0 +1,40 @@
+NullOS Registry API
+=================
+Persistent registry root: /REG
+Existing registry paths are preserved.
+
+Managed namespaces:
+ /REG/color
+ /REG/SYSTEM
+ /REG/SHELL
+ /REG/BOOT
+ /REG/PROCESS
+ /REG/SCHED
+ /REG/SYSCALL
+ /REG/MEMORY
+ /REG/ACPI
+ /REG/PCI
+ /REG/NullOS
+ /REG/NullOS/RAB   existing startup area, preserved
+ /REG/NullOS/ROB   boot executable area
+ /REG/NullOS/TASKS
+
+RegistryInitialize()
+RegistryEnsureLayout()
+RegistryReadText(key, out, max)
+RegistryWriteText(key, value)
+RegistryReadU64(key, &value)
+RegistryWriteU64(key, value)
+RegistryPathExists(key)
+RegistryVersion()
+
+Defaults:
+ /REG/SCHED/QUANTUM.V    0xA
+ /REG/PROCESS/MAX.V      0x20
+ /REG/SYSCALL/VERSION.V  0x1
+ /REG/MEMORY/PAGE_SIZE.V 0x1000
+ /REG/BOOT/ROB.ENABLED.V 1
+ /REG/BOOT/RAB.ENABLED.V 1
+
+These files are consumed by boot/system code; the directories are functional,
+not placeholders.
