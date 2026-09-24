@@ -1,0 +1,6 @@
+#include kernel/task/task.h
+
+API: TaskSystemInitialize, TaskCreate, TaskYield, TaskExit, TaskRunDemo,
+TaskScheduleFromInterrupt, TaskYieldFromInterrupt, TaskCurrent, TaskCount,
+TaskCurrentId, TaskCurrentCr3.
+Task scheduling uses a canonical IRQContext and timer preemption.
