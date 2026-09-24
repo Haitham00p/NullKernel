@@ -4,6 +4,7 @@
 #include "kernel/debug/debug.h"
 #include "kernel/terminal/terminal.h"
 #include <stdint.h>
+#include <stdbool.h>
 #define MAX_TASKS 32
 typedef enum { TASK_FREE=0, TASK_READY=1, TASK_RUNNING=2, TASK_DEAD=3 } TaskState;
 struct NullTask{uint64_t id,rsp,rip,cr3;uint8_t *stack;void (*entry)(void);TaskState state;};
