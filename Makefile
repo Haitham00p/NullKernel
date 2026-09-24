@@ -36,6 +36,9 @@ LDFLAGS := \
 
 C_SOURCES := \
 	arch/x86_64/cpu/io.c \
+	arch/x86_64/cpu/gdt.c \
+	arch/x86_64/acpi/acpi.c \
+	arch/x86_64/pci/pci.c \
 	arch/x86_64/interrupts/idt.c \
 	arch/x86_64/interrupts/isr.c \
 	arch/x86_64/interrupts/irq.c \
