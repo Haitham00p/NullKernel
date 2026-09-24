@@ -67,6 +67,8 @@ C_SOURCES := \
 	kernel/kernel.c \
 	kernel/ring/ring3.c \
 	kernel/task/task.c \
+	kernel/process/process.c \
+	kernel/syscall/syscall.c \
 	kernel/sched/scheduler.c \
 	kernel/elf/elf_loader.c \
 	installer/installer.c \
