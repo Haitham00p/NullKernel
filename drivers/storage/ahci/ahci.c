@@ -12,7 +12,6 @@
 #define AHCI_PROGIF 0x01U
 
 #define AHCI_GHC_AE (1U << 31)
-#define AHCI_GHC_HR (1U << 0)
 
 #define AHCI_PXCMD_ST (1U << 0)
 #define AHCI_PXCMD_FRE (1U << 4)
@@ -111,7 +110,6 @@ typedef struct __attribute__((packed))
 
 static HBA_MEM *g_HBA;
 static HBA_PORT *g_Port;
-static uint64_t g_PortPhysical;
 static uint64_t g_ClbPhysical;
 static uint64_t g_FisPhysical;
 static uint64_t g_CmdTablePhysical;
@@ -351,9 +349,9 @@ bool AHCIInitialize(void)
                     continue;
 
                 {
-                    uint32_t command = PciConfigRead32(bus, dev, fn, 0x04);
-                    command |= 0x00000006U;
-                    PciConfigWrite32(bus, dev, fn, 0x04, command);
+                    uint16_t command = (uint16_t)PciConfigRead32(bus, dev, fn, 0x04);
+                    command |= 0x0006U;
+                    PciConfigWrite16(bus, dev, fn, 0x04, command);
                 }
 
                 g_HBA = (HBA_MEM *)(uintptr_t)abar;
@@ -368,9 +366,7 @@ bool AHCIInitialize(void)
                     continue;
 
                 g_Port = &g_HBA->ports[portno];
-                g_PortPhysical = abar + 0x100 + (uint64_t)portno * 0x80;
-
-                if (!SetupPort(g_Port))
+                            if (!SetupPort(g_Port))
                     continue;
 
                 g_Ready = true;
