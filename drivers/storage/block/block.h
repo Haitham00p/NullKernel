@@ -10,5 +10,6 @@ bool BlockInitialize(void);
 bool BlockIsReady(void);
 bool BlockRead(uint64_t LBA, void *Buffer);
 bool BlockWrite(uint64_t LBA, const void *Buffer);
+uint64_t BlockGetSectorCount(void);
 
 #endif
