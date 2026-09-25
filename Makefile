@@ -142,13 +142,6 @@ $(KERNEL): $(OBJECTS)
 	@mkdir -p $(@D)
 	$(LD) $(LDFLAGS) -o $@ $^
 
-# Regenerates the self-hosting vault (embedded headers + kernel symbol
-# addresses) from the freshly linked kernel, then relinks with the new
-# vault. Two passes are needed: the first pass computes addresses from a
-# kernel carrying the previous vault, so data-symbol addresses can be
-# stale; the second pass regenerates from the relinked kernel and
-# converges (only the vault section size changes between passes).
-# Guarded by a stamp so repeated `make` runs stay quiet.
 vault: $(KERNEL)
 	@if [ ! -f .vault-stamp ] || [ "$(KERNEL)" -nt .vault-stamp ] || \
 	 [ -n "$$(find shell ncc n64a nld libc kernel lib drivers fs arch source include -name '*.c' -newer .vault-stamp -print -quit 2>/dev/null)" ]; then \
@@ -201,22 +194,13 @@ $(ISO): $(KERNEL) $(ROOTFS_FILES) iso/boot/limine/limine.conf iso/EFI/BOOT/BOOTX
 		--efi-boot boot/limine/limine-uefi-cd.bin -no-emul-boot \
 		-o $@ $(ISO_DIR)
 	$(LIMINE)/limine bios-install $@
-	@xorriso -indev $@ -find /rootfs -type d -print | grep -q "/rootfs"
-	@xorriso -indev $@ -find /rootfs/bin -type d -print | grep -qi "/rootfs/bin"
-	@xorriso -indev $@ -find /boot/kernel.elf -type f -print | grep -q "/boot/kernel.elf"
+	@xorriso -indev $@ -ls /rootfs >/dev/null
+	@xorriso -indev $@ -ls /rootfs/BIN >/dev/null
+	@xorriso -indev $@ -ls /boot/kernel.elf >/dev/null
 
-# Reinstall the freshly built ISO onto the working disk image so the OS
-# always reflects the current source tree (formats the disk from $(ISO),
-# copying the full rootfs with correct uppercase names). Run sync_rootfs
-# first if you have OS-side edits you want to keep.
 install: $(ISO)
 	./run-install.sh $(DISK) --auto
 
-# Boot the installed disk in a visible QEMU window so you can see the OS.
-# Runs in the foreground so `make` blocks on it and any error is visible.
-# The previous QEMU PID is recorded in a pidfile and killed by exact PID
-# only (no pattern matching, which would match this recipe's own shell and
-# kill `make` itself).
 boot: $(DISK)
 	@if [ -f /tmp/nullos-qemu.pid ]; then \
 		kill -9 "$$(cat /tmp/nullos-qemu.pid)" 2>/dev/null || true; \
