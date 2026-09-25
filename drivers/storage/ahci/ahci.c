@@ -337,7 +337,8 @@ static bool Transfer(uint64_t lba, void *buffer, bool write)
 
 bool AHCIInitialize(void)
 {
-    uint8_t bus, dev, fn;
+    uint16_t bus;
+    uint8_t dev, fn;
     uint32_t classreg;
     uint64_t abar = 0;
 
@@ -349,24 +350,24 @@ bool AHCIInitialize(void)
         {
             for (fn = 0; fn < 8; fn++)
             {
-                uint16_t vendor = PciVendor(bus, dev, fn);
+                uint16_t vendor = PciVendor((uint8_t)bus, dev, fn);
                 if (vendor == 0xFFFF)
                     continue;
 
-                classreg = ReadClass(bus, dev, fn);
+                classreg = ReadClass((uint8_t)bus, dev, fn);
                 if (((classreg >> 24) & 0xFFU) != AHCI_CLASS ||
                     ((classreg >> 16) & 0xFFU) != AHCI_SUBCLASS ||
                     ((classreg >> 8) & 0xFFU) != AHCI_PROGIF)
                     continue;
 
-                abar = ReadABAR(bus, dev, fn);
+                abar = ReadABAR((uint8_t)bus, dev, fn);
                 if (!abar)
                     continue;
 
                 {
-                    uint16_t command = (uint16_t)PciConfigRead32(bus, dev, fn, 0x04);
+                    uint16_t command = (uint16_t)PciConfigRead32((uint8_t)bus, dev, fn, 0x04);
                     command |= 0x0006U;
-                    PciConfigWrite16(bus, dev, fn, 0x04, command);
+                    PciConfigWrite16((uint8_t)bus, dev, fn, 0x04, command);
                 }
 
                 g_HBA = (HBA_MEM *)(uintptr_t)abar;
