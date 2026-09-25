@@ -60,8 +60,8 @@ typedef volatile struct
 {
     uint32_t dw0;
     uint32_t dw1;
-    uint32_t sq_head;
-    uint32_t sq_id;
+    uint32_t dw2;
+    uint32_t dw3;
 } NVME_COMPLETION;
 
 static volatile uint8_t *g_Bar;
@@ -152,33 +152,34 @@ static uint64_t ReadBAR(uint8_t bus, uint8_t dev, uint8_t fn)
 static bool FindController(uint8_t *outBus, uint8_t *outDev, uint8_t *outFn,
                            uint64_t *outBar)
 {
-    uint8_t bus, dev, fn;
+    uint16_t bus;
+    uint8_t dev, fn;
 
-    for (bus = 0; bus < 256; bus++)
+    for (bus = 0; bus < 256U; bus++)
     {
         for (dev = 0; dev < 32; dev++)
         {
             for (fn = 0; fn < 8; fn++)
             {
-                uint16_t vendor = PciVendor(bus, dev, fn);
+                uint16_t vendor = PciVendor((uint8_t)bus, dev, fn);
                 uint32_t classreg;
                 uint64_t bar;
 
                 if (vendor == 0xFFFF)
                     continue;
 
-                classreg = PciConfigRead32(bus, dev, fn, 0x08);
+                classreg = PciConfigRead32((uint8_t)bus, dev, fn, 0x08);
 
                 if (((classreg >> 24) & 0xFFU) != NVME_CLASS ||
                     ((classreg >> 16) & 0xFFU) != NVME_SUBCLASS ||
                     ((classreg >> 8) & 0xFFU) != NVME_PROGIF)
                     continue;
 
-                bar = ReadBAR(bus, dev, fn);
+                bar = ReadBAR((uint8_t)bus, dev, fn);
                 if (bar == 0)
                     continue;
 
-                *outBus = bus;
+                *outBus = (uint8_t)bus;
                 *outDev = dev;
                 *outFn = fn;
                 *outBar = bar;
@@ -314,7 +315,6 @@ static bool IdentifyNamespace(void)
     NVME_COMPLETION completion;
     volatile uint8_t *id;
     uint8_t flbas;
-    uint8_t lbaf;
     uint8_t lbads;
 
     g_IdentifyPhysical = PmmAllocPage();
@@ -337,7 +337,6 @@ static bool IdentifyNamespace(void)
     if (flbas >= 16)
         return false;
 
-    lbaf = id[128U + (uint32_t)flbas * 4U];
     lbads = id[130U + (uint32_t)flbas * 4U];
 
     if (lbads >= 32)
@@ -360,7 +359,7 @@ static bool CreateIOQueues(void)
     command.cdw0 = NVME_OP_CREATE_IO_CQ;
     command.prp1 = g_IOCQPhysical;
     command.cdw10 = 1U | ((NVME_IO_QD - 1U) << 16);
-    command.cdw11 = 1U;
+    command.cdw11 = 0U;
 
     if (!SubmitAdmin(&command, &completion))
         return false;
@@ -419,7 +418,7 @@ static bool Transfer(uint64_t lba, void *buffer, bool write)
     while (timeout++ < NVME_TIMEOUT)
     {
         NVME_COMPLETION *entry = &cq[g_IOCQHead];
-        uint16_t status = (uint16_t)(entry->dw3 >> 17);
+        uint16_t status = (uint16_t)((entry->dw3 >> 1) & 0x7FFFU);
         uint8_t phase = (uint8_t)(entry->dw3 & 1U);
 
         if (phase == g_IOCQPhase)
