@@ -46,6 +46,7 @@ C_SOURCES := \
 	drivers/input/keyboard/keyboard.c \
 	drivers/input/keyboard/keyboard_layout.c \
 	drivers/storage/ide/ide.c \
+	drivers/storage/nvme/nvme.c \
 	drivers/storage/ahci/ahci.c \
 	drivers/storage/block/block.c \
 	drivers/video_font/font.c \
