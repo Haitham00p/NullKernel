@@ -214,7 +214,7 @@ static bool SetupController(uint64_t cap)
      * NullOS currently allocates 4 KiB pages. MPS=0 therefore means
      * the controller must accept a 4 KiB memory page size.
      */
-    if (mpsmin > 0 || mpsmax < 0)
+    if (mpsmin > 0 || mpsmax < mpsmin)
         return false;
 
     if (mqes < NVME_ADMIN_QD || mqes < NVME_IO_QD)
@@ -284,7 +284,7 @@ static bool SubmitAdmin(NVME_COMMAND *command, NVME_COMPLETION *completion)
     while (timeout++ < NVME_TIMEOUT)
     {
         NVME_COMPLETION *entry = &cq[g_AdminCQHead];
-        uint16_t status = (uint16_t)(entry->dw3 >> 17);
+        uint16_t status = (uint16_t)((entry->dw3 >> 1) & 0x7FFFU);
         uint8_t phase = (uint8_t)(entry->dw3 & 1U);
 
         if (phase == g_AdminCQPhase)
@@ -355,9 +355,6 @@ static bool CreateIOQueues(void)
 {
     NVME_COMMAND command;
     NVME_COMPLETION completion;
-
-    g_IOSQPhysical = g_IOSQPhysical;
-    g_IOCQPhysical = g_IOCQPhysical;
 
     memset((void *)&command, 0, sizeof(command));
     command.cdw0 = NVME_OP_CREATE_IO_CQ;
