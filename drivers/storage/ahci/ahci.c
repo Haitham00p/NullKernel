@@ -184,6 +184,21 @@ static int FindPort(void)
     return -1;
 }
 
+static bool TakeOwnership(HBA_MEM *hba)
+{
+    uint32_t timeout = 0;
+
+    if ((hba->cap2 & 1U) == 0)
+        return true;
+
+    hba->bohc |= (1U << 1);
+
+    while ((hba->bohc & 1U) != 0 && timeout++ < AHCI_TIMEOUT)
+        __asm__ volatile("pause");
+
+    return (hba->bohc & 1U) == 0;
+}
+
 static bool SetupPort(HBA_PORT *port)
 {
     uint64_t clb = PmmAllocPage();
@@ -355,6 +370,10 @@ bool AHCIInitialize(void)
                 }
 
                 g_HBA = (HBA_MEM *)(uintptr_t)abar;
+
+                if (!TakeOwnership(g_HBA))
+                    continue;
+
                 g_HBA->ghc |= AHCI_GHC_AE;
 
                 /*
