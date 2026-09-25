@@ -1,4 +1,5 @@
-#include "block.h"#include "drivers/storage/nvme/nvme.h"
+#include "block.h"
+#include "drivers/storage/nvme/nvme.h"
 #include "drivers/storage/ahci/ahci.h"
 #include "drivers/storage/ide/ide.h"
 #include "include/drivers.h"
@@ -81,3 +82,5 @@ static void block_driver_init(void)
 {
     (void)BlockInitialize();
 }
+
+DRIVER_INIT(block_driver_init);
