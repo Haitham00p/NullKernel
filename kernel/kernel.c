@@ -132,13 +132,17 @@ void kernel_main(void)
     TerminalWrite32("Heap Type : ", 0xFFFFFFFF);
     TerminalPrintHex64Compact(HeapType);
     TerminalNewLine32(0x00000000);
-    TerminalPrintLine32("Enabling Interrupt System ...", 0xFFFFFFFF);
+    TerminalPrintLine32("Interrupt System: deferred until core drivers are ready", 0xFFFFFFFF);
+
+    /*
+     * Keep IRQs disabled while the remaining driver registry is brought up.
+     * In particular, PIT IRQ0 can arrive immediately after STI and enter the
+     * scheduler before the storage/driver layer and boot path are ready.
+     */
+    DriversInitAll();
 
     __asm__ volatile("sti");
-
     TerminalPrintLine32("InterruptSys online", 0xFFFFFFFF);
-
-    DriversInitAll();
 
     if (ISOIsReady())
         InstallerRun();
