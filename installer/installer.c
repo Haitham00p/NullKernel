@@ -828,6 +828,17 @@ bool InstallerRun(void)
 
     TerminalPrintLine32("  [phase] mounting /rootfs from ISO9660 CD", INST_COLOR_TITLE);
 
+    /* Driver initialization leaves the block layer on the install target
+       disk.  The live installer must explicitly select the CD before every
+       ISO9660 read; otherwise ISOFindPath() searches the FAT32 disk instead
+       of the boot media. */
+    if (!IDESelectCD())
+    {
+        TerminalPrintLine32("install: cannot select ATAPI CD-ROM", INST_COLOR_BAD);
+        DbgSerialWrite("INSTALL RESULT: FAIL (cannot select CD-ROM)\n");
+        return false;
+    }
+
     if (!ISOFindPath("/rootfs", &RootFs))
     {
     TerminalPrintLine32("install: /rootfs not found on CD", INST_COLOR_BAD);
