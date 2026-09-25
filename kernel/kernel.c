@@ -17,6 +17,7 @@
 #include "include/drivers.h"
 #include "../fs/ISO9660/iso9660.h"
 #include "drivers/storage/ide/ide.h"
+#include "arch/x86_64/power/pwr.h"
 #include "../Kernel/drivers/timer/PIT.h"
 #include "installer/installer.h"
 #include "libc/stdlib.h"
@@ -145,7 +146,17 @@ void kernel_main(void)
     TerminalPrintLine32("InterruptSys online", 0xFFFFFFFF);
 
     if (ISOIsReady())
-        InstallerRun();
+    {
+        bool Installed = InstallerRun();
+        if (Installed)
+        {
+            TerminalPrintLine32("Installer complete. Rebooting into the installed disk...", 0x0000FF00);
+            for (volatile uint64_t Delay = 0; Delay < 10000000ULL; Delay++)
+                __asm__ volatile("pause");
+            Reboot();
+            for (;;) __asm__ volatile("hlt");
+        }
+    }
 
     TerminalClear32(BackSpaceColor);
     DiskFsMount();
