@@ -2,7 +2,7 @@
 
 #include <stddef.h>
 
-#include "drivers/storage/ide/ide.h"
+#include "drivers/storage/block/block.h"
 #include "fs/fat32/fat/fat.h"
 #include "lib/string/string.h"
 
@@ -68,7 +68,7 @@ bool FAT32FileWriteFromReader(FAT32Directory *Directory, const char *Name,
             if (Bytes > FAT32_FILE_SECTOR_SIZE) Bytes = FAT32_FILE_SECTOR_SIZE;
             memset(Sector, 0, sizeof(Sector));
             if (!Reader(Context, Offset, Sector, Bytes) ||
-                !IDEWriteSector(ClusterLBA + SectorIndex, Sector)) return false;
+                !BlockWrite(ClusterLBA + SectorIndex, Sector)) return false;
             Offset += Bytes;
         }
         PreviousCluster = Cluster;
@@ -114,7 +114,7 @@ bool FAT32FileVerifyFromReader(const FAT32Directory *Directory, const char *Name
         {
             uint32_t Bytes = Size - Offset;
             if (Bytes > FAT32_FILE_SECTOR_SIZE) Bytes = FAT32_FILE_SECTOR_SIZE;
-            if (!IDEReadSector(ClusterLBA + SectorIndex, DiskSector) ||
+            if (!BlockRead(ClusterLBA + SectorIndex, DiskSector) ||
                 !Reader(Context, Offset, SourceSector, Bytes) ||
                 !FAT32FileBuffersEqual(DiskSector, SourceSector, Bytes))
             {
