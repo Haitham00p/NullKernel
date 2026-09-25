@@ -202,6 +202,7 @@ $(ISO): $(KERNEL) $(ROOTFS_FILES) iso/boot/limine/limine.conf iso/EFI/BOOT/BOOTX
 		-o $@ $(ISO_DIR)
 	$(LIMINE)/limine bios-install $@
 	@xorriso -indev $@ -find /rootfs -type d -print | grep -q "/rootfs"
+	@xorriso -indev $@ -find /rootfs/bin -type d -print | grep -qi "/rootfs/bin"
 	@xorriso -indev $@ -find /boot/kernel.elf -type f -print | grep -q "/boot/kernel.elf"
 
 # Reinstall the freshly built ISO onto the working disk image so the OS
