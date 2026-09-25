@@ -80,6 +80,7 @@ static uint8_t g_IOCQPhase;
 static uint16_t g_CommandId;
 static uint32_t g_NamespaceId;
 static uint32_t g_SectorSize;
+static uint64_t g_SectorCount;
 static bool g_Ready;
 
 static uint32_t Reg32(uint32_t offset)
@@ -343,8 +344,16 @@ static bool IdentifyNamespace(void)
         return false;
 
     g_SectorSize = 1U << lbads;
+    g_SectorCount = (uint64_t)id[0] |
+                    ((uint64_t)id[1] << 8) |
+                    ((uint64_t)id[2] << 16) |
+                    ((uint64_t)id[3] << 24) |
+                    ((uint64_t)id[4] << 32) |
+                    ((uint64_t)id[5] << 40) |
+                    ((uint64_t)id[6] << 48) |
+                    ((uint64_t)id[7] << 56);
 
-    if (g_SectorSize != 512U)
+    if (g_SectorSize != 512U || g_SectorCount == 0)
         return false;
 
     return true;
@@ -459,6 +468,7 @@ bool NVMeInitialize(void)
     g_Bar = 0;
     g_NamespaceId = 1;
     g_SectorSize = 0;
+    g_SectorCount = 0;
 
     if (!FindController(&bus, &dev, &fn, &bar))
         return false;
@@ -507,9 +517,7 @@ bool NVMeWriteSector(uint64_t LBA, const void *Buffer)
     return Transfer(LBA, (void *)Buffer, true);
 }
 
-static void nvme_driver_init(void)
+uint64_t NVMeGetSectorCount(void)
 {
-    (void)NVMeInitialize();
+    return g_Ready ? g_SectorCount : 0;
 }
-
-DRIVER_INIT(nvme_driver_init);
