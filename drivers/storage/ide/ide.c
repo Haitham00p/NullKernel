@@ -51,6 +51,10 @@ typedef struct {
 } IDEDevice;
 
 static IDEDevice g_ActiveDevice;
+static IDEDevice g_CDDevice;
+static IDEDevice g_DiskDevice;
+static bool g_HasCDDevice = false;
+static bool g_HasDiskDevice = false;
 static bool g_IDEInitialized = false;
 
 static void IDEDelay400ns(uint16_t io_base)
@@ -282,35 +286,48 @@ bool IDEInitialize(void)
     static const uint8_t drive_sels[2] = { ATA_MASTER, ATA_SLAVE };
 
     IDEDevice dev;
+
+    g_HasCDDevice = false;
+    g_HasDiskDevice = false;
+
+    /* Probe once and cache every device we find.  The live installer must
+       be able to switch back to the boot CD after the block layer selects
+       the ATA hard disk; re-probing an ATAPI device after ATA traffic can
+       be unreliable on some virtual/real IDE controllers. */
     for (int p = 0; p < 2; p++)
     {
         for (int d = 0; d < 2; d++)
         {
-            if (ProbeIDEDevice(io_ports[p], drive_sels[d], &dev))
+            if (!ProbeIDEDevice(io_ports[p], drive_sels[d], &dev))
+                continue;
+
+            if (dev.IsATAPI && !g_HasCDDevice)
             {
-                if (dev.IsATAPI)
-                {
-                    g_ActiveDevice = dev;
-                    g_IDEInitialized = true;
-                    DbgInfo("IDE Driver: ATAPI CD-ROM drive detected and active", (uintptr_t)IDEInitialize);
-                    return true;
-                }
+                g_CDDevice = dev;
+                g_HasCDDevice = true;
+            }
+            else if (!dev.IsATAPI && !g_HasDiskDevice)
+            {
+                g_DiskDevice = dev;
+                g_HasDiskDevice = true;
             }
         }
     }
 
-    for (int p = 0; p < 2; p++)
+    if (g_HasCDDevice)
     {
-        for (int d = 0; d < 2; d++)
-        {
-            if (ProbeIDEDevice(io_ports[p], drive_sels[d], &dev))
-            {
-                g_ActiveDevice = dev;
-                g_IDEInitialized = true;
-                DbgInfo("IDE Driver: ATA Hard Disk drive detected and active", (uintptr_t)IDEInitialize);
-                return true;
-            }
-        }
+        g_ActiveDevice = g_CDDevice;
+        g_IDEInitialized = true;
+        DbgInfo("IDE Driver: ATAPI CD-ROM drive detected and active", (uintptr_t)IDEInitialize);
+        return true;
+    }
+
+    if (g_HasDiskDevice)
+    {
+        g_ActiveDevice = g_DiskDevice;
+        g_IDEInitialized = true;
+        DbgInfo("IDE Driver: ATA Hard Disk drive detected and active", (uintptr_t)IDEInitialize);
+        return true;
     }
 
     DbgWarn("IDE Driver: No IDE device responding", (uintptr_t)IDEInitialize);
@@ -325,22 +342,12 @@ bool IDEIsATAPI(void)
 
 bool IDESelectDisk(void)
 {
-    static const uint16_t io_ports[2] = { ATA_PRIMARY_IO, ATA_SECONDARY_IO };
-    static const uint8_t drive_sels[2] = { ATA_MASTER, ATA_SLAVE };
-
-    IDEDevice dev;
-    for (int p = 0; p < 2; p++)
+    if (g_HasDiskDevice)
     {
-        for (int d = 0; d < 2; d++)
-        {
-            if (ProbeIDEDevice(io_ports[p], drive_sels[d], &dev) && !dev.IsATAPI)
-            {
-                g_ActiveDevice = dev;
-                g_IDEInitialized = true;
-                DbgInfo("IDE Driver: switched to ATA hard disk", (uintptr_t)IDESelectDisk);
-                return true;
-            }
-        }
+        g_ActiveDevice = g_DiskDevice;
+        g_IDEInitialized = true;
+        DbgInfo("IDE Driver: switched to ATA hard disk", (uintptr_t)IDESelectDisk);
+        return true;
     }
 
     DbgWarn("IDE Driver: no ATA hard disk found", (uintptr_t)IDESelectDisk);
@@ -349,22 +356,12 @@ bool IDESelectDisk(void)
 
 bool IDESelectCD(void)
 {
-    static const uint16_t io_ports[2] = { ATA_PRIMARY_IO, ATA_SECONDARY_IO };
-    static const uint8_t drive_sels[2] = { ATA_MASTER, ATA_SLAVE };
-
-    IDEDevice dev;
-    for (int p = 0; p < 2; p++)
+    if (g_HasCDDevice)
     {
-        for (int d = 0; d < 2; d++)
-        {
-            if (ProbeIDEDevice(io_ports[p], drive_sels[d], &dev) && dev.IsATAPI)
-            {
-                g_ActiveDevice = dev;
-                g_IDEInitialized = true;
-                DbgInfo("IDE Driver: switched to ATAPI CD-ROM", (uintptr_t)IDESelectCD);
-                return true;
-            }
-        }
+        g_ActiveDevice = g_CDDevice;
+        g_IDEInitialized = true;
+        DbgInfo("IDE Driver: switched to ATAPI CD-ROM", (uintptr_t)IDESelectCD);
+        return true;
     }
 
     DbgWarn("IDE Driver: no ATAPI CD-ROM found", (uintptr_t)IDESelectCD);
