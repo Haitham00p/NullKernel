@@ -60,6 +60,7 @@ C_SOURCES := \
 	fs/partition/mbr/mbr.c \
 	fs/ramfs/ramfs.c \
 	kernel/debug/debug.c \
+	kernel/LTSMT/ltsmt.c \
 	kernel/drivers_init.c \
 	kernel/panic/panic.c \
 	kernel/terminal/terminal.c \
@@ -119,7 +120,8 @@ ASM_OBJECTS := \
 	$(BUILD_DIR)/arch/x86_64/program/run_asm.o \
 	$(BUILD_DIR)/arch/x86_64/bootasm.o \
 	$(BUILD_DIR)/arch/x86_64/cpu/ring3.o \
-	$(BUILD_DIR)/arch/x86_64/cpu/context.o
+	$(BUILD_DIR)/arch/x86_64/cpu/context.o \
+	$(BUILD_DIR)/kernel/LTSMT/ltsmt.o
 
 OBJECTS := $(C_SOURCES:%.c=$(BUILD_DIR)/%.o) $(ASM_OBJECTS)
 
@@ -226,5 +228,9 @@ play: $(ISO)
 clean:
 	rm -rf $(BUILD_DIR) .vault-stamp
 $(BUILD_DIR)/arch/x86_64/cpu/context.o: arch/x86_64/cpu/context.asm
+	@mkdir -p $(@D)
+	$(NASM) -f elf64 $< -o $@
+
+$(BUILD_DIR)/kernel/LTSMT/ltsmt.o: kernel/LTSMT/ltsmt.asm
 	@mkdir -p $(@D)
 	$(NASM) -f elf64 $< -o $@
