@@ -5,14 +5,14 @@
 #define FAT32_BLOCK_SECTOR_SIZE       BLOCK_SECTOR_SIZE
 #define FAT32_ENTRY_SIZE             4U
 #define FAT32_ENTRIES_PER_SECTOR \
-    (FAT32_IDE_SECTOR_SIZE / FAT32_ENTRY_SIZE)
+    (FAT32_BLOCK_SECTOR_SIZE / FAT32_ENTRY_SIZE)
 
 /* FAT32 uses the generic 512-byte block interface, so the filesystem is
    independent of whether the install target is IDE, AHCI, or NVMe. */
 static bool FATCanAccess(const FAT32BootSector *Boot, uint32_t Cluster)
 {
     return FAT32IsValid(Boot) &&
-           Boot->BytesPerSector == FAT32_IDE_SECTOR_SIZE &&
+           Boot->BytesPerSector == FAT32_BLOCK_SECTOR_SIZE &&
            Cluster >= 2U;
 }
 
@@ -47,20 +47,20 @@ static bool FATGetEntryLocation(const FAT32BootSector *Boot,
     }
 
     FatOffset = (uint64_t)Cluster * FAT32_ENTRY_SIZE;
-    if (FatOffset >= (uint64_t)Boot->FATSize32 * FAT32_IDE_SECTOR_SIZE)
+    if (FatOffset >= (uint64_t)Boot->FATSize32 * FAT32_BLOCK_SECTOR_SIZE)
     {
         return false;
     }
 
     Sector = (uint64_t)PartitionStartLBA + Boot->ReservedSectorCount +
-             (FatOffset / FAT32_IDE_SECTOR_SIZE);
+             (FatOffset / FAT32_BLOCK_SECTOR_SIZE);
     if (Sector > UINT32_MAX)
     {
         return false;
     }
 
     *FatSector = (uint32_t)Sector;
-    *EntryOffset = (uint32_t)(FatOffset % FAT32_IDE_SECTOR_SIZE);
+    *EntryOffset = (uint32_t)(FatOffset % FAT32_BLOCK_SECTOR_SIZE);
     return true;
 }
 
@@ -83,7 +83,7 @@ bool FATIsBadCluster(uint32_t Cluster)
 bool FATReadEntry(const FAT32BootSector *Boot, uint32_t PartitionStartLBA,
                   uint32_t Cluster, uint32_t *NextCluster)
 {
-    uint8_t Sector[FAT32_IDE_SECTOR_SIZE];
+    uint8_t Sector[FAT32_BLOCK_SECTOR_SIZE];
     uint32_t FatSector;
     uint32_t EntryOffset;
 
@@ -103,7 +103,7 @@ bool FATReadEntry(const FAT32BootSector *Boot, uint32_t PartitionStartLBA,
 bool FATWriteEntry(const FAT32BootSector *Boot, uint32_t PartitionStartLBA,
                    uint32_t Cluster, uint32_t Value)
 {
-    uint8_t Sector[FAT32_IDE_SECTOR_SIZE];
+    uint8_t Sector[FAT32_BLOCK_SECTOR_SIZE];
     uint32_t FirstFatSector;
     uint32_t EntryOffset;
     uint32_t FatIndex;
@@ -145,7 +145,7 @@ bool FATWriteEntry(const FAT32BootSector *Boot, uint32_t PartitionStartLBA,
 uint32_t FATFindFreeCluster(const FAT32BootSector *Boot,
                             uint32_t PartitionStartLBA)
 {
-    uint8_t Sector[FAT32_IDE_SECTOR_SIZE];
+    uint8_t Sector[FAT32_BLOCK_SECTOR_SIZE];
     uint64_t EntryCount;
     uint64_t FatSector;
     uint64_t ClusterNumber;
@@ -154,7 +154,7 @@ uint32_t FATFindFreeCluster(const FAT32BootSector *Boot,
     uint32_t Cluster;
 
     if (!FAT32IsValid(Boot) ||
-        Boot->BytesPerSector != FAT32_IDE_SECTOR_SIZE)
+        Boot->BytesPerSector != FAT32_BLOCK_SECTOR_SIZE)
     {
         return 0;
     }
