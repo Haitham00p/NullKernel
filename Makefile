@@ -130,11 +130,13 @@ OBJECTS := $(C_SOURCES:%.c=$(BUILD_DIR)/%.o) $(ASM_OBJECTS)
 
 -include $(C_SOURCES:%.c=$(BUILD_DIR)/%.d)
 
-.PHONY: all clean vault run play install boot
+.PHONY: all clean vault run play install boot iso
 
 .NOTPARALLEL:
 
 all: vault $(ISO)
+
+iso: $(ISO)
 
 $(KERNEL): $(OBJECTS)
 	@mkdir -p $(@D)
@@ -199,6 +201,8 @@ $(ISO): $(KERNEL) $(ROOTFS_FILES) iso/boot/limine/limine.conf iso/EFI/BOOT/BOOTX
 		--efi-boot boot/limine/limine-uefi-cd.bin -no-emul-boot \
 		-o $@ $(ISO_DIR)
 	$(LIMINE)/limine bios-install $@
+	@xorriso -indev $@ -find /rootfs -type d -print | grep -q "/rootfs"
+	@xorriso -indev $@ -find /boot/kernel.elf -type f -print | grep -q "/boot/kernel.elf"
 
 # Reinstall the freshly built ISO onto the working disk image so the OS
 # always reflects the current source tree (formats the disk from $(ISO),
