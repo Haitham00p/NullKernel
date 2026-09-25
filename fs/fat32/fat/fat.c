@@ -1,13 +1,14 @@
 #include "fat.h"
 
-#include "drivers/storage/ide/ide.h"
+#include "drivers/storage/block/block.h"
 
-#define FAT32_IDE_SECTOR_SIZE       512U
+#define FAT32_BLOCK_SECTOR_SIZE       BLOCK_SECTOR_SIZE
 #define FAT32_ENTRY_SIZE             4U
 #define FAT32_ENTRIES_PER_SECTOR \
     (FAT32_IDE_SECTOR_SIZE / FAT32_ENTRY_SIZE)
 
-/* This layer uses the current IDE driver's fixed 512-byte sector interface. */
+/* FAT32 uses the generic 512-byte block interface, so the filesystem is
+   independent of whether the install target is IDE, AHCI, or NVMe. */
 static bool FATCanAccess(const FAT32BootSector *Boot, uint32_t Cluster)
 {
     return FAT32IsValid(Boot) &&
@@ -89,7 +90,7 @@ bool FATReadEntry(const FAT32BootSector *Boot, uint32_t PartitionStartLBA,
     if (NextCluster == 0 ||
         !FATGetEntryLocation(Boot, PartitionStartLBA, Cluster,
                              &FatSector, &EntryOffset) ||
-        !IDEReadSector(FatSector, Sector))
+        !BlockRead(FatSector, Sector))
     {
         return false;
     }
@@ -123,7 +124,7 @@ bool FATWriteEntry(const FAT32BootSector *Boot, uint32_t PartitionStartLBA,
         uint32_t Existing;
 
         if (SectorLBA > UINT32_MAX ||
-            !IDEReadSector((uint32_t)SectorLBA, Sector))
+            !BlockRead((uint32_t)SectorLBA, Sector))
         {
             return false;
         }
@@ -132,7 +133,7 @@ bool FATWriteEntry(const FAT32BootSector *Boot, uint32_t PartitionStartLBA,
         FATWriteLittleEndian32(&Sector[EntryOffset],
                                (Existing & ~FAT32_CLUSTER_MASK) | Value);
 
-        if (!IDEWriteSector((uint32_t)SectorLBA, Sector))
+        if (!BlockWrite((uint32_t)SectorLBA, Sector))
         {
             return false;
         }
@@ -185,7 +186,7 @@ uint32_t FATFindFreeCluster(const FAT32BootSector *Boot,
                              Boot->ReservedSectorCount + FatSector;
 
         if (SectorLBA > UINT32_MAX ||
-            !IDEReadSector((uint32_t)SectorLBA, Sector))
+            !BlockRead((uint32_t)SectorLBA, Sector))
         {
             return 0;
         }
