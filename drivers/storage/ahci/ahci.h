@@ -8,5 +8,6 @@ bool AHCIInitialize(void);
 bool AHCIIsReady(void);
 bool AHCIReadSector(uint64_t LBA, void *Buffer);
 bool AHCIWriteSector(uint64_t LBA, const void *Buffer);
+uint64_t AHCIGetSectorCount(void);
 
 #endif

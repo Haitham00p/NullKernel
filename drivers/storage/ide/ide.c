@@ -48,6 +48,7 @@ typedef struct {
     uint8_t DriveSelect;
     bool Present;
     bool IsATAPI;
+    uint64_t SectorCount;
 } IDEDevice;
 
 static IDEDevice g_ActiveDevice;
@@ -102,11 +103,11 @@ static void IDESelectDrivePort(uint16_t io_base, uint8_t drive_sel)
     IDEDelay400ns(io_base);
 }
 
-static bool IDEReadATAPISector(uint32_t lba, void *buffer)
+static bool IDEReadATAPISectorOn(const IDEDevice *dev, uint32_t lba, void *buffer)
 {
-    uint16_t io = g_ActiveDevice.IoBase;
+    uint16_t io = dev->IoBase;
 
-    IDESelectDrivePort(io, g_ActiveDevice.DriveSelect);
+    IDESelectDrivePort(io, dev->DriveSelect);
     if (!IDEWaitBusyTimeout(io)) return false;
 
     Outb(io + ATA_REG_FEATURES, 0x00);
@@ -146,11 +147,11 @@ static bool IDEReadATAPISector(uint32_t lba, void *buffer)
     return true;
 }
 
-static bool IDEReadATASector(uint32_t lba, void *buffer)
+static bool IDEReadATASectorOn(const IDEDevice *dev, uint32_t lba, void *buffer)
 {
-    uint16_t io = g_ActiveDevice.IoBase;
+    uint16_t io = dev->IoBase;
 
-    IDESelectDrivePort(io, g_ActiveDevice.DriveSelect | ((lba >> 24) & 0x0F));
+    IDESelectDrivePort(io, dev->DriveSelect | ((lba >> 24) & 0x0F));
     if (!IDEWaitBusyTimeout(io)) return false;
 
     Outb(io + ATA_REG_SECTOR_COUNT, 1);
@@ -173,33 +174,17 @@ static bool IDEReadATASector(uint32_t lba, void *buffer)
     return true;
 }
 
-bool IDEReadSector(uint32_t LBA, void *Buffer)
+static bool IDEWriteATASectorOn(const IDEDevice *dev, uint32_t lba, const void *buffer)
 {
-    if (!g_IDEInitialized || Buffer == NULL) return false;
+    uint16_t io = dev->IoBase;
 
-    if (g_ActiveDevice.IsATAPI)
-    {
-        return IDEReadATAPISector(LBA, Buffer);
-    }
-    else
-    {
-        return IDEReadATASector(LBA, Buffer);
-    }
-}
-
-bool IDEWriteSector(uint32_t LBA, const void *Buffer)
-{
-    if (!g_IDEInitialized || Buffer == NULL || g_ActiveDevice.IsATAPI) return false;
-
-    uint16_t io = g_ActiveDevice.IoBase;
-
-    IDESelectDrivePort(io, g_ActiveDevice.DriveSelect | ((LBA >> 24) & 0x0F));
+    IDESelectDrivePort(io, dev->DriveSelect | ((lba >> 24) & 0x0F));
     if (!IDEWaitBusyTimeout(io)) return false;
 
     Outb(io + ATA_REG_SECTOR_COUNT, 1);
-    Outb(io + ATA_REG_LBA0, (uint8_t)LBA);
-    Outb(io + ATA_REG_LBA1, (uint8_t)(LBA >> 8));
-    Outb(io + ATA_REG_LBA2, (uint8_t)(LBA >> 16));
+    Outb(io + ATA_REG_LBA0, (uint8_t)lba);
+    Outb(io + ATA_REG_LBA1, (uint8_t)(lba >> 8));
+    Outb(io + ATA_REG_LBA2, (uint8_t)(lba >> 16));
 
     Outb(io + ATA_REG_COMMAND, ATA_CMD_WRITE_PIO);
     IDEDelay400ns(io);
@@ -207,7 +192,7 @@ bool IDEWriteSector(uint32_t LBA, const void *Buffer)
     if (!IDEWaitBusyTimeout(io)) return false;
     if (!IDEWaitDRQTimeout(io)) return false;
 
-    const uint16_t *src = (const uint16_t *)Buffer;
+    const uint16_t *src = (const uint16_t *)buffer;
     for (int i = 0; i < 256; i++)
     {
         Outw(io + ATA_REG_DATA, src[i]);
@@ -218,12 +203,106 @@ bool IDEWriteSector(uint32_t LBA, const void *Buffer)
     return true;
 }
 
+/* Parses the 512-byte IDENTIFY payload for the 48-bit sector count. */
+static uint64_t IDEIdentifySectorCount(const uint16_t *identify)
+{
+    bool lba48;
+    uint64_t count;
+
+    if (identify == NULL)
+    {
+        return 0;
+    }
+
+    /* Word 83 bit 10: 48-bit addressing supported. */
+    lba48 = (identify[83] & (1U << 10)) != 0;
+
+    if (lba48)
+    {
+        count = (uint64_t)identify[100] |
+                ((uint64_t)identify[101] << 16) |
+                ((uint64_t)identify[102] << 32) |
+                ((uint64_t)identify[103] << 48);
+    }
+    else
+    {
+        count = (uint64_t)identify[60] |
+                ((uint64_t)identify[61] << 16);
+    }
+
+    return count;
+}
+
+bool IDEReadSector(uint32_t LBA, void *Buffer)
+{
+    if (!g_IDEInitialized || Buffer == NULL) return false;
+
+    if (g_ActiveDevice.IsATAPI)
+    {
+        return IDEReadATAPISectorOn(&g_ActiveDevice, LBA, Buffer);
+    }
+    else
+    {
+        return IDEReadATASectorOn(&g_ActiveDevice, LBA, Buffer);
+    }
+}
+
+bool IDEWriteSector(uint32_t LBA, const void *Buffer)
+{
+    if (!g_IDEInitialized || Buffer == NULL || g_ActiveDevice.IsATAPI) return false;
+    return IDEWriteATASectorOn(&g_ActiveDevice, LBA, Buffer);
+}
+
+/* Block-layer entry points: ALWAYS the ATA hard disk, never the CD. */
+bool IDEReadDiskSector(uint32_t LBA, void *Buffer)
+{
+    if (!g_IDEInitialized || !g_HasDiskDevice || Buffer == NULL) return false;
+    return IDEReadATASectorOn(&g_DiskDevice, LBA, Buffer);
+}
+
+bool IDEWriteDiskSector(uint32_t LBA, const void *Buffer)
+{
+    if (!g_IDEInitialized || !g_HasDiskDevice || Buffer == NULL) return false;
+    return IDEWriteATASectorOn(&g_DiskDevice, LBA, Buffer);
+}
+
+/* ISO9660 entry point: ALWAYS the ATAPI CD-ROM. */
+bool IDEReadCDSector(uint32_t LBA, void *Buffer)
+{
+    if (!g_IDEInitialized || !g_HasCDDevice || Buffer == NULL) return false;
+    return IDEReadATAPISectorOn(&g_CDDevice, LBA, Buffer);
+}
+
+uint64_t IDEGetSectorCount(void)
+{
+    if (!g_IDEInitialized || !g_HasDiskDevice)
+    {
+        return 0;
+    }
+    return g_DiskDevice.SectorCount;
+}
+
+bool IDEIsReadyCD(void)
+{
+    return g_IDEInitialized && g_HasCDDevice;
+}
+
+bool IDEIsReadyDisk(void)
+{
+    return g_IDEInitialized && g_HasDiskDevice;
+}
+
 static bool ProbeIDEDevice(uint16_t io_base, uint8_t drive_sel, IDEDevice *dev)
 {
+    uint16_t identify[256];
+
     dev->IoBase = io_base;
+    dev->ControlBase = (io_base == ATA_PRIMARY_IO) ? ATA_PRIMARY_CONTROL
+                                                   : ATA_SECONDARY_CONTROL;
     dev->DriveSelect = drive_sel;
     dev->Present = false;
     dev->IsATAPI = false;
+    dev->SectorCount = 0;
 
     IDESelectDrivePort(io_base, drive_sel);
     if (!IDEWaitBusyTimeout(io_base)) return false;
@@ -262,6 +341,7 @@ static bool ProbeIDEDevice(uint16_t io_base, uint8_t drive_sel, IDEDevice *dev)
             (void)buf;
             dev->Present = true;
             dev->IsATAPI = true;
+            dev->SectorCount = 0;
             return true;
         }
         return false;
@@ -269,11 +349,10 @@ static bool ProbeIDEDevice(uint16_t io_base, uint8_t drive_sel, IDEDevice *dev)
 
     if (IDEWaitDRQTimeout(io_base))
     {
-        uint16_t buf[256];
-        for (int i = 0; i < 256; i++) buf[i] = Inw(io_base + ATA_REG_DATA);
-        (void)buf;
+        for (int i = 0; i < 256; i++) identify[i] = Inw(io_base + ATA_REG_DATA);
         dev->Present = true;
         dev->IsATAPI = false;
+        dev->SectorCount = IDEIdentifySectorCount(identify);
         return true;
     }
 

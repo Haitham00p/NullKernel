@@ -45,6 +45,10 @@ static uint32_t g_StagedDirs  = 0;
 static uint32_t g_StagedBytes = 0;
 static uint32_t g_MaxDepth    = 0;
 
+/* Any failed FAT32 write (file, directory or subtree) marks the install as
+   failed; SUCCESS is only reported when every staged node made it to disk. */
+static uint32_t g_WriteFailures = 0;
+
 #define INSTALL_PARTITION_LBA 2048U
 #define INSTALL_RESERVED_SECTORS 32U
 #define INSTALL_FAT_COUNT 2U
@@ -69,14 +73,7 @@ static void InstallBar(const char *Title)
                         INST_COLOR_HEADER);
 }
 
-static void InstallField(const char *Name, const char *Value)
-{
-    TerminalWrite32("  ", PromColor);
-    TerminalWrite32(Name, INST_COLOR_FIELD);
-    TerminalWrite32(" : ", PromColor);
-    TerminalWrite32(Value, PromColor);
-    TerminalPutChar32('\n', PromColor);
-}
+
 
 static void InstallSerialHex(const uint8_t *Bytes, uint32_t Count)
 {
@@ -123,34 +120,7 @@ static void InstallSerialNumber(uint64_t Value)
 
 static bool InstallParseRecord(const uint8_t *Record, ISODirRecord *Out)
 {
-    uint8_t Len;
-    uint8_t CopyLen;
-
-    if (Record == NULL || Out == NULL)
-    {
-        return false;
-    }
-
-    Len = Record[0];
-    if (Len < 33)
-    {
-        return false;
-    }
-
-    Out->Length = Len;
-    memcpy(&Out->ExtentLBA, Record + 2, 4);
-    memcpy(&Out->DataLength, Record + 10, 4);
-    Out->Flags = Record[25];
-    Out->FileIdentifierLength = Record[32];
-
-    CopyLen = Out->FileIdentifierLength < 255U ? Out->FileIdentifierLength : 255U;
-    for (uint8_t i = 0; i < CopyLen; i++)
-    {
-        Out->FileIdentifier[i] = (char)Record[33 + i];
-    }
-    Out->FileIdentifier[CopyLen] = '\0';
-
-    return true;
+    return ISOParseDirectoryRecord(Record, Out);
 }
 
 /* Strips ";1" version suffix and trailing dot from ISO names. */
@@ -297,6 +267,7 @@ static bool InstallWriteNode(const FAT32Directory *Parent, const InstallNode *No
 
         if (!FAT32DirectoryCreateDirectory((FAT32Directory *)Parent, Node->Name, &Child))
         {
+            g_WriteFailures++;
             return false;
         }
         for (Node = Node->Child; Node != NULL; Node = Node->Next)
@@ -309,8 +280,13 @@ static bool InstallWriteNode(const FAT32Directory *Parent, const InstallNode *No
         return true;
     }
 
-    return FAT32FileWriteFromReader((FAT32Directory *)Parent, Node->Name,
-                                    Node->Size, InstallRamReader, (void *)Node);
+    if (!FAT32FileWriteFromReader((FAT32Directory *)Parent, Node->Name,
+                                  Node->Size, InstallRamReader, (void *)Node))
+    {
+        g_WriteFailures++;
+        return false;
+    }
+    return true;
 }
 
 /* Counts free (unallocated) clusters in the FAT table. */
@@ -442,73 +418,103 @@ static void InstallDumpBPB(const FAT32BootSector *Boot, uint32_t PartitionStartL
     (void)Hex;
 }
 
-/* Phase 5: verification walk over the freshly written disk root. */
+/* Phase 5: full recursive verification. Every staged file and directory must
+   be present on disk with the expected size; SUCCESS is only printed when all
+   staged entries are found. */
 typedef struct
 {
-    const InstallNode *Expected;
     uint32_t FoundEntries;
     uint32_t Missing;
+    uint32_t SizeMismatch;
     uint32_t BytesOnDisk;
 } InstallVerifyCtx;
 
-static bool InstallVerifyVisitor(const FAT32DirectoryEntry *Entry,
-                                 const char *ShortName, void *Context)
+/* Recurses over DiskDir, matching every child of the StagedDir node against
+   the freshly written FAT32 tree. */
+static bool InstallVerifyRecurse(const FAT32Directory *DiskDir,
+                                 const InstallNode *StagedDir,
+                                 InstallVerifyCtx *Ctx)
 {
-    InstallVerifyCtx *Ctx = (InstallVerifyCtx *)Context;
-    InstallNode **Prev = (InstallNode **)&Ctx->Expected->Child;
-    InstallNode *Node;
+    const InstallNode *Node;
 
-    if (Entry == NULL || ShortName == NULL || Ctx == NULL)
+    if (DiskDir == NULL || StagedDir == NULL || Ctx == NULL)
     {
         return false;
     }
 
-    for (Node = *Prev; Node != NULL; Node = Node->Next)
+    for (Node = StagedDir->Child; Node != NULL; Node = Node->Next)
     {
-        if (strcasecmp(Node->Name, ShortName) == 0)
+        FAT32DirectoryEntry Entry;
+        FAT32Directory Child;
+
+        if (!FAT32DirectoryFind(DiskDir, Node->Name, &Entry))
         {
-            *Prev = Node->Next;
-            Node->Next = NULL;
-            Ctx->FoundEntries++;
-            Ctx->BytesOnDisk += Node->Size;
-            TerminalWrite32("  verified  : ", INST_COLOR_GOOD);
-            TerminalWrite32(ShortName, INST_COLOR_FIELD);
-            TerminalPutChar32('\n', INST_COLOR_GOOD);
-            return true;
+            Ctx->Missing++;
+            TerminalWrite32("  MISSING   : ", INST_COLOR_BAD);
+            TerminalWrite32(Node->Name, INST_COLOR_BAD);
+            TerminalPutChar32('\n', INST_COLOR_BAD);
+            continue;
         }
-        Prev = &Node->Next;
+
+        Ctx->FoundEntries++;
+
+        if (Node->IsDir)
+        {
+            if (!FAT32DirectoryOpen(&Child, DiskDir->Boot,
+                                    DiskDir->PartitionStartLBA,
+                                    FAT32DirectoryEntryFirstCluster(&Entry)))
+            {
+                Ctx->Missing++;
+                TerminalWrite32("  MISSING   : ", INST_COLOR_BAD);
+                TerminalWrite32(Node->Name, INST_COLOR_BAD);
+                TerminalPutChar32('\n', INST_COLOR_BAD);
+                continue;
+            }
+            if (!InstallVerifyRecurse(&Child, Node, Ctx))
+            {
+                return false;
+            }
+        }
+        else
+        {
+            Ctx->BytesOnDisk += Entry.FileSize;
+            if (Entry.FileSize != Node->Size)
+            {
+                Ctx->SizeMismatch++;
+                TerminalWrite32("  SIZE MISMATCH : ", INST_COLOR_BAD);
+                TerminalWrite32(Node->Name, INST_COLOR_BAD);
+                TerminalWrite32(" (staged ", PromColor);
+                TerminalPrintHex64Compact(Node->Size);
+                TerminalWrite32(" disk ", PromColor);
+                TerminalPrintHex64Compact(Entry.FileSize);
+                TerminalPutChar32(')', INST_COLOR_BAD);
+                TerminalPutChar32('\n', INST_COLOR_BAD);
+            }
+        }
     }
 
-    /* Entry on disk was not staged (e.g. leftover from an earlier install). */
-    TerminalWrite32("  extra     : ", 0x00FFA500U);
-    TerminalWrite32(ShortName, 0x00FFA500U);
-    TerminalPutChar32('\n', 0x00FFA500U);
     return true;
 }
 
-static void InstallVerifyDisk(FAT32Directory *Root, const InstallNode *RootNode)
+static InstallVerifyCtx InstallVerifyDisk(const FAT32Directory *Root,
+                                          const InstallNode *RootNode)
 {
     InstallVerifyCtx Ctx;
-    const InstallNode *Node;
 
-    Ctx.Expected = RootNode;
     Ctx.FoundEntries = 0;
     Ctx.Missing = 0;
+    Ctx.SizeMismatch = 0;
     Ctx.BytesOnDisk = 0;
 
-    TerminalPrintLine32("  [verify] re-reading FAT32 root directory...", INST_COLOR_TITLE);
+    TerminalPrintLine32("  [verify] re-reading entire FAT32 tree from disk...",
+                        INST_COLOR_TITLE);
 
-    if (!FAT32DirectoryForEach(Root, InstallVerifyVisitor, &Ctx))
+    if (!InstallVerifyRecurse(Root, RootNode, &Ctx))
     {
-        TerminalPrintLine32("  [verify] FATAL: root directory walk failed", INST_COLOR_BAD);
-        return;
-    }
-
-    for (Node = RootNode->Child; Node != NULL; Node = Node->Next)
-    {
-        Ctx.Missing++;
-        TerminalWrite32("  MISSING   : ", INST_COLOR_BAD);
-        TerminalPrintLine32(Node->Name, INST_COLOR_BAD);
+        TerminalPrintLine32("  [verify] FATAL: directory tree walk failed",
+                            INST_COLOR_BAD);
+        Ctx.Missing += g_StagedFiles + g_StagedDirs;
+        return Ctx;
     }
 
     TerminalWrite32("  [verify] entries found on disk : ", PromColor);
@@ -519,16 +525,25 @@ static void InstallVerifyDisk(FAT32Directory *Root, const InstallNode *RootNode)
     TerminalPrintHex64Compact(g_StagedFiles + g_StagedDirs);
     TerminalPutChar32('\n', PromColor);
 
-    if (Ctx.Missing == 0U)
+    TerminalWrite32("  [verify] bytes on disk         : ", PromColor);
+    TerminalPrintHex64Compact(Ctx.BytesOnDisk);
+    TerminalPutChar32('\n', PromColor);
+
+    if (Ctx.Missing == 0U && Ctx.SizeMismatch == 0U)
     {
-        TerminalPrintLine32("  [verify] RESULT: PASS - all staged entries present",
+        TerminalPrintLine32("  [verify] RESULT: PASS - every staged entry on disk",
                             INST_COLOR_GOOD);
     }
     else
     {
-        TerminalPrintLine32("  [verify] RESULT: FAIL - missing entries above",
-                            INST_COLOR_BAD);
+        TerminalWrite32("  [verify] RESULT: FAIL - ", INST_COLOR_BAD);
+        TerminalPrintHex64Compact(Ctx.Missing);
+        TerminalWrite32(" missing, ", INST_COLOR_BAD);
+        TerminalPrintHex64Compact(Ctx.SizeMismatch);
+        TerminalPrintLine32(" size mismatches", INST_COLOR_BAD);
     }
+
+    return Ctx;
 }
 
 /* Phase 6: copy boot files from CD so the disk becomes self-bootable. */
@@ -682,9 +697,9 @@ static void InstallCopyBootFiles(const FAT32Directory *Root)
                         INST_COLOR_FIELD);
 }
 
-/* Format a blank NVMe target as MBR + FAT32. The ISO installer must not
-   depend on a pre-created host image: VMware can hand us a blank NVMe
-   namespace. The FAT layout follows the standard BPB/FSInfo structure. */
+/* Formats a blank IDE/AHCI/NVMe target as MBR + FAT32. The ISO installer must
+   not depend on a pre-created host image: VMware can hand us a blank
+   disk. The FAT layout follows the standard BPB/FSInfo structure. */
 static bool InstallFormatNVMe(uint64_t SectorCount)
 {
     uint32_t PartitionStart = INSTALL_PARTITION_LBA;
@@ -802,6 +817,15 @@ static bool InstallLimineBIOS(const MBR *FormattedMBR)
         if (!BlockWrite(Offset / 512U, Sector)) return false;
     }
     if (!BlockRead(0, Sector)) return false;
+    /* The Limine BIOS MBR bootsector stores the byte offset of stage 2 at
+       0x1A4 as an 8-byte little-endian field.  The embedded HDD image keeps
+       stage 2 immediately after the 512-byte bootsector, so patch the field
+       the same way `limine bios-install` does; without it the MBR returns to
+       the BIOS without ever loading stage 2. */
+    Sector[0x1A4] = 0x00; Sector[0x1A5] = 0x02;
+    Sector[0x1A6] = 0x00; Sector[0x1A7] = 0x00;
+    Sector[0x1A8] = 0x00; Sector[0x1A9] = 0x00;
+    Sector[0x1AA] = 0x00; Sector[0x1AB] = 0x00;
     memcpy(Sector + 440U, ((const uint8_t *)FormattedMBR) + 440U, 70U);
     return BlockWrite(0, Sector);
 }
@@ -882,6 +906,16 @@ static bool InstallMountDisk(FAT32BootSector *Boot, FAT32Directory *Root,
         {
             TerminalPrintLine32("  [disk ] FATAL: invalid FAT32 disk and target cannot be formatted", INST_COLOR_BAD);
             DbgSerialWrite("FAT32 VBR INVALID / FORMAT FAILED\n");
+            if (Capacity == 0)
+            {
+                DbgSerialWrite("REASON: capacity unknown (BlockGetSectorCount == 0)\n");
+            }
+            else
+            {
+                TerminalWrite32("  [disk ] target sectors : ", INST_COLOR_BAD);
+                TerminalPrintHex64Compact(Capacity);
+                TerminalPutChar32('\n', INST_COLOR_BAD);
+            }
             return false;
         }
         memcpy(Boot, Sector, sizeof(FAT32BootSector));
@@ -920,7 +954,7 @@ static bool InstallMountDisk(FAT32BootSector *Boot, FAT32Directory *Root,
     return FAT32DirectoryOpenRoot(Root, Boot, PartitionStartLBA);
 }
 
-bool InstallerRun(void)
+InstallerResult InstallerRun(void)
 {
     uint8_t Key;
     ISODirRecord RootFs;
@@ -945,7 +979,7 @@ bool InstallerRun(void)
     if (Key != 'i' && Key != 'I')
     {
         TerminalPrintLine32("Trying live environment...", PromColor);
-        return false;
+        return INSTALLER_RESULT_LIVE;
     }
 
     InstallBar("N U L L O S   I N S T A L L E R   -   VERBOSE MODE");
@@ -972,14 +1006,14 @@ bool InstallerRun(void)
     {
         TerminalPrintLine32("install: cannot select ATAPI CD-ROM", INST_COLOR_BAD);
         DbgSerialWrite("INSTALL RESULT: FAIL (cannot select CD-ROM)\n");
-        return false;
+        return INSTALLER_RESULT_FAILED;
     }
 
     if (!ISOFindPath("/rootfs", &RootFs))
     {
     TerminalPrintLine32("install: /rootfs not found on CD", INST_COLOR_BAD);
     DbgSerialWrite("INSTALL RESULT: FAIL (no /rootfs on CD)\n");
-    return false;
+    return INSTALLER_RESULT_FAILED;
     }
 
     memset(&RootNode, 0, sizeof(RootNode));
@@ -987,7 +1021,8 @@ bool InstallerRun(void)
     if (!InstallReadDir(&RootFs, &RootNode, 0))
     {
         TerminalPrintLine32("install: failed to read /rootfs from CD", INST_COLOR_BAD);
-        return false;
+        DbgSerialWrite("INSTALL RESULT: FAIL (cannot read /rootfs)\n");
+        return INSTALLER_RESULT_FAILED;
     }
 
     for (Node = RootNode.Child; Node != NULL; Node = Node->Next)
@@ -1022,7 +1057,7 @@ bool InstallerRun(void)
         {
             TerminalPrintLine32("install: no FAT32 disk found", INST_COLOR_BAD);
             DbgSerialWrite("INSTALL RESULT: FAIL (no FAT32 disk)\n");
-            return false;
+            return INSTALLER_RESULT_FAILED;
         }
 
         TerminalWrite32("  [disk ] MBR present      : ", PromColor);
@@ -1071,7 +1106,7 @@ bool InstallerRun(void)
         InstallDumpBPB(&Boot, Info.PartitionStartLBA);
 
         TerminalPrintLine32("  [phase] verification pass", INST_COLOR_TITLE);
-        InstallVerifyDisk(&FatRoot, &RootNode);
+        InstallVerifyCtx Verify = InstallVerifyDisk(&FatRoot, &RootNode);
 
         TerminalPrintLine32("  [phase] installing bootloader payload", INST_COLOR_TITLE);
         InstallCopyBootFiles(&FatRoot);
@@ -1091,11 +1126,29 @@ bool InstallerRun(void)
         TerminalPrintLine32("  [phase] final free space", INST_COLOR_TITLE);
         InstallDumpBPB(&Boot, Info.PartitionStartLBA);
 
-        /* Compile every /BIN/*.C into a /BIN/*.EXE ONCE, here at install
+        /* Compile every /BIN/*.C into a /BIN/*.EXE once here at install
            time, so the installed OS boots straight from the executables that
            already exist on the disk (no recompile at boot or reboot). */
         TerminalPrintLine32("  [phase] one-time self-host build of /BIN", INST_COLOR_TITLE);
         ShellBootBuild();
+
+        if (g_WriteFailures != 0U || Verify.Missing != 0U ||
+            Verify.SizeMismatch != 0U)
+        {
+            InstallBar("I N S T A L L   F A I L E D");
+            TerminalWrite32("  Write failures : ", INST_COLOR_BAD);
+            TerminalPrintHex64Compact(g_WriteFailures);
+            TerminalPutChar32('\n', INST_COLOR_BAD);
+            TerminalWrite32("  Missing files  : ", INST_COLOR_BAD);
+            TerminalPrintHex64Compact(Verify.Missing);
+            TerminalPutChar32('\n', INST_COLOR_BAD);
+            TerminalWrite32("  Size mismatches: ", INST_COLOR_BAD);
+            TerminalPrintHex64Compact(Verify.SizeMismatch);
+            TerminalPutChar32('\n', INST_COLOR_BAD);
+            DbgSerialWrite("INSTALL RESULT: FAILED\n");
+            DbgSerialWrite("INSTALLER: returning FAILED (kernel will halt)\n");
+            return INSTALLER_RESULT_FAILED;
+        }
     }
 
     InstallBar("I N S T A L L   S U C C E S S");
@@ -1118,5 +1171,6 @@ bool InstallerRun(void)
                         INST_COLOR_FIELD);
     TerminalPrintLine32("  QEMU:  qemu-system-x86_64 -hda esp.img -boot order=c -m 3 -serial stdio",
                         INST_COLOR_FIELD);
-    return true;
+    DbgSerialWrite("INSTALLER: returning SUCCEEDED (kernel will reboot)\n");
+    return INSTALLER_RESULT_SUCCEEDED;
 }

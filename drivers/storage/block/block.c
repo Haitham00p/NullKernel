@@ -4,8 +4,30 @@
 #include "drivers/storage/ide/ide.h"
 #include "include/drivers.h"
 #include "kernel/debug/debug.h"
+#include "kernel/terminal/terminal.h"
+#include <stdint.h>
+
+#define BLOCK_COLOR_LABEL 0x00E8F0FFU
+#define BLOCK_COLOR_VALUE 0x00D0D0D0U
 
 static bool g_BlockReady;
+
+static void BlockPrintBackend(const char *Label)
+{
+    uint64_t Sectors = BlockGetSectorCount();
+    uint64_t Bytes = Sectors * BLOCK_SECTOR_SIZE;
+
+    DbgInfo("Block device backend", (uintptr_t)BlockInitialize);
+
+    TerminalWrite32("  [storage] backend       : ", BLOCK_COLOR_LABEL);
+    TerminalPrintLine32(Label, BLOCK_COLOR_VALUE);
+    TerminalWrite32("  [storage] target sectors : ", BLOCK_COLOR_LABEL);
+    TerminalPrintHex64Compact(Sectors);
+    TerminalPutChar32('\n', BLOCK_COLOR_VALUE);
+    TerminalWrite32("  [storage] target bytes   : ", BLOCK_COLOR_LABEL);
+    TerminalPrintHex64Compact(Bytes);
+    TerminalPutChar32('\n', BLOCK_COLOR_VALUE);
+}
 
 bool BlockInitialize(void)
 {
@@ -14,21 +36,21 @@ bool BlockInitialize(void)
     if (NVMeInitialize())
     {
         g_BlockReady = true;
-        DbgInfo("Block device: NVMe selected", (uintptr_t)BlockInitialize);
+        BlockPrintBackend("NVMe");
         return true;
     }
 
     if (AHCIInitialize())
     {
         g_BlockReady = true;
-        DbgInfo("Block device: AHCI SATA selected", (uintptr_t)BlockInitialize);
+        BlockPrintBackend("AHCI SATA");
         return true;
     }
 
     if (IDESelectDisk())
     {
         g_BlockReady = true;
-        DbgInfo("Block device: legacy ATA/IDE selected", (uintptr_t)BlockInitialize);
+        BlockPrintBackend("legacy ATA/IDE");
         return true;
     }
 
@@ -52,7 +74,7 @@ bool BlockRead(uint64_t LBA, void *Buffer)
     if (AHCIIsReady())
         return AHCIReadSector(LBA, Buffer);
 
-    return IDEReadSector((uint32_t)LBA, Buffer);
+    return IDEReadDiskSector((uint32_t)LBA, Buffer);
 }
 
 bool BlockWrite(uint64_t LBA, const void *Buffer)
@@ -66,7 +88,7 @@ bool BlockWrite(uint64_t LBA, const void *Buffer)
     if (AHCIIsReady())
         return AHCIWriteSector(LBA, Buffer);
 
-    return IDEWriteSector((uint32_t)LBA, Buffer);
+    return IDEWriteDiskSector((uint32_t)LBA, Buffer);
 }
 
 uint64_t BlockGetSectorCount(void)
@@ -75,7 +97,9 @@ uint64_t BlockGetSectorCount(void)
         return 0;
     if (NVMeIsReady())
         return NVMeGetSectorCount();
-    return 0;
+    if (AHCIIsReady())
+        return AHCIGetSectorCount();
+    return IDEGetSectorCount();
 }
 
 static void block_driver_init(void)

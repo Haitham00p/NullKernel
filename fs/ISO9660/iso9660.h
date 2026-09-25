@@ -34,6 +34,7 @@ bool ISOIsReady(void);
 bool ISOReadSector(uint32_t Sector, uint8_t *Buffer);
 bool ISOReadPVDSector(ISOPVD *PVD);
 bool ISOGetRootDir(ISODirRecord *OutRoot);
+bool ISOParseDirectoryRecord(const uint8_t *Record, ISODirRecord *DirRec);
 bool ISOReadDirectory(const ISODirRecord *Root);
 bool ISOFindFile(const ISODirRecord *Dir, const char *Name, ISODirRecord *OutRecord);
 bool ISOFindPath(const char *Path, ISODirRecord *OutRecord);

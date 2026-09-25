@@ -6,6 +6,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 #define AHCI_CLASS 0x01U
 #define AHCI_SUBCLASS 0x06U
@@ -27,6 +28,7 @@
 
 #define ATA_CMD_READ_DMA_EXT 0x25U
 #define ATA_CMD_WRITE_DMA_EXT 0x35U
+#define ATA_CMD_IDENTIFY 0xECU
 
 #define AHCI_TIMEOUT 1000000U
 
@@ -246,7 +248,8 @@ static int FindSlot(void)
     return -1;
 }
 
-static bool Transfer(uint64_t lba, void *buffer, bool write)
+static bool TransferCommand(uint8_t command, uint32_t countl,
+                            uint64_t lba, void *buffer, bool write)
 {
     int slot;
     HBA_CMD_HEADER *header;
@@ -292,7 +295,7 @@ static bool Transfer(uint64_t lba, void *buffer, bool write)
     memset(fis, 0, sizeof(*fis));
     fis->fis_type = 0x27;
     fis->pmport_c = 0x80;
-    fis->command = write ? ATA_CMD_WRITE_DMA_EXT : ATA_CMD_READ_DMA_EXT;
+    fis->command = command;
     fis->device = 0x40;
     fis->lba0 = (uint8_t)lba;
     fis->lba1 = (uint8_t)(lba >> 8);
@@ -300,7 +303,7 @@ static bool Transfer(uint64_t lba, void *buffer, bool write)
     fis->lba3 = (uint8_t)(lba >> 24);
     fis->lba4 = (uint8_t)(lba >> 32);
     fis->lba5 = (uint8_t)(lba >> 40);
-    fis->countl = 1;
+    fis->countl = (uint8_t)countl;
 
     while ((g_Port->tfd & 0x88U) != 0 && timeout++ < AHCI_TIMEOUT)
         __asm__ volatile("pause");
@@ -333,6 +336,56 @@ static bool Transfer(uint64_t lba, void *buffer, bool write)
 
     PmmFreePage(data);
     return true;
+}
+
+static bool Transfer(uint64_t lba, void *buffer, bool write)
+{
+    return TransferCommand(write ? ATA_CMD_WRITE_DMA_EXT : ATA_CMD_READ_DMA_EXT,
+                           1U, lba, buffer, write);
+}
+
+/* Capacity of the attached SATA disk, read once via IDENTIFY DEVICE. */
+static uint64_t g_SectorCount = 0;
+
+uint64_t AHCIGetSectorCount(void)
+{
+    uint16_t *identify = NULL;
+    uint64_t page;
+    bool lba48;
+
+    if (!g_Ready)
+        return 0;
+    if (g_SectorCount != 0)
+        return g_SectorCount;
+
+    page = PmmAllocPage();
+    if (!page)
+        return 0;
+    identify = (uint16_t *)(uintptr_t)page;
+    memset(identify, 0, 4096);
+
+    if (!TransferCommand(ATA_CMD_IDENTIFY, 0U, 0U, identify, false))
+    {
+        PmmFreePage(page);
+        return 0;
+    }
+
+    lba48 = (identify[83] & (1U << 10)) != 0;
+    if (lba48)
+    {
+        g_SectorCount = (uint64_t)identify[100] |
+                        ((uint64_t)identify[101] << 16) |
+                        ((uint64_t)identify[102] << 32) |
+                        ((uint64_t)identify[103] << 48);
+    }
+    else
+    {
+        g_SectorCount = (uint64_t)identify[60] |
+                        ((uint64_t)identify[61] << 16);
+    }
+
+    PmmFreePage(page);
+    return g_SectorCount;
 }
 
 bool AHCIInitialize(void)

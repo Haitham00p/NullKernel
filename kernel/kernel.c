@@ -147,13 +147,23 @@ void kernel_main(void)
 
     if (ISOIsReady())
     {
-        bool Installed = InstallerRun();
-        if (Installed)
+        InstallerResult Result = InstallerRun();
+
+        if (Result == INSTALLER_RESULT_SUCCEEDED)
         {
             TerminalPrintLine32("Installer complete. Rebooting into the installed disk...", 0x0000FF00);
+            DbgSerialWrite("INSTALLER: SUCCEEDED, rebooting now\n");
             for (volatile uint64_t Delay = 0; Delay < 10000000ULL; Delay++)
                 __asm__ volatile("pause");
             Reboot();
+            for (;;) __asm__ volatile("hlt");
+        }
+        else if (Result == INSTALLER_RESULT_FAILED)
+        {
+            /* The target disk may be half-written.  Never continue into the
+               normal shell after a failed install. */
+            TerminalPrintLine32("INSTALLER: FAILED - see diagnostics above. Halted.", 0xFFFF0000);
+            DbgSerialWrite("INSTALLER: FAILED, halting (no shell)\n");
             for (;;) __asm__ volatile("hlt");
         }
     }

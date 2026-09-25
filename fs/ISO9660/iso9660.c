@@ -12,16 +12,25 @@ static uint32_t g_ActualPVDSector = PVDSector;
 
 bool ISOReadSector(uint32_t Sector, uint8_t *Buffer)
 {
-    if (IDEIsATAPI())
+    /* Always read from the ATAPI CD-ROM device.  The installer selects the
+       CD explicitly; this path never depends on which IDE device happens to
+       be "active" (the block layer owns the hard disk). */
+    if (IDEIsReadyCD())
     {
-        return IDEReadSector(Sector, Buffer);
+        return IDEReadCDSector(Sector, Buffer);
     }
 
+    /* Fallback for boot-from-disk ISO payloads: ISO sectors are 2048 bytes,
+       presented as four 512-byte disk sectors. */
+    if (!IDEIsReadyDisk())
+    {
+        return false;
+    }
     uint32_t LBA = Sector * 4;
     for (uint8_t i = 0; i < 4; i++)
     {
         uint32_t BufOffset = 512 * i;
-        if (!IDEReadSector(LBA + i, Buffer + BufOffset))
+        if (!IDEReadDiskSector(LBA + i, Buffer + BufOffset))
         {
             return false;
         }
@@ -119,7 +128,65 @@ static bool ParseDirectoryRecord(const uint8_t *Record, ISODirRecord *DirRec)
         DirRec->FileIdentifier[copyLen] = '\0';
     }
 
+    /* Rock Ridge (SUSP/RRIP): the system use area follows the file
+       identifier on an even byte offset.  An "NM" entry overrides the
+       ISO-9660 truncated identifier with the real, long name.  The dot
+       and dot-dot entries never carry a replacement name. */
+    if (!(nameLen == 1U && (Record[33] == 0x00 || Record[33] == 0x01)))
+    {
+        uint16_t suisOff =
+            (uint16_t)((33U + (uint16_t)nameLen + 1U) & (uint16_t)~1U);
+        uint8_t Buffer[256];
+        uint8_t BufferLen = 0;
+
+        while (suisOff + 4U <= len)
+        {
+            uint32_t sysLen = Record[suisOff + 2];
+            if (sysLen < 4U || suisOff + sysLen > len)
+            {
+                break;
+            }
+
+            if (Record[suisOff] == 'N' && Record[suisOff + 1] == 'M')
+            {
+                uint32_t DataLen = sysLen - 5U;
+                if (DataLen > 0U)
+                {
+                    uint32_t Copy = (uint32_t)(255U - BufferLen);
+                    if (DataLen < Copy) Copy = DataLen;
+                    for (uint32_t i = 0; i < Copy; i++)
+                    {
+                        Buffer[BufferLen++] = Record[suisOff + 5 + i];
+                    }
+                }
+
+                /* flag bit 0: the name continues in the next NM entry */
+                if ((Record[suisOff + 4] & 0x01U) == 0U)
+                {
+                    break;
+                }
+            }
+
+            suisOff += sysLen;
+        }
+
+        if (BufferLen > 0U)
+        {
+            for (uint16_t i = 0; i < BufferLen; i++)
+            {
+                DirRec->FileIdentifier[i] = (char)Buffer[i];
+            }
+            DirRec->FileIdentifier[BufferLen] = '\0';
+            DirRec->FileIdentifierLength = BufferLen;
+        }
+    }
+
     return true;
+}
+
+bool ISOParseDirectoryRecord(const uint8_t *Record, ISODirRecord *DirRec)
+{
+    return ParseDirectoryRecord(Record, DirRec);
 }
 
 static bool RootDir(ISOPVD *PVD, ISODirRecord *DirRec)
