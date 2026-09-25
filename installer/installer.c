@@ -655,14 +655,14 @@ static void InstallCopyBootFiles(const FAT32Directory *Root)
         return;
     }
 
-    if (!ISOFindPath("/boot/limine/limine_b.sys", &BiosSysRec))
+    if (!ISOFindPath("/boot/limine/limine-bios.sys", &BiosSysRec))
     {
         TerminalWrite32("  [boot ] source missing  : ", INST_COLOR_BAD);
         TerminalPrintLine32("/boot/limine/limine-bios.sys", INST_COLOR_BAD);
         return;
     }
 
-    if (!ISOFindPath("/boot/limine/limine.con", &LimineConfRec))
+    if (!ISOFindPath("/boot/limine/limine.conf", &LimineConfRec))
     {
         TerminalWrite32("  [boot ] source missing  : ", INST_COLOR_BAD);
         TerminalPrintLine32("/boot/limine/limine.conf", INST_COLOR_BAD);
