@@ -702,7 +702,7 @@ static bool InstallFormatNVMe(uint64_t SectorCount)
     PartitionSectors64 = SectorCount - PartitionStart;
     PartitionSectors = (uint32_t)PartitionSectors64;
 
-    for (uint8_t Spc = 8U; Spc >= 1U; Spc >>= 1U)
+    for (uint8_t Spc = 64U; Spc >= 1U; Spc >>= 1U)
     {
         uint32_t Fat = 1U;
         uint32_t C = 0;
