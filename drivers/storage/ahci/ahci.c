@@ -68,7 +68,7 @@ typedef volatile struct
     uint32_t cap2;
     uint32_t bohc;
     uint8_t reserved[0x100 - 0x2C];
-    uint8_t vendor[0x100];
+    uint8_t vendor[0x100 - 0xA0];
     HBA_PORT ports[32];
 } HBA_MEM;
 
