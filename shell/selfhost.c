@@ -718,7 +718,22 @@ static bool SelfHostRunExeInDir(const char *Dir, const char *Name)
         kfree(Image);
         return false;
     }
-    DbgSerialWrite("[EXEC] image read, loading ELF\n");
+    DbgSerialWrite("[EXEC] image read, checking ELF magic\n");
+
+    /* ROB contains both executable images and metadata (README.V, config
+       files, etc.).  Never hand arbitrary registry data to the ELF loader. */
+    if (Bytes < 4U ||
+        Image[0] != 0x7FU ||
+        Image[1] != 'E' ||
+        Image[2] != 'L' ||
+        Image[3] != 'F')
+    {
+        DbgSerialWrite("[EXEC] skip: not an ELF image\n");
+        kfree(Image);
+        return false;
+    }
+
+    DbgSerialWrite("[EXEC] ELF magic ok, loading ELF\n");
     if (!ElfLoadImage(Image, Bytes, &Info))
     {
         DbgSerialWrite("[EXEC] ERROR: ELF load failed\n");
