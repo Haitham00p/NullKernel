@@ -2,7 +2,7 @@
 
 #include <stddef.h>
 
-#include "drivers/storage/ide/ide.h"
+#include "drivers/storage/block/block.h"
 #include "fs/fat32/fat/fat.h"
 #include "fs/fat32/file/file.h"
 #include "fs/partition/mbr/mbr.h"
@@ -27,12 +27,12 @@ static bool DiskFsReadChain(const FAT32Directory *Dir,
 
 static bool DiskFsReadSector(uint32_t LBA, void *Buffer)
 {
-    return IDEReadSector(LBA, Buffer);
+    return BlockRead((uint64_t)LBA, Buffer);
 }
 
 static bool DiskFsWriteSector(uint32_t LBA, const void *Buffer)
 {
-    return IDEWriteSector(LBA, Buffer);
+    return BlockWrite((uint64_t)LBA, Buffer);
 }
 
 bool DiskFsMount(void)
@@ -46,7 +46,7 @@ bool DiskFsMount(void)
         return true;
     }
 
-    if (!IDESelectDisk() || !DiskFsReadSector(0, Sector))
+    if (!BlockIsReady() || !DiskFsReadSector(0, Sector))
     {
         return false;
     }
