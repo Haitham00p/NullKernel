@@ -6,11 +6,6 @@ static uint32_t StateCount;
 static LTSM_TRIGGER Trigger = LTSM_DefaultTrigger;
 static uint8_t Initialized;
 
-static int LTSM_IsHigher(LevelStates a, LevelStates b)
-{
-    return (int)a > (int)b;
-}
-
 const char *LTSM_LevelName(LevelStates level)
 {
     switch (level)
@@ -67,10 +62,9 @@ void LTSM_ScanCPUST(LTSM_CPUSTATE *cpust)
 }
 
 /*
- * IRQContext is laid out as:
+ * IRQContext layout:
  *   15 GPR qwords, then RIP, CS, RFLAGS, RSP, SS.
- * Keep this function independent of irq.h so LTSMT does not create
- * an interrupt-layer dependency.
+ * Keeping this decoder independent of irq.h avoids a dependency cycle.
  */
 void LTSM_ScanTrapState(const void *frame, LTSM_TRAPSTATE *state)
 {
@@ -154,11 +148,7 @@ void LTSM_DefaultTrigger(const LTSM_STATE *state)
             DbgWarn(state->name, (uintptr_t)state->value);
             break;
         case LT_FAILURE:
-            DbgErr(state->name, (uintptr_t)state->value);
-            break;
         case LT_CRITICAL:
-            DbgErr(state->name, (uintptr_t)state->value);
-            break;
         case LT_CORRUPT:
             DbgErr(state->name, (uintptr_t)state->value);
             break;
@@ -238,9 +228,7 @@ int LTSM_UpdateState(LTSM_STATE *state, uint64_t value)
             return rc;
     }
 
-    state->value = value;
     next = LTSM_LevelFromValue(state, value);
-
     return LTSM_SetState(state, next, value);
 }
 
