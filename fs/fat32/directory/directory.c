@@ -2,7 +2,7 @@
 
 #include <stddef.h>
 
-#include "drivers/storage/ide/ide.h"
+#include "drivers/storage/block/block.h"
 #include "fs/fat32/fat/fat.h"
 #include "lib/string/string.h"
 
@@ -267,7 +267,7 @@ bool FAT32DirectoryForEach(const FAT32Directory *Directory,
         {
             uint32_t LBA;
             if (!DirectoryClusterSectorLBA(Directory, Cluster, SectorIndex, &LBA) ||
-                !IDEReadSector(LBA, Sector))
+                !BlockRead(LBA, Sector))
             {
                 return false;
             }
@@ -384,7 +384,7 @@ static bool DirectoryFindFreeSlot(const FAT32Directory *Directory,
         {
             uint32_t LBA;
             if (!DirectoryClusterSectorLBA(Directory, Cluster, SectorIndex, &LBA) ||
-                !IDEReadSector(LBA, Sector)) return false;
+                !BlockRead(LBA, Sector)) return false;
 
             for (uint32_t Index = 0; Index < FAT32_ENTRIES_PER_SECTOR; Index++)
             {
@@ -420,7 +420,7 @@ static bool DirectoryClearCluster(const FAT32Directory *Directory,
     {
         uint32_t LBA;
         if (!DirectoryClusterSectorLBA(Directory, Cluster, Index, &LBA) ||
-            !IDEWriteSector(LBA, Empty)) return false;
+            !BlockWrite(LBA, Empty)) return false;
     }
     return true;
 }
@@ -484,7 +484,7 @@ bool FAT32DirectoryCreateEntry(FAT32Directory *Directory, const char *Name,
         (Attributes & FAT32_ATTRIBUTE_VOLUME_ID) != 0 ||
         !DirectoryNameExists(Directory, Name, &Exists) || Exists ||
         !DirectoryGetWritableSlot(Directory, &Slot) ||
-        !IDEReadSector(Slot.LBA, Sector))
+        !BlockRead(Slot.LBA, Sector))
     {
         return false;
     }
@@ -504,7 +504,7 @@ bool FAT32DirectoryCreateEntry(FAT32Directory *Directory, const char *Name,
         memset(&Sector[(Slot.EntryIndex + 1U) * FAT32_DIRECTORY_ENTRY_SIZE], 0,
                FAT32_DIRECTORY_ENTRY_SIZE);
     }
-    if (!IDEWriteSector(Slot.LBA, Sector)) return false;
+    if (!BlockWrite(Slot.LBA, Sector)) return false;
 
     if (Entry != 0) *Entry = NewEntry;
     return true;
@@ -557,7 +557,7 @@ bool FAT32DirectoryCreateLongFileEntry(FAT32Directory *Directory,
         (Attributes & FAT32_ATTRIBUTE_VOLUME_ID) != 0 ||
         !DirectoryNameExists(Directory, Name, &Exists) || Exists ||
         !DirectoryGetWritableSlot(Directory, &Slot) ||
-        !IDEReadSector(Slot.LBA, Sector))
+        !BlockRead(Slot.LBA, Sector))
     {
         return false;
     }
@@ -576,7 +576,7 @@ bool FAT32DirectoryCreateLongFileEntry(FAT32Directory *Directory,
         memset(&Sector[(Slot.EntryIndex + 1U) * FAT32_DIRECTORY_ENTRY_SIZE], 0,
                FAT32_DIRECTORY_ENTRY_SIZE);
     }
-    if (!IDEWriteSector(Slot.LBA, Sector)) return false;
+    if (!BlockWrite(Slot.LBA, Sector)) return false;
 
     if (Entry != 0) *Entry = NewEntry;
     return true;
@@ -602,7 +602,7 @@ bool FAT32DirectoryCreateDirectory(FAT32Directory *Parent, const char *Name,
                                        Cluster, FAT32_CLUSTER_EOC_LAST) ||
         !DirectoryClearCluster(Parent, Cluster) ||
         !DirectoryClusterSectorLBA(Parent, Cluster, 0, &LBA) ||
-        !IDEReadSector(LBA, Sector)) return false;
+        !BlockRead(LBA, Sector)) return false;
 
     Dot = (FAT32DirectoryEntry *)&Sector[0];
     DotDot = (FAT32DirectoryEntry *)&Sector[FAT32_DIRECTORY_ENTRY_SIZE];
@@ -618,7 +618,7 @@ bool FAT32DirectoryCreateDirectory(FAT32Directory *Parent, const char *Name,
     Dot->FirstClusterLow = (uint16_t)Cluster;
     DotDot->FirstClusterHigh = (uint16_t)(Parent->FirstCluster >> 16);
     DotDot->FirstClusterLow = (uint16_t)Parent->FirstCluster;
-    if (!IDEWriteSector(LBA, Sector) ||
+    if (!BlockWrite(LBA, Sector) ||
         !FAT32DirectoryCreateEntry(Parent, Name, FAT32_ATTRIBUTE_DIRECTORY,
                                    Cluster, 0, 0)) return false;
 
