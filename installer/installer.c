@@ -7,6 +7,8 @@
 #include "kernel/debug/debug.h"
 #include "drivers/input/keyboard/keyboard.h"
 #include "drivers/storage/ide/ide.h"
+#include "drivers/storage/block/block.h"
+#include "limine-binary/limine-bios-hdd.h"
 #include "fs/ISO9660/iso9660.h"
 #include "fs/fat32/directory/directory.h"
 #include "fs/fat32/file/file.h"
@@ -42,6 +44,11 @@ static uint32_t g_StagedFiles = 0;
 static uint32_t g_StagedDirs  = 0;
 static uint32_t g_StagedBytes = 0;
 static uint32_t g_MaxDepth    = 0;
+
+#define INSTALL_PARTITION_LBA 2048U
+#define INSTALL_RESERVED_SECTORS 32U
+#define INSTALL_FAT_COUNT 2U
+#define INSTALL_ROOT_CLUSTER 2U
 
 /* Diagnostics for InstallMountDisk. */
 typedef struct
@@ -342,7 +349,7 @@ static uint32_t InstallCountFreeClusters(const FAT32BootSector *Boot,
                              (uint64_t)Boot->ReservedSectorCount + FatSector;
 
         if (SectorLBA > UINT32_MAX ||
-            !IDEReadSector((uint32_t)SectorLBA, Sector))
+            !BlockRead(SectorLBA, Sector))
         {
             break;
         }
@@ -562,12 +569,6 @@ static bool InstallCopyOneBootFile(const FAT32Directory *Dir, const char *Source
         return false;
     }
 
-    if (!IDESelectDisk())
-    {
-        TerminalPrintLine32("  [boot ] FATAL: cannot switch back to disk", INST_COLOR_BAD);
-        return false;
-    }
-
     if (!FAT32FileWriteFromReader((FAT32Directory *)Dir, DiskName, Node.Size,
                                   InstallRamReader, (void *)&Node))
     {
@@ -681,12 +682,137 @@ static void InstallCopyBootFiles(const FAT32Directory *Root)
                         INST_COLOR_FIELD);
 }
 
+/* Format a blank NVMe target as MBR + FAT32. The ISO installer must not
+   depend on a pre-created host image: VMware can hand us a blank NVMe
+   namespace. The FAT layout follows the standard BPB/FSInfo structure. */
+static bool InstallFormatNVMe(uint64_t SectorCount)
+{
+    uint32_t PartitionStart = INSTALL_PARTITION_LBA;
+    uint64_t PartitionSectors64;
+    uint32_t PartitionSectors;
+    uint8_t SectorsPerCluster = 1U;
+    uint32_t FatSectors = 0;
+    uint32_t Clusters = 0;
+    uint8_t Sector[512];
+    MBR Mbr;
+    FAT32BootSector Boot;
+
+    if (SectorCount <= PartitionStart + 4096U || SectorCount - PartitionStart > UINT32_MAX)
+        return false;
+    PartitionSectors64 = SectorCount - PartitionStart;
+    PartitionSectors = (uint32_t)PartitionSectors64;
+
+    for (uint8_t Spc = 8U; Spc >= 1U; Spc >>= 1U)
+    {
+        uint32_t Fat = 1U;
+        uint32_t C = 0;
+        for (uint32_t Iter = 0; Iter < 8U; Iter++)
+        {
+            uint32_t Data = PartitionSectors - INSTALL_RESERVED_SECTORS - INSTALL_FAT_COUNT * Fat;
+            C = Data / Spc;
+            Fat = (uint32_t)(((uint64_t)(C + 2U) * 4U + 511U) / 512U);
+        }
+        if (C >= 65525U && C <= 0x0FFFFFF5U)
+        {
+            SectorsPerCluster = Spc;
+            FatSectors = Fat;
+            Clusters = C;
+            break;
+        }
+    }
+    if (FatSectors == 0U || Clusters < 65525U) return false;
+
+    memset(&Mbr, 0, sizeof(Mbr));
+    Mbr.Partitions[0].BootIndicator = 0x80U;
+    Mbr.Partitions[0].PartitionType = 0x0CU;
+    Mbr.Partitions[0].StartLBA = PartitionStart;
+    Mbr.Partitions[0].SectorCount = PartitionSectors;
+    Mbr.Signature = 0xAA55U;
+    if (!BlockWrite(0, &Mbr)) return false;
+
+    memset(&Boot, 0, sizeof(Boot));
+    Boot.JumpInstruction[0] = 0xEB; Boot.JumpInstruction[1] = 0x58; Boot.JumpInstruction[2] = 0x90;
+    memcpy(Boot.OEMName, "NULLOS  ", 8);
+    Boot.BytesPerSector = 512U;
+    Boot.SectorsPerCluster = SectorsPerCluster;
+    Boot.ReservedSectorCount = INSTALL_RESERVED_SECTORS;
+    Boot.NumberOfFATs = INSTALL_FAT_COUNT;
+    Boot.MediaDescriptor = 0xF8U;
+    Boot.SectorsPerTrack = 63U;
+    Boot.NumberOfHeads = 255U;
+    Boot.HiddenSectors = PartitionStart;
+    Boot.TotalSectors32 = PartitionSectors;
+    Boot.FATSize32 = FatSectors;
+    Boot.RootCluster = INSTALL_ROOT_CLUSTER;
+    Boot.FSInfoSector = 1U;
+    Boot.BackupBootSector = 6U;
+    Boot.DriveNumber = 0x80U;
+    Boot.BootSignature = 0x29U;
+    Boot.VolumeID = 0x4E554C4CU;
+    memcpy(Boot.VolumeLabel, "NULLOS     ", 11);
+    memcpy(Boot.FileSystemType, "FAT32   ", 8);
+
+    memset(Sector, 0, sizeof(Sector));
+    memcpy(Sector, &Boot, sizeof(Boot));
+    Sector[510] = 0x55; Sector[511] = 0xAA;
+    if (!BlockWrite(PartitionStart, Sector) || !BlockWrite(PartitionStart + Boot.BackupBootSector, Sector)) return false;
+
+    memset(Sector, 0, sizeof(Sector));
+    Sector[0] = 0x52; Sector[1] = 0x52; Sector[2] = 0x61; Sector[3] = 0x41;
+    Sector[484] = 0x72; Sector[485] = 0x72; Sector[486] = 0x41; Sector[487] = 0x61;
+    Sector[488] = 0xFF; Sector[489] = 0xFF; Sector[490] = 0xFF; Sector[491] = 0xFF;
+    Sector[492] = 0xFF; Sector[493] = 0xFF; Sector[494] = 0xFF; Sector[495] = 0xFF;
+    Sector[510] = 0x55; Sector[511] = 0xAA;
+    if (!BlockWrite(PartitionStart + Boot.FSInfoSector, Sector) || !BlockWrite(PartitionStart + Boot.BackupBootSector + Boot.FSInfoSector, Sector)) return false;
+
+    memset(Sector, 0, sizeof(Sector));
+    for (uint32_t Fat = 0; Fat < INSTALL_FAT_COUNT; Fat++)
+    {
+        uint64_t Base = (uint64_t)PartitionStart + Boot.ReservedSectorCount + (uint64_t)Fat * Boot.FATSize32;
+        for (uint32_t S = 0; S < Boot.FATSize32; S++) if (!BlockWrite(Base + S, Sector)) return false;
+    }
+    Sector[0] = 0xF8; Sector[1] = 0xFF; Sector[2] = 0xFF; Sector[3] = 0x0F;
+    Sector[4] = 0xFF; Sector[5] = 0xFF; Sector[6] = 0xFF; Sector[7] = 0x0F;
+    Sector[8] = 0xFF; Sector[9] = 0xFF; Sector[10] = 0xFF; Sector[11] = 0x0F;
+    for (uint32_t Fat = 0; Fat < INSTALL_FAT_COUNT; Fat++)
+    {
+        uint64_t Base = (uint64_t)PartitionStart + Boot.ReservedSectorCount + (uint64_t)Fat * Boot.FATSize32;
+        if (!BlockWrite(Base, Sector)) return false;
+    }
+
+    memset(Sector, 0, sizeof(Sector));
+    uint64_t RootLBA = (uint64_t)PartitionStart + Boot.ReservedSectorCount + (uint64_t)Boot.NumberOfFATs * Boot.FATSize32;
+    for (uint32_t S = 0; S < Boot.SectorsPerCluster; S++) if (!BlockWrite(RootLBA + S, Sector)) return false;
+    return true;
+}
+
+/* Install the exact Limine BIOS HDD image shipped with this repository. */
+static bool InstallLimineBIOS(const MBR *FormattedMBR)
+{
+    const uint8_t *Image = binary_limine_hdd_bin_data;
+    uint32_t ImageSize = (uint32_t)sizeof(binary_limine_hdd_bin_data);
+    uint8_t Sector[512];
+    if (FormattedMBR == NULL || ImageSize < 512U || ImageSize > (INSTALL_PARTITION_LBA - 1U) * 512U) return false;
+    for (uint32_t Offset = 0; Offset < ImageSize; Offset += 512U)
+    {
+        uint32_t Bytes = ImageSize - Offset;
+        if (Bytes > 512U) Bytes = 512U;
+        memset(Sector, 0, sizeof(Sector));
+        memcpy(Sector, Image + Offset, Bytes);
+        if (!BlockWrite(Offset / 512U, Sector)) return false;
+    }
+    if (!BlockRead(0, Sector)) return false;
+    memcpy(Sector + 440U, ((const uint8_t *)FormattedMBR) + 440U, 70U);
+    return BlockWrite(0, Sector);
+}
+
 /* Switches IDE to the hard disk and opens its FAT32 root. */
 static bool InstallMountDisk(FAT32BootSector *Boot, FAT32Directory *Root,
                              InstallDiskInfo *Info)
 {
     uint8_t Sector[512];
     uint32_t PartitionStartLBA = 0;
+    uint64_t Capacity = BlockGetSectorCount();
 
     if (Info == NULL)
     {
@@ -694,7 +820,7 @@ static bool InstallMountDisk(FAT32BootSector *Boot, FAT32Directory *Root,
     }
     memset(Info, 0, sizeof(*Info));
 
-    if (Boot == NULL || Root == NULL || !IDESelectDisk() || !IDEReadSector(0, Sector))
+    if (Boot == NULL || Root == NULL || !BlockIsReady() || !BlockRead(0, Sector))
     {
         return false;
     }
@@ -736,7 +862,7 @@ static bool InstallMountDisk(FAT32BootSector *Boot, FAT32Directory *Root,
             DbgSerialWrite("PARTITION path type=0x0C start=");
             InstallSerialNumber(PartitionStartLBA);
             DbgSerialWrite("\n");
-            if (!IDEReadSector(PartitionStartLBA, Sector))
+            if (!BlockRead(PartitionStartLBA, Sector))
             {
                 return false;
             }
@@ -752,9 +878,19 @@ static bool InstallMountDisk(FAT32BootSector *Boot, FAT32Directory *Root,
     memcpy(Boot, Sector, sizeof(FAT32BootSector));
     if (!FAT32IsValid(Boot))
     {
-        TerminalPrintLine32("  [disk ] FATAL: invalid FAT32 boot sector", INST_COLOR_BAD);
-        DbgSerialWrite("FAT32 VBR INVALID\n");
-        return false;
+        if (Capacity == 0 || !InstallFormatNVMe(Capacity) || !BlockRead(INSTALL_PARTITION_LBA, Sector))
+        {
+            TerminalPrintLine32("  [disk ] FATAL: invalid FAT32 disk and target cannot be formatted", INST_COLOR_BAD);
+            DbgSerialWrite("FAT32 VBR INVALID / FORMAT FAILED\n");
+            return false;
+        }
+        memcpy(Boot, Sector, sizeof(FAT32BootSector));
+        PartitionStartLBA = INSTALL_PARTITION_LBA;
+        Info->HasMBR = true;
+        Info->PartitionCount = 1U;
+        Info->PartitionType = 0x0CU;
+        Info->PartitionStartLBA = INSTALL_PARTITION_LBA;
+        Info->Superfloppy = false;
     }
 
     DbgSerialWrite("VBR bps=");
@@ -939,6 +1075,18 @@ bool InstallerRun(void)
 
         TerminalPrintLine32("  [phase] installing bootloader payload", INST_COLOR_TITLE);
         InstallCopyBootFiles(&FatRoot);
+        TerminalPrintLine32("  [phase] installing Limine BIOS stages", INST_COLOR_TITLE);
+        {
+            MBR FormattedMBR;
+            memset(&FormattedMBR, 0, sizeof(FormattedMBR));
+            FormattedMBR.Partitions[0].BootIndicator = 0x80U;
+            FormattedMBR.Partitions[0].PartitionType = Info.PartitionType;
+            FormattedMBR.Partitions[0].StartLBA = Info.PartitionStartLBA;
+            FormattedMBR.Partitions[0].SectorCount = Boot.TotalSectors32;
+            FormattedMBR.Signature = 0xAA55U;
+            if (!InstallLimineBIOS(&FormattedMBR))
+                TerminalPrintLine32("  [boot ] FATAL: Limine BIOS stage install failed", INST_COLOR_BAD);
+        }
 
         TerminalPrintLine32("  [phase] final free space", INST_COLOR_TITLE);
         InstallDumpBPB(&Boot, Info.PartitionStartLBA);
