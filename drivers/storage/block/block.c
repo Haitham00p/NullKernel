@@ -2,6 +2,7 @@
 #include "drivers/storage/ahci/ahci.h"
 #include "drivers/storage/ide/ide.h"
 #include "kernel/debug/debug.h"
+#include "include/drivers.h"
 
 static bool g_BlockReady;
 
@@ -53,3 +54,10 @@ bool BlockWrite(uint64_t LBA, const void *Buffer)
 
     return IDEWriteSector((uint32_t)LBA, Buffer);
 }
+
+static void block_driver_init(void)
+{
+    (void)BlockInitialize();
+}
+
+DRIVER_INIT(block_driver_init);
