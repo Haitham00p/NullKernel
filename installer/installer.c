@@ -1118,5 +1118,5 @@ bool InstallerRun(void)
                         INST_COLOR_FIELD);
     TerminalPrintLine32("  QEMU:  qemu-system-x86_64 -hda esp.img -boot order=c -m 3 -serial stdio",
                         INST_COLOR_FIELD);
-    return false;
+    return true;
 }
