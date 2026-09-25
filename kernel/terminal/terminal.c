@@ -258,6 +258,13 @@ void TerminalRedrawInputLine32(const char *prompt, uint32_t prompt_color,
     const char *command_ptr = command;
     uint32_t prompt_fg = TerminalContrastColor(prompt_color, CurBGColor);
     uint32_t command_fg = TerminalContrastColor(command_color, CurBGColor);
+    uint32_t command_start = 0U;
+
+    if (prompt_ptr != NULL)
+    {
+        while (prompt[command_start] != '\0')
+            command_start++;
+    }
 
     while (col < cols)
     {
