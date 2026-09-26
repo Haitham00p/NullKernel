@@ -1,7 +1,7 @@
 BITS 16
 ORG 0x8000
 
-OLD_MBR_LBA equ 2047
+OLD_MBR_LBA equ 0 ; resolved from the active MBR partition entry
 
 start:
     cli
@@ -49,7 +49,12 @@ old_record:
     mov word [old_dap.count], 1
     mov word [old_dap.offset], 0x7C00
     mov word [old_dap.segment], 0
-    mov dword [old_dap.lba_low], OLD_MBR_LBA
+
+    ; Old Boot Record is stored immediately before the active partition.
+    mov si, 0x7C00 + 0x1BE + 8
+    mov eax, [si]
+    sub eax, 1
+    mov dword [old_dap.lba_low], eax
     mov dword [old_dap.lba_high], 0
 
     mov si, old_dap
