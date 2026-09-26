@@ -132,7 +132,8 @@ write_boot_mailbox:
     int 0x13
     ret
 
-; Return AL=mode (0 when no request). Clear a valid mailbox before boot.
+; Return AL=mode (0 when no request). Leave a valid mailbox intact;
+; the 64-bit kernel consumes and clears it after the legacy chainload.
 check_boot_mailbox:
     mov si, 0x7C00 + 0x1BE
     mov cx, 4
@@ -164,19 +165,9 @@ check_boot_mailbox:
     cmp al, 3
     ja .none
 
-    push ax
-    mov di, MAILBOX_BUF
-    xor ax, ax
-    mov cx, 256
-    rep stosw
-    mov word [mailbox_dap.offset], MAILBOX_BUF
-    mov si, mailbox_dap
-    mov dl, [boot_drive]
-    mov ah, 0x43
-    mov al, 0
-    int 0x13
-    pop ax
-    jc .fail
+    ; Do not clear the mailbox here. The legacy Limine chainload must
+    ; carry the mode request into the 64-bit kernel. BootMonitorReadMode()
+    ; is the single consumer and clears the mailbox after reading it.
     clc
     ret
 
