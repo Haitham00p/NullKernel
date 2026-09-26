@@ -17,7 +17,7 @@ uint32_t PromColor = 0xFFFFFFFF;
 uint32_t BackSpaceColor = 0x00000000;
 
 /* Output text color for command output (printf/puts/cat), driven by /REG/color/op_fg.v */
-uint32_t OutColor = 0x00808080U;
+uint32_t OutColor = 0xFFFFFFFFU;
 /* Prompt color, driven by /REG/color/p_fg.v (0xFFFFFFFF = default white) */
 uint32_t PromptColor = 0xFFFFFFFFU;
 
@@ -167,7 +167,7 @@ static void ComposePrompt(void)
 }
 
 static void WritePrompt(void) {
-    uint32_t prompt_color = ComputePromptColor(PromptColor);
+    uint32_t prompt_color = PromptColor;
     ComposePrompt();
     TerminalBeginBatch32();
     TerminalWrite32(PromptText, prompt_color);
@@ -186,7 +186,7 @@ static void RedrawCommandPrompt(void)
      * Keep the public terminal API intact and use one batched input-line
      * redraw instead.
      */
-    uint32_t prompt_color = ComputePromptColor(PromptColor);
+    uint32_t prompt_color = PromptColor;
     ComposePrompt();
     TerminalRedrawInputLine32(
         PromptText,
