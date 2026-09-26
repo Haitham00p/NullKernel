@@ -3,8 +3,12 @@ ORG 0x8000
 
 STAGE2_LOAD equ 0x8000
 MAILBOX_BUF equ 0x0600
+MAILBOX_SECTOR equ 2
 
 start:
+    jmp 0x0000:stage2_main
+
+stage2_main:
     cli
     xor ax, ax
     mov ds, ax
@@ -103,9 +107,18 @@ write_boot_mailbox:
     pop ax
     mov [MAILBOX_BUF+4], al
 
-    mov si, 0x7C00 + 0x1BE + 8
+    mov si, 0x7C00 + 0x1BE
+    mov cx, 4
+.find_active:
+    cmp byte [si], 0x80
+    je .active_found
+    add si, 16
+    loop .find_active
+    mov si, 0x7C00 + 0x1BE
+.active_found:
+    add si, 8
     mov eax, [si]
-    sub eax, 2
+    add eax, MAILBOX_SECTOR
     mov dword [mailbox_dap.lba_low], eax
     mov dword [mailbox_dap.lba_high], 0
     mov word [mailbox_dap.count], 1
@@ -176,7 +189,16 @@ old_record:
     mov word [old_dap.segment], 0
 
     ; Old Boot Record is stored immediately before the active partition.
-    mov si, 0x7C00 + 0x1BE + 8
+    mov si, 0x7C00 + 0x1BE
+    mov cx, 4
+.find_active_old:
+    cmp byte [si], 0x80
+    je .active_found_old
+    add si, 16
+    loop .find_active_old
+    mov si, 0x7C00 + 0x1BE
+.active_found_old:
+    add si, 8
     mov eax, [si]
     sub eax, 1
     mov dword [old_dap.lba_low], eax
@@ -188,6 +210,10 @@ old_record:
     int 0x13
     jc old_error
 
+    ; Never jump into a random sector: the saved record must be a
+    ; real boot record with the BIOS 0xAA55 signature.
+    cmp word [0x7C00 + 510], 0xAA55
+    jne old_error
     mov dl, [boot_drive]
     jmp 0x0000:0x7C00
 
@@ -235,7 +261,7 @@ subtitle db 0
 normal db "  [1] Normal-Mode",13,10,0
 assembly db "  [2] Assembly-Mode",13,10,0
 npb db "  [3] NullOS Pre-Boot",13,10,0
-old_boot db "  [0] Old-Boot Record",13,10,0
+old_boot db "  [0] Old Boot Record",13,10,0
 rule2 db 0
 prompt db "Command: ",0
 rebooting db 13,10,"   REBOOTING... PLEASE STAND BY.",13,10,0
@@ -243,6 +269,7 @@ loading_old db 13,10,"   LOADING LEGACY BOOT RECORD...",13,10,0
 old_fail db "   ERROR: LEGACY BOOT RECORD READ FAILED.",13,10,0
 mailbox_fail db 13,10,"   ERROR: BOOT MODE STORAGE FAILED.",13,10,0
 
+align 4, db 0
 old_dap:
     db 0x10, 0
 .count dw 0
@@ -251,6 +278,7 @@ old_dap:
 .lba_low dd 0
 .lba_high dd 0
 
+align 4, db 0
 mailbox_dap:
     db 0x10, 0
 .count dw 0
