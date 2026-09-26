@@ -5,6 +5,9 @@ STAGE2_SECTORS equ 24
 STAGE2_LOAD    equ 0x8000
 
 start:
+    jmp 0x0000:stage1_main
+
+stage1_main:
     cli
     xor ax, ax
     mov ds, ax
@@ -29,7 +32,17 @@ start:
     mov word [dap.offset], STAGE2_LOAD
     mov word [dap.segment], 0
     ; Stage 2 lives at partition_start + 7, inside FAT32 reserved sectors.
-    mov si, 0x7C00 + 0x1BE + 8
+    ; Prefer the active MBR partition (boot indicator 0x80).
+    mov si, 0x7C00 + 0x1BE
+    mov cx, 4
+.find_active:
+    cmp byte [si], 0x80
+    je .active_found
+    add si, 16
+    loop .find_active
+    mov si, 0x7C00 + 0x1BE
+.active_found:
+    add si, 8
     mov eax, [si]
     add eax, 7
     mov dword [dap.lba_low], eax
@@ -66,6 +79,7 @@ puts:
 boot_drive db 0
 msg_disk_error db 13,10,"NullL: stage2 disk read failed",13,10,0
 
+align 4, db 0
 dap:
     db 0x10, 0
 .count dw 0
