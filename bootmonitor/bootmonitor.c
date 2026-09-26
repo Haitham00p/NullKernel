@@ -4,6 +4,8 @@
 #include "include/diskfs.h"
 #include "kernel/terminal/terminal.h"
 #include "drivers/input/keyboard/keyboard.h"
+#include "drivers/storage/block/block.h"
+#include "fs/partition/mbr/mbr.h"
 #include "mm/heap/heap.h"
 #include "lib/string/string.h"
 #include "arch/x86_64/power/pwr.h"
