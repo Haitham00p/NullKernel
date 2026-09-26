@@ -133,10 +133,9 @@ static bool ReadBootConfig(char *out,uint32_t cap)
     uint8_t b[4096];uint32_t got=0,i;
     if(cap<2U || !DiskFsReadInPath("/BOOT/LIMINE","limine.conf",b,sizeof(b)-1,&got)) return false;
     b[got]=0;
-    const char *needle="path:";
     for(i=0;i+5<got;i++) if(b[i]=='p'&&b[i+1]=='a'&&b[i+2]=='t'&&b[i+3]=='h'&&b[i+4]==':'){
-        uint32_t s=i+5;while(s<got&&(b[s]==' '||b[s]=='\\t'))s++;
-        uint32_t e=s;while(e<got&&b[e]!='\\n'&&b[e]!='\\r')e++;
+        uint32_t s=i+5;while(s<got&&(b[s]==' '||b[s]=='\t'))s++;
+        uint32_t e=s;while(e<got&&b[e]!='\n'&&b[e]!='\r')e++;
         uint32_t n=e-s;if(n>=cap)n=cap-1;for(uint32_t j=0;j<n;j++)out[j]=(char)b[s+j];out[n]=0;return true;
     }
     return false;
@@ -145,7 +144,8 @@ static bool ReadBootConfig(char *out,uint32_t cap)
 static bool Validate(const uint8_t *img,uint32_t size,uint64_t *entry,
                      uint64_t *lo,uint64_t *hi){
     const BM_EHDR *e; uint32_t i; bool have=false; uint64_t l=UINT64_MAX,h=0;
-    if(!img||size<sizeof(BM_EHDR))return false; e=(const BM_EHDR*)img;
+    if(!img||size<sizeof(BM_EHDR)) return false;
+    e=(const BM_EHDR*)img;
     if(e->id[0]!=0x7f||e->id[1]!='E'||e->id[2]!='L'||e->id[3]!='F'||
        e->id[4]!=2||e->id[5]!=1||e->id[6]!=1||e->type!=2||e->machine!=62||
        e->version!=1||e->ehsize!=64||e->phentsize!=56||!e->phnum)return false;
@@ -153,13 +153,15 @@ static bool Validate(const uint8_t *img,uint32_t size,uint64_t *entry,
     if(e->entry<0xffffffff80000000ULL||e->entry>=0xffffffffc0000000ULL)return false;
     for(i=0;i<e->phnum;i++){
         const BM_PHDR *p=(const BM_PHDR*)(img+e->phoff+(uint64_t)i*56ULL);
-        if(p->type!=1)continue; have=true;
+        if(p->type!=1) continue;
+        have=true;
         if(p->filesz>p->memsz||p->offset>size||p->filesz>(uint64_t)size-p->offset)return false;
         if(p->vaddr<0xffffffff80000000ULL||p->vaddr+p->memsz<p->vaddr||
            p->vaddr+p->memsz>0xffffffffc0000000ULL)return false;
         if(!p->align||(p->align&(p->align-1ULL)))return false;
         if(p->align>1&&((p->vaddr-p->offset)&(p->align-1ULL)))return false;
-        if(p->vaddr<l)l=p->vaddr; if(p->vaddr+p->memsz>h)h=p->vaddr+p->memsz;
+        if(p->vaddr<l) l=p->vaddr;
+        if(p->vaddr+p->memsz>h) h=p->vaddr+p->memsz;
     }
     if(!have||l==UINT64_MAX||h<=l)return false;
     *entry=e->entry;*lo=l;*hi=h;return true;
@@ -195,7 +197,8 @@ static void ShowKernels(void){
         uint32_t l=0;while(p[l]&&p[l]!='\n'&&p[l]!='\r')l++;
         if(l){
             char name[96];uint32_t i,cp=l<95?l:95;uint32_t sz=0;
-            for(i=0;i<cp;i++)name[i]=p[i];name[cp]=0;
+            for(i=0;i<cp;i++) name[i]=p[i];
+            name[cp]=0;
             if(ElfName(name)&&DiskFsFileSize(name,&sz)){
                 char kid[32]; uint32_t kslot=0;
                 KernelIdForName(name,kid,sizeof(kid),&kslot);
@@ -210,7 +213,8 @@ static void ShowKernels(void){
         }
         p+=l;while(*p=='\n'||*p=='\r')p++;
     }
-    if(!n)P("  (none)");DiskFsCdRoot();
+    if(!n) P("  (none)");
+    DiskFsCdRoot();
 }
 
 static bool StageLimine(const char *name){
@@ -480,7 +484,8 @@ static void AsmMode(void)
 }
 static void Execute(char *line){
     char *cmd=line,*arg=NULL;
-    while(*cmd==' '||*cmd=='\t')cmd++; if(!*cmd)return;
+    while(*cmd==' '||*cmd=='\t') cmd++;
+    if(!*cmd) return;
     for(char *p=cmd;*p;p++)if(*p==' '||*p=='\t'){*p=0;arg=p+1;while(*arg==' '||*arg=='\t')arg++;break;}
     if(Eq(cmd,"help")){Help();return;}
     if(Eq(cmd,"ShowKernels")||Eq(cmd,"showkernels")){ShowKernels();return;}
@@ -546,15 +551,15 @@ static void ReadLine(char *line,uint32_t cap){
 
 uint8_t BootMonitorReadMode(void)
 {
-    uint8_t MBR[512];
+    uint8_t MBRBuffer[512];
     uint8_t Mailbox[512];
     uint32_t PartitionStart;
     const MBRPartitionEntry *Part;
 
-    if (!DiskFsIsMounted() || !BlockRead(0, MBR))
+    if (!DiskFsIsMounted() || !BlockRead(0, MBRBuffer))
         return 0;
 
-    if (!MBRIsValid((const MBR *)MBR) || MBRGetPartitionCount((const MBR *)MBR) == 0)
+    if (!MBRIsValid((const MBR *)MBRBuffer) || MBRGetPartitionCount((const MBR *)MBR) == 0)
         return 0;
 
     Part = MBRGetPartition((const MBR *)MBR, 0);
