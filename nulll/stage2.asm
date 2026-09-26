@@ -93,7 +93,7 @@ mailbox_error:
     hlt
     jmp .hang
 
-; AL = selected mode. Write NLM1 + mode to partition_start - 2.
+; AL = selected mode. Write NLM1 + mode to FAT32 reserved sector 2.
 write_boot_mailbox:
     push ax
     mov di, MAILBOX_BUF
@@ -134,9 +134,18 @@ write_boot_mailbox:
 
 ; Return AL=mode (0 when no request). Clear a valid mailbox before boot.
 check_boot_mailbox:
-    mov si, 0x7C00 + 0x1BE + 8
+    mov si, 0x7C00 + 0x1BE
+    mov cx, 4
+.find_active_mailbox:
+    cmp byte [si], 0x80
+    je .active_found_mailbox
+    add si, 16
+    loop .find_active_mailbox
+    mov si, 0x7C00 + 0x1BE
+.active_found_mailbox:
+    add si, 8
     mov eax, [si]
-    sub eax, 2
+    add eax, MAILBOX_SECTOR
     mov dword [mailbox_dap.lba_low], eax
     mov dword [mailbox_dap.lba_high], 0
     mov word [mailbox_dap.count], 1
