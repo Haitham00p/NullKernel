@@ -22,11 +22,12 @@
 #define INSTALL_ISO_SECTOR 2048U
 #define INSTALL_MAX_DEPTH  8U
 
-#define INST_COLOR_TITLE  0x00FFD700U
-#define INST_COLOR_GOOD   0x0000FF00U
-#define INST_COLOR_BAD    0xFFFF0000U
-#define INST_COLOR_HEADER 0x0057DB92U
-#define INST_COLOR_FIELD  0x00E8F0FFU
+/* 1970s monochrome terminal palette: phosphor green on black. */
+#define INST_COLOR_TITLE  0x00A8FF70U
+#define INST_COLOR_GOOD   0x00A8FF70U
+#define INST_COLOR_BAD    0x00A8FF70U
+#define INST_COLOR_HEADER 0x0070B84FU
+#define INST_COLOR_FIELD  0x0070B84FU
 
 /* RAM tree of everything found in /rootfs on the CD. */
 typedef struct InstallNode
@@ -70,10 +71,13 @@ typedef struct
 
 static void InstallBar(const char *Title)
 {
-    TerminalPrintLine32("--------------------------------------------------------",
+    TerminalPrintLine32("+------------------------------------------------------+",
                         INST_COLOR_HEADER);
-    TerminalPrintLine32(Title, INST_COLOR_TITLE);
-    TerminalPrintLine32("--------------------------------------------------------",
+    TerminalPrintLine32("|", INST_COLOR_HEADER);
+    TerminalWrite32("| ", INST_COLOR_HEADER);
+    TerminalWrite32(Title, INST_COLOR_TITLE);
+    TerminalPrintLine32(" |", INST_COLOR_HEADER);
+    TerminalPrintLine32("+------------------------------------------------------+",
                         INST_COLOR_HEADER);
 }
 
@@ -1122,11 +1126,22 @@ InstallerResult InstallerRun(void)
 
     KbdFlushBuffer();
 
-    TerminalPrintLine32("==============================", INST_COLOR_HEADER);
-    TerminalPrintLine32("        NullOS Live CD", INST_COLOR_TITLE);
-    TerminalPrintLine32("==============================", INST_COLOR_HEADER);
-    TerminalPrintLine32("(Try OS or Install?) [T/I]", INST_COLOR_GOOD);
-    TerminalWrite32("> ", PromColor);
+    InstallBar("NULL OPERATING SYSTEM / INSTALL");
+    TerminalPrintLine32("|  MASS STORAGE INSTALLATION TERMINAL               |",
+                        INST_COLOR_TITLE);
+    TerminalPrintLine32("|  COPYRIGHT 1970S-STYLE SYSTEM SOFTWARE            |",
+                        INST_COLOR_FIELD);
+    TerminalPrintLine32("|                                                    |",
+                        INST_COLOR_HEADER);
+    TerminalPrintLine32("|  [T] TRY LIVE SYSTEM                              |",
+                        INST_COLOR_GOOD);
+    TerminalPrintLine32("|  [I] INSTALL TO FIXED DISK                        |",
+                        INST_COLOR_GOOD);
+    TerminalPrintLine32("|                                                    |",
+                        INST_COLOR_HEADER);
+    TerminalPrintLine32("+----------------------------------------------------+",
+                        INST_COLOR_HEADER);
+    TerminalWrite32("COMMAND: ", INST_COLOR_TITLE);
 
     while (!KbdAvailable())
     {
@@ -1140,7 +1155,7 @@ InstallerResult InstallerRun(void)
         return INSTALLER_RESULT_LIVE;
     }
 
-    InstallBar("N U L L O S   I N S T A L L E R   -   VERBOSE MODE");
+    InstallBar("NULL INSTALLER / SYSTEM BUILD");
     TerminalPrintLine32("  [phase] boot device sanity check", INST_COLOR_TITLE);
 
     if (!IDEIsATAPI())
@@ -1340,7 +1355,7 @@ InstallerResult InstallerRun(void)
     TerminalWrite32("  Bytes written : ", PromColor);
     TerminalPrintHex64Compact(g_StagedBytes);
     TerminalPutChar32('\n', PromColor);
-    TerminalPrintLine32("  Disk is now bootable via NullLoader BIOS (UEFI remains Limine).", INST_COLOR_GOOD);
+    TerminalPrintLine32("|  SYSTEM READY. REMOVE INSTALL MEDIA AND RESTART.    |", INST_COLOR_GOOD);
     TerminalPrintLine32("  Host:  limine-binary/limine bios-install esp.img",
                         INST_COLOR_FIELD);
     TerminalPrintLine32("  QEMU:  qemu-system-x86_64 -hda esp.img -boot order=c -m 3 -serial stdio",
