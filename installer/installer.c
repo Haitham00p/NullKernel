@@ -54,9 +54,8 @@ static uint32_t g_WriteFailures = 0;
 #define INSTALL_FAT_COUNT 2U
 #define INSTALL_ROOT_CLUSTER 2U
 
-/* NullLoader BIOS layout in the sectors outside the FAT32 data area. */
-#define NULLL_OLD_MBR_LBA      2047U
-#define NULLL_STAGE2_LBA       (INSTALL_PARTITION_LBA + 7U)
+/* NullLoader BIOS layout relative to the active FAT32 partition. */
+#define NULLL_STAGE2_OFFSET    7U
 #define NULLL_STAGE2_SECTORS   24U
 
 /* Diagnostics for InstallMountDisk. */
@@ -871,15 +870,15 @@ static bool InstallReadISOFile(const char *Path, uint8_t **Data, uint32_t *Size)
  * Layout:
  *   LBA 0      = NullL stage 1 MBR code + existing partition table
  *   LBA 1..2046= the old Limine BIOS payload, left untouched
- *   LBA 2047   = complete old MBR / Old Boot Record backup
- *   LBA 2048   = FAT32 VBR
- *   LBA 2055+  = NullL stage 2 inside FAT32 reserved sectors
+ *   partition_start-1 = complete old MBR / Old Boot Record backup
+ *   partition_start   = FAT32 VBR
+ *   partition_start+7  = NullL stage 2 inside FAT32 reserved sectors
  *
  * The old MBR is deliberately kept as a complete 512-byte record.  When
  * option 0 is selected, NullL restores it to 0x7C00 and jumps to it, while
  * its original Limine stage-2 sectors remain at LBA 1..2046.
  */
-static bool InstallNullL(void)
+static bool InstallNullL(uint32_t PartitionStartLBA, uint16_t ReservedSectorCount)
 {
     uint8_t *Stage1 = NULL;
     uint8_t *Stage2 = NULL;
@@ -888,6 +887,17 @@ static bool InstallNullL(void)
     uint8_t OldMBR[512];
     uint8_t Sector[512];
     uint32_t Stage2Sectors;
+    uint32_t OldMBRLBA;
+    uint32_t Stage2LBA;
+
+    if (PartitionStartLBA <= 1U ||
+        ReservedSectorCount < NULLL_STAGE2_OFFSET + NULLL_STAGE2_SECTORS)
+    {
+        return false;
+    }
+
+    OldMBRLBA = PartitionStartLBA - 1U;
+    Stage2LBA = PartitionStartLBA + NULLL_STAGE2_OFFSET;
 
     if (!IDESelectCD())
     {
@@ -926,7 +936,7 @@ static bool InstallNullL(void)
     }
 
     /* Preserve the complete previous boot record for menu option 0. */
-    if (!BlockWrite(NULLL_OLD_MBR_LBA, OldMBR))
+    if (!BlockWrite(OldMBRLBA, OldMBR))
     {
         kfree(Stage1);
         kfree(Stage2);
@@ -944,7 +954,7 @@ static bool InstallNullL(void)
             if (Bytes > 512U) Bytes = 512U;
             memcpy(Sector, Stage2 + Offset, Bytes);
         }
-        if (!BlockWrite(NULLL_STAGE2_LBA + i, Sector))
+        if (!BlockWrite(Stage2LBA + i, Sector))
         {
             kfree(Stage1);
             kfree(Stage2);
@@ -1275,7 +1285,7 @@ InstallerResult InstallerRun(void)
         }
 
         TerminalPrintLine32("  [phase] installing NullLoader stage 1/2", INST_COLOR_TITLE);
-        if (!InstallNullL())
+        if (!InstallNullL(Info.PartitionStartLBA, Boot.ReservedSectorCount))
         {
             TerminalPrintLine32("  [boot ] FATAL: NullLoader installation failed", INST_COLOR_BAD);
             DbgSerialWrite("NULLL INSTALL: FAILED\n");
