@@ -175,6 +175,15 @@ void kernel_main(void)
      * reboot-c stores a one-shot BM1 request on the installed FAT32 disk.
      * The request must be consumed before the normal shell starts.
      */
+    {
+        uint8_t NullLMode = BootMonitorReadMode();
+        if (NullLMode == BOOTMONITOR_MODE_ASM ||
+            NullLMode == BOOTMONITOR_MODE_NPB)
+        {
+            BootMonitorRunMode(NullLMode);
+        }
+    }
+
     if (BootMonitorShouldEnter())
         BootMonitorRun();
 
