@@ -54,6 +54,11 @@ static uint32_t g_WriteFailures = 0;
 #define INSTALL_FAT_COUNT 2U
 #define INSTALL_ROOT_CLUSTER 2U
 
+/* NullLoader BIOS layout in the sectors outside the FAT32 data area. */
+#define NULLL_OLD_MBR_LBA      2047U
+#define NULLL_STAGE2_LBA       (INSTALL_PARTITION_LBA + 7U)
+#define NULLL_STAGE2_SECTORS   24U
+
 /* Diagnostics for InstallMountDisk. */
 typedef struct
 {
@@ -830,6 +835,149 @@ static bool InstallLimineBIOS(const MBR *FormattedMBR)
     return BlockWrite(0, Sector);
 }
 
+static bool InstallReadISOFile(const char *Path, uint8_t **Data, uint32_t *Size)
+{
+    ISODirRecord Record;
+    uint8_t *Buffer;
+    uint32_t Read = 0;
+
+    if (Path == NULL || Data == NULL || Size == NULL ||
+        !ISOFindPath(Path, &Record) || Record.DataLength == 0U)
+    {
+        return false;
+    }
+
+    Buffer = (uint8_t *)kmalloc(Record.DataLength);
+    if (Buffer == NULL)
+    {
+        return false;
+    }
+
+    if (!ISOReadFile(&Record, Buffer, Record.DataLength, &Read) ||
+        Read != Record.DataLength)
+    {
+        kfree(Buffer);
+        return false;
+    }
+
+    *Data = Buffer;
+    *Size = Read;
+    return true;
+}
+
+/*
+ * Install the first NullLoader slice.
+ *
+ * Layout:
+ *   LBA 0      = NullL stage 1 MBR code + existing partition table
+ *   LBA 1..2046= the old Limine BIOS payload, left untouched
+ *   LBA 2047   = complete old MBR / Old Boot Record backup
+ *   LBA 2048   = FAT32 VBR
+ *   LBA 2055+  = NullL stage 2 inside FAT32 reserved sectors
+ *
+ * The old MBR is deliberately kept as a complete 512-byte record.  When
+ * option 0 is selected, NullL restores it to 0x7C00 and jumps to it, while
+ * its original Limine stage-2 sectors remain at LBA 1..2046.
+ */
+static bool InstallNullL(void)
+{
+    uint8_t *Stage1 = NULL;
+    uint8_t *Stage2 = NULL;
+    uint32_t Stage1Size = 0;
+    uint32_t Stage2Size = 0;
+    uint8_t OldMBR[512];
+    uint8_t Sector[512];
+    uint32_t Stage2Sectors;
+
+    if (!IDESelectCD())
+    {
+        return false;
+    }
+
+    if (!InstallReadISOFile("/boot/nulll/stage1.bin", &Stage1, &Stage1Size) ||
+        !InstallReadISOFile("/boot/nulll/stage2.bin", &Stage2, &Stage2Size))
+    {
+        if (Stage1 != NULL) kfree(Stage1);
+        if (Stage2 != NULL) kfree(Stage2);
+        return false;
+    }
+
+    if (Stage1Size == 0U || Stage1Size > 446U || Stage2Size == 0U)
+    {
+        kfree(Stage1);
+        kfree(Stage2);
+        return false;
+    }
+
+    Stage2Sectors = (Stage2Size + 511U) / 512U;
+    if (Stage2Sectors > NULLL_STAGE2_SECTORS)
+    {
+        kfree(Stage1);
+        kfree(Stage2);
+        return false;
+    }
+
+    if (!IDESelectDisk() || !BlockRead(0, OldMBR) ||
+        OldMBR[510] != 0x55U || OldMBR[511] != 0xAAU)
+    {
+        kfree(Stage1);
+        kfree(Stage2);
+        return false;
+    }
+
+    /* Preserve the complete previous boot record for menu option 0. */
+    if (!BlockWrite(NULLL_OLD_MBR_LBA, OldMBR))
+    {
+        kfree(Stage1);
+        kfree(Stage2);
+        return false;
+    }
+
+    /* Stage 2 lives after FAT32's VBR, FSInfo, and backup VBR slots. */
+    for (uint32_t i = 0; i < NULLL_STAGE2_SECTORS; i++)
+    {
+        memset(Sector, 0, sizeof(Sector));
+        if (i < Stage2Sectors)
+        {
+            uint32_t Offset = i * 512U;
+            uint32_t Bytes = Stage2Size - Offset;
+            if (Bytes > 512U) Bytes = 512U;
+            memcpy(Sector, Stage2 + Offset, Bytes);
+        }
+        if (!BlockWrite(NULLL_STAGE2_LBA + i, Sector))
+        {
+            kfree(Stage1);
+            kfree(Stage2);
+            return false;
+        }
+    }
+
+    /* Replace only the 446-byte boot code.  Keep the disk signature,
+       partition table, and 0xAA55 signature from the existing MBR. */
+    if (!BlockRead(0, Sector))
+    {
+        kfree(Stage1);
+        kfree(Stage2);
+        return false;
+    }
+    memcpy(Sector, Stage1, Stage1Size);
+    if (Stage1Size < 446U)
+    {
+        memset(Sector + Stage1Size, 0, 446U - Stage1Size);
+    }
+
+    if (!BlockWrite(0, Sector))
+    {
+        kfree(Stage1);
+        kfree(Stage2);
+        return false;
+    }
+
+    kfree(Stage1);
+    kfree(Stage2);
+    return true;
+}
+
 /* Switches IDE to the hard disk and opens its FAT32 root. */
 static bool InstallMountDisk(FAT32BootSector *Boot, FAT32Directory *Root,
                              InstallDiskInfo *Info)
@@ -1120,7 +1268,23 @@ InstallerResult InstallerRun(void)
             FormattedMBR.Partitions[0].SectorCount = Boot.TotalSectors32;
             FormattedMBR.Signature = 0xAA55U;
             if (!InstallLimineBIOS(&FormattedMBR))
+            {
                 TerminalPrintLine32("  [boot ] FATAL: Limine BIOS stage install failed", INST_COLOR_BAD);
+                g_WriteFailures++;
+            }
+        }
+
+        TerminalPrintLine32("  [phase] installing NullLoader stage 1/2", INST_COLOR_TITLE);
+        if (!InstallNullL())
+        {
+            TerminalPrintLine32("  [boot ] FATAL: NullLoader installation failed", INST_COLOR_BAD);
+            DbgSerialWrite("NULLL INSTALL: FAILED\n");
+            g_WriteFailures++;
+        }
+        else
+        {
+            TerminalPrintLine32("  [boot ] NullLoader BIOS menu installed", INST_COLOR_GOOD);
+            DbgSerialWrite("NULLL INSTALL: OK (old MBR saved at LBA 2047)\n");
         }
 
         TerminalPrintLine32("  [phase] final free space", INST_COLOR_TITLE);
@@ -1166,7 +1330,7 @@ InstallerResult InstallerRun(void)
     TerminalWrite32("  Bytes written : ", PromColor);
     TerminalPrintHex64Compact(g_StagedBytes);
     TerminalPutChar32('\n', PromColor);
-    TerminalPrintLine32("  Disk is now bootable via Limine BIOS.", INST_COLOR_GOOD);
+    TerminalPrintLine32("  Disk is now bootable via NullLoader BIOS (UEFI remains Limine).", INST_COLOR_GOOD);
     TerminalPrintLine32("  Host:  limine-binary/limine bios-install esp.img",
                         INST_COLOR_FIELD);
     TerminalPrintLine32("  QEMU:  qemu-system-x86_64 -hda esp.img -boot order=c -m 3 -serial stdio",
