@@ -69,20 +69,6 @@ typedef struct
     bool Superfloppy;
 } InstallDiskInfo;
 
-static void InstallBar(const char *Title)
-{
-    TerminalPrintLine32("+------------------------------------------------------+",
-                        INST_COLOR_HEADER);
-    TerminalPrintLine32("|", INST_COLOR_HEADER);
-    TerminalWrite32("| ", INST_COLOR_HEADER);
-    TerminalWrite32(Title, INST_COLOR_TITLE);
-    TerminalPrintLine32(" |", INST_COLOR_HEADER);
-    TerminalPrintLine32("+------------------------------------------------------+",
-                        INST_COLOR_HEADER);
-}
-
-
-
 static void InstallSerialHex(const uint8_t *Bytes, uint32_t Count)
 {
     static const char Digits[] = "0123456789ABCDEF";
@@ -1126,22 +1112,12 @@ InstallerResult InstallerRun(void)
 
     KbdFlushBuffer();
 
-    InstallBar("NULL OPERATING SYSTEM / INSTALL");
-    TerminalPrintLine32("|  MASS STORAGE INSTALLATION TERMINAL               |",
-                        INST_COLOR_TITLE);
-    TerminalPrintLine32("|  COPYRIGHT 1970S-STYLE SYSTEM SOFTWARE            |",
-                        INST_COLOR_FIELD);
-    TerminalPrintLine32("|                                                    |",
-                        INST_COLOR_HEADER);
-    TerminalPrintLine32("|  [T] TRY LIVE SYSTEM                              |",
-                        INST_COLOR_GOOD);
-    TerminalPrintLine32("|  [I] INSTALL TO FIXED DISK                        |",
-                        INST_COLOR_GOOD);
-    TerminalPrintLine32("|                                                    |",
-                        INST_COLOR_HEADER);
-    TerminalPrintLine32("+----------------------------------------------------+",
-                        INST_COLOR_HEADER);
-    TerminalWrite32("COMMAND: ", INST_COLOR_TITLE);
+    TerminalPrintLine32("NULL OPERATING SYSTEM - INSTALL", INST_COLOR_TITLE);
+    TerminalPrintLine32("Mass storage installation terminal", INST_COLOR_FIELD);
+    TerminalPrintLine32("", INST_COLOR_FIELD);
+    TerminalPrintLine32("[T] Try live system", INST_COLOR_GOOD);
+    TerminalPrintLine32("[I] Install to fixed disk", INST_COLOR_GOOD);
+    TerminalWrite32("Command: ", INST_COLOR_TITLE);
 
     while (!KbdAvailable())
     {
@@ -1155,7 +1131,8 @@ InstallerResult InstallerRun(void)
         return INSTALLER_RESULT_LIVE;
     }
 
-    InstallBar("NULL INSTALLER / SYSTEM BUILD");
+    TerminalPrintLine32("", INST_COLOR_FIELD);
+    TerminalPrintLine32("NULL INSTALLER - SYSTEM BUILD", INST_COLOR_TITLE);
     TerminalPrintLine32("  [phase] boot device sanity check", INST_COLOR_TITLE);
 
     if (!IDEIsATAPI())
@@ -1324,7 +1301,8 @@ InstallerResult InstallerRun(void)
         if (g_WriteFailures != 0U || Verify.Missing != 0U ||
             Verify.SizeMismatch != 0U)
         {
-            InstallBar("I N S T A L L   F A I L E D");
+            TerminalPrintLine32("", INST_COLOR_FIELD);
+            TerminalPrintLine32("INSTALL FAILED", INST_COLOR_BAD);
             TerminalWrite32("  Write failures : ", INST_COLOR_BAD);
             TerminalPrintHex64Compact(g_WriteFailures);
             TerminalPutChar32('\n', INST_COLOR_BAD);
@@ -1340,7 +1318,8 @@ InstallerResult InstallerRun(void)
         }
     }
 
-    InstallBar("I N S T A L L   S U C C E S S");
+    TerminalPrintLine32("", INST_COLOR_FIELD);
+    TerminalPrintLine32("INSTALL SUCCESS", INST_COLOR_GOOD);
     DbgSerialWrite("INSTALL RESULT: SUCCESS\n");
     DbgSerialWrite("files=");
     InstallSerialNumber(g_StagedFiles);
@@ -1355,11 +1334,9 @@ InstallerResult InstallerRun(void)
     TerminalWrite32("  Bytes written : ", PromColor);
     TerminalPrintHex64Compact(g_StagedBytes);
     TerminalPutChar32('\n', PromColor);
-    TerminalPrintLine32("|  SYSTEM READY. REMOVE INSTALL MEDIA AND RESTART.    |", INST_COLOR_GOOD);
-    TerminalPrintLine32("  Host:  limine-binary/limine bios-install esp.img",
-                        INST_COLOR_FIELD);
-    TerminalPrintLine32("  QEMU:  qemu-system-x86_64 -hda esp.img -boot order=c -m 3 -serial stdio",
-                        INST_COLOR_FIELD);
+    TerminalPrintLine32("SYSTEM READY. REMOVE INSTALL MEDIA AND RESTART.", INST_COLOR_GOOD);
+    TerminalPrintLine32("Host: limine-binary/limine bios-install esp.img", INST_COLOR_FIELD);
+    TerminalPrintLine32("QEMU: qemu-system-x86_64 -hda esp.img -boot order=c -m 3 -serial stdio", INST_COLOR_FIELD);
     DbgSerialWrite("INSTALLER: returning SUCCEEDED (kernel will reboot)\n");
     return INSTALLER_RESULT_SUCCEEDED;
 }
