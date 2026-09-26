@@ -553,21 +553,34 @@ uint8_t BootMonitorReadMode(void)
 {
     uint8_t MBRBuffer[512];
     uint8_t Mailbox[512];
-    uint32_t PartitionStart;
-    const MBRPartitionEntry *Part;
+    uint32_t PartitionStart = 0;
+    const MBR *Table;
+    const MBRPartitionEntry *Part = NULL;
 
     if (!DiskFsIsMounted() || !BlockRead(0, MBRBuffer))
         return 0;
 
-    if (!MBRIsValid((const MBR *)MBRBuffer) || MBRGetPartitionCount((const MBR *)MBRBuffer) == 0)
+    Table = (const MBR *)MBRBuffer;
+    if (!MBRIsValid(Table))
         return 0;
 
-    Part = MBRGetPartition((const MBR *)MBRBuffer, 0);
+    for (uint32_t i = 0; i < 4U; i++)
+    {
+        const MBRPartitionEntry *Candidate = MBRGetPartition(Table, i);
+        if (Candidate != NULL && Candidate->BootIndicator == 0x80U)
+        {
+            Part = Candidate;
+            break;
+        }
+    }
+    if (Part == NULL)
+        Part = MBRGetPartition(Table, 0);
+
     if (Part == NULL || Part->StartLBA < 2U)
         return 0;
 
     PartitionStart = Part->StartLBA;
-    if (!BlockRead(PartitionStart - 2U, Mailbox))
+    if (!BlockRead(PartitionStart + 2U, Mailbox))
         return 0;
 
     if (Mailbox[0] != 'N' || Mailbox[1] != 'L' ||
@@ -583,7 +596,7 @@ uint8_t BootMonitorReadMode(void)
     {
         for (uint32_t i = 0; i < sizeof(Mailbox); i++)
             Mailbox[i] = 0;
-        BlockWrite(PartitionStart - 2U, Mailbox);
+        BlockWrite(PartitionStart + 2U, Mailbox);
     }
 
     return Mode;
