@@ -76,9 +76,11 @@ select_npb:
 select_mode:
     call write_boot_mailbox
     jc mailbox_error
-    mov si, rebooting
+    ; Do not reset through the keyboard controller. Chainload the saved
+    ; Limine MBR immediately, preserving the mailbox for the 64-bit kernel.
+    mov si, chainloading
     call puts
-    call reboot
+    call old_record
     jmp $
 
 mailbox_boot:
@@ -264,7 +266,7 @@ npb db "  [3] NullOS Pre-Boot",13,10,0
 old_boot db "  [0] Old Boot Record",13,10,0
 rule2 db 0
 prompt db "Command: ",0
-rebooting db 13,10,"   REBOOTING... PLEASE STAND BY.",13,10,0
+chainloading db 13,10,"   CHAINLOADING LEGACY BOOT RECORD...",13,10,0
 loading_old db 13,10,"   LOADING LEGACY BOOT RECORD...",13,10,0
 old_fail db "   ERROR: LEGACY BOOT RECORD READ FAILED.",13,10,0
 mailbox_fail db 13,10,"   ERROR: BOOT MODE STORAGE FAILED.",13,10,0
