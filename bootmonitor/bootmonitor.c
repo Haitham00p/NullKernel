@@ -549,7 +549,7 @@ uint8_t BootMonitorReadMode(void)
     uint8_t MBR[512];
     uint8_t Mailbox[512];
     uint32_t PartitionStart;
-    MBRPartitionEntry *Part;
+    const MBRPartitionEntry *Part;
 
     if (!DiskFsIsMounted() || !BlockRead(0, MBR))
         return 0;
