@@ -12,6 +12,7 @@ void VmmInitialize(void);
 uint64_t VmmCurrentRoot(void);
 uint64_t VmmKernelRoot(void);
 bool VmmMapPage(uint64_t Virtual,uint64_t Physical,uint64_t Flags);
+bool VmmSetExecutable(uint64_t Virtual, uint64_t Length, bool Executable);
 bool VmmUnmapPage(uint64_t Virtual,bool FreePhysical);
 uint64_t VmmGetPhysical(uint64_t Virtual);
 bool VmmMapUserPage(uint64_t Virtual,uint64_t Flags);
