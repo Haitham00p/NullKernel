@@ -7,6 +7,7 @@
 #include "drivers/storage/block/block.h"
 #include "fs/partition/mbr/mbr.h"
 #include "mm/heap/heap.h"
+#include "mm/vmm.h"
 #include "lib/string/string.h"
 #include "arch/x86_64/power/pwr.h"
 #include "bootmonitor/bootasm.h"
@@ -451,7 +452,22 @@ static void AsmExecuteInstruction(const char *line)
     if(!code){kfree(obj);P("AsmMode: out of memory");return;}
     for(uint32_t i=0;i<text_size;i++) code[i]=obj[N64O_HDRSZ+i];
 
+    /*
+     * kmalloc memory is data memory.  On kernels with NX enabled, jumping
+     * into the heap causes an immediate page fault.  Assembly mode is the
+     * explicit exception: make only the generated instruction page(s)
+     * executable for the duration of this instruction.
+     */
+    if (!VmmSetExecutable((uint64_t)(uintptr_t)code, text_size, true))
+    {
+        kfree(code);
+        kfree(obj);
+        P("AsmMode: could not make instruction buffer executable");
+        return;
+    }
+
     BootAsmRun(code,&AsmRegs);
+    VmmSetExecutable((uint64_t)(uintptr_t)code, text_size, false);
     kfree(code);
     kfree(obj);
     AsmRegsPrint();
