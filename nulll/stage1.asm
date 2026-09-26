@@ -1,7 +1,6 @@
 BITS 16
 ORG 0x7C00
 
-STAGE2_LBA     equ 0 ; resolved from the active MBR partition entry
 STAGE2_SECTORS equ 24
 STAGE2_LOAD    equ 0x8000
 
