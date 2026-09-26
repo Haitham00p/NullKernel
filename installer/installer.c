@@ -881,7 +881,7 @@ static bool InstallNullL(uint32_t PartitionStartLBA, uint16_t ReservedSectorCoun
     uint32_t Stage2LBA;
 
     if (PartitionStartLBA <= 1U ||
-        ReservedSectorCount < NULLL_STAGE2_OFFSET + NULLL_STAGE2_SECTORS)
+        ReservedSectorCount < 32U)
     {
         return false;
     }
@@ -933,7 +933,18 @@ static bool InstallNullL(uint32_t PartitionStartLBA, uint16_t ReservedSectorCoun
         return false;
     }
 
-    /* Stage 2 lives after FAT32's VBR, FSInfo, and backup VBR slots. */
+    /* FAT32 reserved sector 2 is our one-shot mailbox; stage 2 lives
+       later in the same reserved region. FSInfo is sector 1 and the backup
+       VBR is sector 6, so neither is touched. */
+    /* Clear the mailbox before installing stage 2. */
+    memset(Sector, 0, sizeof(Sector));
+    if (!BlockWrite(PartitionStartLBA + 2U, Sector))
+    {
+        kfree(Stage1);
+        kfree(Stage2);
+        return false;
+    }
+
     for (uint32_t i = 0; i < NULLL_STAGE2_SECTORS; i++)
     {
         memset(Sector, 0, sizeof(Sector));
