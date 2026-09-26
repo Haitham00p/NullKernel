@@ -1,15 +1,14 @@
 BITS 16
 ORG 0x8000
 
-OLD_MBR_LBA equ 0 ; resolved from the active MBR partition entry
-
 start:
     cli
     xor ax, ax
     mov ds, ax
     mov es, ax
     mov ss, ax
-    mov sp, 0x9C00
+    ; Keep the stack below the stage-2 load region (0x8000..0xB000).
+    mov sp, 0x7000
     sti
 
     mov [boot_drive], dl
