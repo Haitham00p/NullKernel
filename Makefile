@@ -12,6 +12,8 @@ ISO       := $(BUILD_DIR)/NullOS.iso
 DISK      ?= nullos.img
 VAULT_C   := ncc/vault_gen.c
 VAULT_H   := ncc/vault_gen.h
+NULLL_STAGE1 := $(BUILD_DIR)/nulll/stage1.bin
+NULLL_STAGE2 := $(BUILD_DIR)/nulll/stage2.bin
 
 CFLAGS := \
 	-std=c11 \
@@ -130,11 +132,13 @@ OBJECTS := $(C_SOURCES:%.c=$(BUILD_DIR)/%.o) $(ASM_OBJECTS)
 
 -include $(C_SOURCES:%.c=$(BUILD_DIR)/%.d)
 
-.PHONY: all clean vault run play install boot iso
+.PHONY: all clean vault run play install boot iso nulll
 
 .NOTPARALLEL:
 
 all: vault $(ISO)
+
+nulll: $(NULLL_STAGE1) $(NULLL_STAGE2)
 
 iso: $(ISO)
 
@@ -178,8 +182,16 @@ $(BUILD_DIR)/arch/x86_64/cpu/ring3.o: arch/x86_64/cpu/ring3.asm
 
 ROOTFS_FILES := $(shell find rootfs -type f 2>/dev/null)
 
-$(ISO): $(KERNEL) $(ROOTFS_FILES) iso/boot/limine/limine.conf iso/EFI/BOOT/BOOTX64.EFI
-	@mkdir -p $(ISO_DIR)/boot/limine $(ISO_DIR)/EFI/BOOT
+$(NULLL_STAGE1): nulll/stage1.asm
+	@mkdir -p $(@D)
+	$(NASM) -f bin $< -o $@
+
+$(NULLL_STAGE2): nulll/stage2.asm
+	@mkdir -p $(@D)
+	$(NASM) -f bin $< -o $@
+
+$(ISO): $(KERNEL) $(ROOTFS_FILES) $(NULLL_STAGE1) $(NULLL_STAGE2) iso/boot/limine/limine.conf iso/EFI/BOOT/BOOTX64.EFI
+	@mkdir -p $(ISO_DIR)/boot/limine $(ISO_DIR)/boot/nulll $(ISO_DIR)/EFI/BOOT
 	cp $(KERNEL) $(ISO_DIR)/boot/kernel.elf
 	rm -rf $(ISO_DIR)/rootfs
 	cp -r rootfs $(ISO_DIR)/rootfs
@@ -187,6 +199,8 @@ $(ISO): $(KERNEL) $(ROOTFS_FILES) iso/boot/limine/limine.conf iso/EFI/BOOT/BOOTX
 	cp $(LIMINE)/limine-bios.sys $(ISO_DIR)/boot/limine/
 	cp $(LIMINE)/limine-uefi-cd.bin $(ISO_DIR)/boot/limine/
 	cp iso/boot/limine/limine.conf $(ISO_DIR)/boot/limine/
+	cp $(NULLL_STAGE1) $(ISO_DIR)/boot/nulll/stage1.bin
+	cp $(NULLL_STAGE2) $(ISO_DIR)/boot/nulll/stage2.bin
 	cp iso/EFI/BOOT/BOOTX64.EFI $(ISO_DIR)/EFI/BOOT/
 	xorriso -as mkisofs -R -r -J \
 		-b boot/limine/limine-bios-cd.bin -no-emul-boot \
