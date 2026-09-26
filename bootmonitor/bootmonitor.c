@@ -559,10 +559,10 @@ uint8_t BootMonitorReadMode(void)
     if (!DiskFsIsMounted() || !BlockRead(0, MBRBuffer))
         return 0;
 
-    if (!MBRIsValid((const MBR *)MBRBuffer) || MBRGetPartitionCount((const MBR *)MBR) == 0)
+    if (!MBRIsValid((const MBR *)MBRBuffer) || MBRGetPartitionCount((const MBR *)MBRBuffer) == 0)
         return 0;
 
-    Part = MBRGetPartition((const MBR *)MBR, 0);
+    Part = MBRGetPartition((const MBR *)MBRBuffer, 0);
     if (Part == NULL || Part->StartLBA < 2U)
         return 0;
 
