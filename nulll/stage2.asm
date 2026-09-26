@@ -228,19 +228,16 @@ puts:
 boot_drive db 0
 
 title db 13,10
-      db "   +----------------------------------------------+",13,10
-      db "   |                 NULLLOADER                   |",13,10
-      db "   |             BOOT CONTROL UNIT               |",13,10
-      db "   +----------------------------------------------+",13,10,0
-rule db "   |----------------------------------------------|",13,10,0
-subtitle db "   |  SELECT OPERATING MODE                       |",13,10,0
-normal db "   |  [1] NORMAL MODE     - STANDARD BOOT         |",13,10,0
-assembly db "   |  [2] ASSEMBLY MODE   - RAW x86-64            |",13,10,0
-npb db "   |  [3] NPB             - PRE-BOOT MONITOR      |",13,10,0
-old_boot db "   |  [0] OLD BOOT RECORD - LEGACY BOOT           |",13,10,0
-rule2 db "   +----------------------------------------------+",13,10
-      db "   COMMAND: ",0
-prompt db " ",0
+      db "NULLLOADER - BOOT CONTROL UNIT",13,10
+      db "Select operating mode:",13,10,0
+rule db 0
+subtitle db 0
+normal db "  [1] Normal mode",13,10,0
+assembly db "  [2] Assembly mode",13,10,0
+npb db "  [3] NPB",13,10,0
+old_boot db "  [0] Legacy boot record",13,10,0
+rule2 db 0
+prompt db "Command: ",0
 rebooting db 13,10,"   REBOOTING... PLEASE STAND BY.",13,10,0
 loading_old db 13,10,"   LOADING LEGACY BOOT RECORD...",13,10,0
 old_fail db "   ERROR: LEGACY BOOT RECORD READ FAILED.",13,10,0
