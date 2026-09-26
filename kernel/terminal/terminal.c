@@ -7,6 +7,13 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+/* Guest programs can call printf in tight loops. Rendering the entire
+ * framebuffer once per character can monopolize the CPU. While a guest is
+ * running, cap framebuffer presents to roughly 60 Hz; terminal state still
+ * advances for every character. */
+extern volatile uint64_t RunGuestActive;
+static uint64_t g_guest_last_render_ms = 0;
+
 #define MAX_TERM_ROWS 128
 #define MAX_TERM_COLS 256
 
@@ -195,6 +202,14 @@ void TerminalPutChar32(char c, uint32_t color) {
     g_pane_col[g_active_pane] = CurCol;
     g_pane_row[g_active_pane] = CurRow;
     TerminalSyncCursor();
+
+    if (RunGuestActive)
+    {
+        uint64_t now = PITGetMilliseconds();
+        if (now - g_guest_last_render_ms < 16U)
+            return;
+        g_guest_last_render_ms = now;
+    }
 
     TerminalRenderWithDivider();
 }
