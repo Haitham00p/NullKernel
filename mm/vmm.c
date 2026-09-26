@@ -129,6 +129,45 @@ bool VmmUnmapPage(uint64_t v, bool freep)
     return true;
 }
 
+bool VmmSetExecutable(uint64_t v, uint64_t length, bool executable)
+{
+    const uint64_t page_size = PS;
+    if (length == 0)
+        return true;
+
+    uint64_t start = v & ~(page_size - 1ULL);
+    uint64_t end = v + length;
+    if (end < v)
+        return false;
+    end = (end + page_size - 1ULL) & ~(page_size - 1ULL);
+
+    uint64_t active_root = rdcr3();
+    uint64_t *pml4 = table(active_root);
+
+    for (uint64_t page = start; page < end; page += page_size)
+    {
+        uint64_t i4 = (page >> 39) & 511;
+        uint64_t i3 = (page >> 30) & 511;
+        uint64_t i2 = (page >> 21) & 511;
+        uint64_t i1 = (page >> 12) & 511;
+        uint64_t *pdpt = next(pml4, i4, false);
+        uint64_t *pd = pdpt ? next(pdpt, i3, false) : 0;
+        uint64_t *pt = pd ? next(pd, i2, false) : 0;
+        if (!pt || !(pt[i1] & VMM_P))
+            return false;
+
+        if (executable)
+            pt[i1] &= ~VMM_NX;
+        else
+            pt[i1] |= VMM_NX;
+
+        __asm__ volatile("invlpg (%0)" :: "r"((void *)(uintptr_t)page) : "memory");
+    }
+
+    Root = active_root;
+    return true;
+}
+
 uint64_t VmmGetPhysical(uint64_t v)
 {
     uint64_t active_root = rdcr3();
