@@ -4,6 +4,8 @@
 #include "include/diskfs.h"
 #include "kernel/terminal/terminal.h"
 #include "drivers/input/keyboard/keyboard.h"
+#include "drivers/storage/block/block.h"
+#include "fs/partition/mbr/mbr.h"
 #include "mm/heap/heap.h"
 #include "lib/string/string.h"
 #include "arch/x86_64/power/pwr.h"
@@ -542,6 +544,46 @@ static void ReadLine(char *line,uint32_t cap){
     }
 }
 
+uint8_t BootMonitorReadMode(void)
+{
+    uint8_t MBR[512];
+    uint8_t Mailbox[512];
+    uint32_t PartitionStart;
+    const MBRPartitionEntry *Part;
+
+    if (!DiskFsIsMounted() || !BlockRead(0, MBR))
+        return 0;
+
+    if (!MBRIsValid((const MBR *)MBR) || MBRGetPartitionCount((const MBR *)MBR) == 0)
+        return 0;
+
+    Part = MBRGetPartition((const MBR *)MBR, 0);
+    if (Part == NULL || Part->StartLBA < 2U)
+        return 0;
+
+    PartitionStart = Part->StartLBA;
+    if (!BlockRead(PartitionStart - 2U, Mailbox))
+        return 0;
+
+    if (Mailbox[0] != 'N' || Mailbox[1] != 'L' ||
+        Mailbox[2] != 'M' || Mailbox[3] != '1')
+        return 0;
+
+    uint8_t Mode = Mailbox[4];
+    if (Mode < BOOTMONITOR_MODE_NORMAL || Mode > BOOTMONITOR_MODE_NPB)
+        Mode = 0;
+
+    /* One-shot mailbox: consume it before entering any requested mode. */
+    if (Mode != 0)
+    {
+        for (uint32_t i = 0; i < sizeof(Mailbox); i++)
+            Mailbox[i] = 0;
+        BlockWrite(PartitionStart - 2U, Mailbox);
+    }
+
+    return Mode;
+}
+
 bool BootMonitorShouldEnter(void){
     uint8_t m[8];uint32_t got=0;
     return DiskFsIsMounted()&&DiskFsReadInPath(BM_DIR,BM_REQ,m,sizeof(m),&got)&&
@@ -565,18 +607,36 @@ void BootMonitorClearRequest(void)
         DiskFsWriteInPath(BM_DIR,BM_REQ,off,4);
     }
 }
-void BootMonitorRun(void){
+void BootMonitorRunMode(uint8_t Mode){
     char line[BM_MAX];
     BootMonitorClearRequest();
+
+    if (Mode == BOOTMONITOR_MODE_ASM)
+    {
+        PC("",NPB_DIM);
+        PC("NULLLOADER -> ASSEMBLY MODE",NPB_ORANGE);
+        PC("DIRECT MODE REQUEST ACCEPTED.",NPB_GREEN);
+        PC("RAW x86-64 INSTRUCTION CONSOLE.",0x00FFFFFFU);
+        PC("",NPB_DIM);
+        AsmMode();
+        return;
+    }
+
     PC("",NPB_DIM);
-    PC("Booted into NullOS PreBoot Stage",NPB_ORANGE);
-    PC("Select Kernel ID Image to load.",0x00FFFFFFU);
-    PC("Normal boot is locked: load -> gc -> jmp.",NPB_YELLOW);
-    PC("Use 'jmp' for Normal-Mode or 'jmp-a' for Assembly-Mode.",0x00FFFFFFU);
-    PC("WARNING: Don't boot as Assembly-Mode if you don't know it.",NPB_RED);
-    PC("NPB might get corrupted.",NPB_RED);
+    PC("NULLLOADER -> NULL OS PRE-BOOT",NPB_ORANGE);
+    PC("BOOT CONTROL TERMINAL ONLINE.",0x00FFFFFFU);
+    PC("SELECT KERNEL IMAGE.",NPB_YELLOW);
+    PC("NORMAL BOOT IS MANAGED BY NPB.",0x00FFFFFFU);
     PC("",NPB_DIM);
     ShowKernels();
     PC("",NPB_DIM);
+
+    if (Mode == BOOTMONITOR_MODE_NPB)
+        PC("DIRECT NPB REQUEST ACCEPTED.",NPB_GREEN);
+
     for(;;){TerminalWrite32("NPB> ",NPB_CYAN);ReadLine(line,sizeof(line));Execute(line);}
+}
+
+void BootMonitorRun(void){
+    BootMonitorRunMode(BOOTMONITOR_MODE_NPB);
 }

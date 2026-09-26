@@ -22,11 +22,12 @@
 #define INSTALL_ISO_SECTOR 2048U
 #define INSTALL_MAX_DEPTH  8U
 
-#define INST_COLOR_TITLE  0x00FFD700U
-#define INST_COLOR_GOOD   0x0000FF00U
-#define INST_COLOR_BAD    0xFFFF0000U
-#define INST_COLOR_HEADER 0x0057DB92U
-#define INST_COLOR_FIELD  0x00E8F0FFU
+/* 1970s monochrome terminal palette: phosphor green on black. */
+#define INST_COLOR_TITLE  0x00A8FF70U
+#define INST_COLOR_GOOD   0x00A8FF70U
+#define INST_COLOR_BAD    0x00A8FF70U
+#define INST_COLOR_HEADER 0x0070B84FU
+#define INST_COLOR_FIELD  0x0070B84FU
 
 /* RAM tree of everything found in /rootfs on the CD. */
 typedef struct InstallNode
@@ -54,6 +55,10 @@ static uint32_t g_WriteFailures = 0;
 #define INSTALL_FAT_COUNT 2U
 #define INSTALL_ROOT_CLUSTER 2U
 
+/* NullLoader BIOS layout relative to the active FAT32 partition. */
+#define NULLL_STAGE2_OFFSET    7U
+#define NULLL_STAGE2_SECTORS   24U
+
 /* Diagnostics for InstallMountDisk. */
 typedef struct
 {
@@ -66,10 +71,13 @@ typedef struct
 
 static void InstallBar(const char *Title)
 {
-    TerminalPrintLine32("--------------------------------------------------------",
+    TerminalPrintLine32("+------------------------------------------------------+",
                         INST_COLOR_HEADER);
-    TerminalPrintLine32(Title, INST_COLOR_TITLE);
-    TerminalPrintLine32("--------------------------------------------------------",
+    TerminalPrintLine32("|", INST_COLOR_HEADER);
+    TerminalWrite32("| ", INST_COLOR_HEADER);
+    TerminalWrite32(Title, INST_COLOR_TITLE);
+    TerminalPrintLine32(" |", INST_COLOR_HEADER);
+    TerminalPrintLine32("+------------------------------------------------------+",
                         INST_COLOR_HEADER);
 }
 
@@ -830,6 +838,160 @@ static bool InstallLimineBIOS(const MBR *FormattedMBR)
     return BlockWrite(0, Sector);
 }
 
+static bool InstallReadISOFile(const char *Path, uint8_t **Data, uint32_t *Size)
+{
+    ISODirRecord Record;
+    uint8_t *Buffer;
+    uint32_t Read = 0;
+
+    if (Path == NULL || Data == NULL || Size == NULL ||
+        !ISOFindPath(Path, &Record) || Record.DataLength == 0U)
+    {
+        return false;
+    }
+
+    Buffer = (uint8_t *)kmalloc(Record.DataLength);
+    if (Buffer == NULL)
+    {
+        return false;
+    }
+
+    if (!ISOReadFile(&Record, Buffer, Record.DataLength, &Read) ||
+        Read != Record.DataLength)
+    {
+        kfree(Buffer);
+        return false;
+    }
+
+    *Data = Buffer;
+    *Size = Read;
+    return true;
+}
+
+/*
+ * Install the first NullLoader slice.
+ *
+ * Layout:
+ *   LBA 0      = NullL stage 1 MBR code + existing partition table
+ *   LBA 1..2046= the old Limine BIOS payload, left untouched
+ *   partition_start-1 = complete old MBR / Old Boot Record backup
+ *   partition_start   = FAT32 VBR
+ *   partition_start+7  = NullL stage 2 inside FAT32 reserved sectors
+ *
+ * The old MBR is deliberately kept as a complete 512-byte record.  When
+ * option 0 is selected, NullL restores it to 0x7C00 and jumps to it, while
+ * its original Limine stage-2 sectors remain at LBA 1..2046.
+ */
+static bool InstallNullL(uint32_t PartitionStartLBA, uint16_t ReservedSectorCount)
+{
+    uint8_t *Stage1 = NULL;
+    uint8_t *Stage2 = NULL;
+    uint32_t Stage1Size = 0;
+    uint32_t Stage2Size = 0;
+    uint8_t OldMBR[512];
+    uint8_t Sector[512];
+    uint32_t Stage2Sectors;
+    uint32_t OldMBRLBA;
+    uint32_t Stage2LBA;
+
+    if (PartitionStartLBA <= 1U ||
+        ReservedSectorCount < NULLL_STAGE2_OFFSET + NULLL_STAGE2_SECTORS)
+    {
+        return false;
+    }
+
+    OldMBRLBA = PartitionStartLBA - 1U;
+    Stage2LBA = PartitionStartLBA + NULLL_STAGE2_OFFSET;
+
+    if (!IDESelectCD())
+    {
+        return false;
+    }
+
+    if (!InstallReadISOFile("/boot/nulll/stage1.bin", &Stage1, &Stage1Size) ||
+        !InstallReadISOFile("/boot/nulll/stage2.bin", &Stage2, &Stage2Size))
+    {
+        if (Stage1 != NULL) kfree(Stage1);
+        if (Stage2 != NULL) kfree(Stage2);
+        return false;
+    }
+
+    if (Stage1Size == 0U || Stage1Size > 446U || Stage2Size == 0U)
+    {
+        kfree(Stage1);
+        kfree(Stage2);
+        return false;
+    }
+
+    Stage2Sectors = (Stage2Size + 511U) / 512U;
+    if (Stage2Sectors > NULLL_STAGE2_SECTORS)
+    {
+        kfree(Stage1);
+        kfree(Stage2);
+        return false;
+    }
+
+    if (!IDESelectDisk() || !BlockRead(0, OldMBR) ||
+        OldMBR[510] != 0x55U || OldMBR[511] != 0xAAU)
+    {
+        kfree(Stage1);
+        kfree(Stage2);
+        return false;
+    }
+
+    /* Preserve the complete previous boot record for menu option 0. */
+    if (!BlockWrite(OldMBRLBA, OldMBR))
+    {
+        kfree(Stage1);
+        kfree(Stage2);
+        return false;
+    }
+
+    /* Stage 2 lives after FAT32's VBR, FSInfo, and backup VBR slots. */
+    for (uint32_t i = 0; i < NULLL_STAGE2_SECTORS; i++)
+    {
+        memset(Sector, 0, sizeof(Sector));
+        if (i < Stage2Sectors)
+        {
+            uint32_t Offset = i * 512U;
+            uint32_t Bytes = Stage2Size - Offset;
+            if (Bytes > 512U) Bytes = 512U;
+            memcpy(Sector, Stage2 + Offset, Bytes);
+        }
+        if (!BlockWrite(Stage2LBA + i, Sector))
+        {
+            kfree(Stage1);
+            kfree(Stage2);
+            return false;
+        }
+    }
+
+    /* Replace only the 446-byte boot code.  Keep the disk signature,
+       partition table, and 0xAA55 signature from the existing MBR. */
+    if (!BlockRead(0, Sector))
+    {
+        kfree(Stage1);
+        kfree(Stage2);
+        return false;
+    }
+    memcpy(Sector, Stage1, Stage1Size);
+    if (Stage1Size < 446U)
+    {
+        memset(Sector + Stage1Size, 0, 446U - Stage1Size);
+    }
+
+    if (!BlockWrite(0, Sector))
+    {
+        kfree(Stage1);
+        kfree(Stage2);
+        return false;
+    }
+
+    kfree(Stage1);
+    kfree(Stage2);
+    return true;
+}
+
 /* Switches IDE to the hard disk and opens its FAT32 root. */
 static bool InstallMountDisk(FAT32BootSector *Boot, FAT32Directory *Root,
                              InstallDiskInfo *Info)
@@ -964,11 +1126,22 @@ InstallerResult InstallerRun(void)
 
     KbdFlushBuffer();
 
-    TerminalPrintLine32("==============================", INST_COLOR_HEADER);
-    TerminalPrintLine32("        NullOS Live CD", INST_COLOR_TITLE);
-    TerminalPrintLine32("==============================", INST_COLOR_HEADER);
-    TerminalPrintLine32("(Try OS or Install?) [T/I]", INST_COLOR_GOOD);
-    TerminalWrite32("> ", PromColor);
+    InstallBar("NULL OPERATING SYSTEM / INSTALL");
+    TerminalPrintLine32("|  MASS STORAGE INSTALLATION TERMINAL               |",
+                        INST_COLOR_TITLE);
+    TerminalPrintLine32("|  COPYRIGHT 1970S-STYLE SYSTEM SOFTWARE            |",
+                        INST_COLOR_FIELD);
+    TerminalPrintLine32("|                                                    |",
+                        INST_COLOR_HEADER);
+    TerminalPrintLine32("|  [T] TRY LIVE SYSTEM                              |",
+                        INST_COLOR_GOOD);
+    TerminalPrintLine32("|  [I] INSTALL TO FIXED DISK                        |",
+                        INST_COLOR_GOOD);
+    TerminalPrintLine32("|                                                    |",
+                        INST_COLOR_HEADER);
+    TerminalPrintLine32("+----------------------------------------------------+",
+                        INST_COLOR_HEADER);
+    TerminalWrite32("COMMAND: ", INST_COLOR_TITLE);
 
     while (!KbdAvailable())
     {
@@ -982,7 +1155,7 @@ InstallerResult InstallerRun(void)
         return INSTALLER_RESULT_LIVE;
     }
 
-    InstallBar("N U L L O S   I N S T A L L E R   -   VERBOSE MODE");
+    InstallBar("NULL INSTALLER / SYSTEM BUILD");
     TerminalPrintLine32("  [phase] boot device sanity check", INST_COLOR_TITLE);
 
     if (!IDEIsATAPI())
@@ -1120,7 +1293,23 @@ InstallerResult InstallerRun(void)
             FormattedMBR.Partitions[0].SectorCount = Boot.TotalSectors32;
             FormattedMBR.Signature = 0xAA55U;
             if (!InstallLimineBIOS(&FormattedMBR))
+            {
                 TerminalPrintLine32("  [boot ] FATAL: Limine BIOS stage install failed", INST_COLOR_BAD);
+                g_WriteFailures++;
+            }
+        }
+
+        TerminalPrintLine32("  [phase] installing NullLoader stage 1/2", INST_COLOR_TITLE);
+        if (!InstallNullL(Info.PartitionStartLBA, Boot.ReservedSectorCount))
+        {
+            TerminalPrintLine32("  [boot ] FATAL: NullLoader installation failed", INST_COLOR_BAD);
+            DbgSerialWrite("NULLL INSTALL: FAILED\n");
+            g_WriteFailures++;
+        }
+        else
+        {
+            TerminalPrintLine32("  [boot ] NullLoader BIOS menu installed", INST_COLOR_GOOD);
+            DbgSerialWrite("NULLL INSTALL: OK (old MBR saved at LBA 2047)\n");
         }
 
         TerminalPrintLine32("  [phase] final free space", INST_COLOR_TITLE);
@@ -1166,7 +1355,7 @@ InstallerResult InstallerRun(void)
     TerminalWrite32("  Bytes written : ", PromColor);
     TerminalPrintHex64Compact(g_StagedBytes);
     TerminalPutChar32('\n', PromColor);
-    TerminalPrintLine32("  Disk is now bootable via Limine BIOS.", INST_COLOR_GOOD);
+    TerminalPrintLine32("|  SYSTEM READY. REMOVE INSTALL MEDIA AND RESTART.    |", INST_COLOR_GOOD);
     TerminalPrintLine32("  Host:  limine-binary/limine bios-install esp.img",
                         INST_COLOR_FIELD);
     TerminalPrintLine32("  QEMU:  qemu-system-x86_64 -hda esp.img -boot order=c -m 3 -serial stdio",
