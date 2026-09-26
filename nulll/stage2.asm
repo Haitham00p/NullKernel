@@ -232,10 +232,10 @@ title db 13,10
       db "Select operating mode:",13,10,0
 rule db 0
 subtitle db 0
-normal db "  [1] Normal mode",13,10,0
-assembly db "  [2] Assembly mode",13,10,0
-npb db "  [3] NPB",13,10,0
-old_boot db "  [0] Legacy boot record",13,10,0
+normal db "  [1] Normal-Mode",13,10,0
+assembly db "  [2] Assembly-Mode",13,10,0
+npb db "  [3] NullOS Pre-Boot",13,10,0
+old_boot db "  [0] Old-Boot Record",13,10,0
 rule2 db 0
 prompt db "Command: ",0
 rebooting db 13,10,"   REBOOTING... PLEASE STAND BY.",13,10,0

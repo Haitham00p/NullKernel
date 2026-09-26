@@ -64,6 +64,33 @@ typedef volatile struct
     uint32_t dw3;
 } NVME_COMPLETION;
 
+/*
+ * NVMe completion queue entry (16 bytes):
+ *   DW0: command-specific result
+ *   DW1: reserved
+ *   DW2: bits 15:0 = SQ head pointer, bits 31:16 = SQ identifier
+ *   DW3: bits 15:0 = command identifier, bits 31:16 = status field
+ *
+ * The status field's bit 0 is the phase tag; the remaining bits are
+ * (status code << 1), i.e. bit 0 of DW3 carries nothing relevant and the
+ * phase/status live entirely in the upper half of DW3.
+ *
+ * Returns true if the phase tag matches, filling *Status with the status
+ * field (valid on true).
+ */
+static bool CqeMatch(volatile NVME_COMPLETION *entry, uint8_t expectedPhase,
+                     uint16_t *status)
+{
+    uint32_t field = entry->dw3 >> 16U;
+
+    if (!status)
+        return false;
+
+    *status = (uint16_t)((field >> 1U) & 0x7FFFU);
+
+    return (uint8_t)(field & 1U) == expectedPhase;
+}
+
 static volatile uint8_t *g_Bar;
 static uint64_t g_AdminSQPhysical;
 static uint64_t g_AdminCQPhysical;
@@ -286,10 +313,9 @@ static bool SubmitAdmin(NVME_COMMAND *command, NVME_COMPLETION *completion)
     while (timeout++ < NVME_TIMEOUT)
     {
         NVME_COMPLETION *entry = &cq[g_AdminCQHead];
-        uint16_t status = (uint16_t)((entry->dw3 >> 1) & 0x7FFFU);
-        uint8_t phase = (uint8_t)(entry->dw3 & 1U);
+        uint16_t status;
 
-        if (phase == g_AdminCQPhase)
+        if (CqeMatch(entry, g_AdminCQPhase, &status))
         {
             if (completion)
                 *completion = *entry;
@@ -353,7 +379,10 @@ static bool IdentifyNamespace(void)
                     ((uint64_t)id[6] << 48) |
                     ((uint64_t)id[7] << 56);
 
-    if (g_SectorSize != 512U || g_SectorCount == 0)
+    /* Support both 512-byte (512n) and 4096-byte (4Kn) logical block sizes.
+       VMware presents virtual NVMe disks as 4Kn, which the 512-byte block
+       layer must transparently translate. */
+    if ((g_SectorSize != 512U && g_SectorSize != 4096U) || g_SectorCount == 0)
         return false;
 
     return true;
@@ -364,45 +393,47 @@ static bool CreateIOQueues(void)
     NVME_COMMAND command;
     NVME_COMPLETION completion;
 
+    /*
+     * Create I/O Completion Queue (QID 1).  The controller requires the
+     * PC flag (physically contiguous) to be set and only a single PRP
+     * describing the queue memory (it lives in one 4 KiB page).
+     * cdw10 low 16 = QID, high 16 = queue size minus one.
+     * cdw11 low 16 = flags (bit 0 = PC), high 16 = MSI-X vector (0).
+     */
     memset((void *)&command, 0, sizeof(command));
     command.cdw0 = NVME_OP_CREATE_IO_CQ;
     command.prp1 = g_IOCQPhysical;
     command.cdw10 = 1U | ((NVME_IO_QD - 1U) << 16);
-    command.cdw11 = 0U;
+    command.cdw11 = 1U;
 
     if (!SubmitAdmin(&command, &completion))
         return false;
 
+    /*
+     * Create I/O Submission Queue (QID 1) bound to CQ 1.  The PC flag is
+     * required here too.  cdw11 low 16 = flags (PC), high 16 = CQID.
+     */
     memset((void *)&command, 0, sizeof(command));
     command.cdw0 = NVME_OP_CREATE_IO_SQ;
     command.prp1 = g_IOSQPhysical;
     command.cdw10 = 1U | ((NVME_IO_QD - 1U) << 16);
-    command.cdw11 = 1U;
+    command.cdw11 = 1U | (1U << 16);
 
     return SubmitAdmin(&command, &completion);
 }
 
-static bool Transfer(uint64_t lba, void *buffer, bool write)
+/* Issues one full logical-block transfer (read or write) on the IO queue.
+   Used for the bounce-page I/O of both 512n and 4Kn devices. */
+static bool TransferBlock(uint64_t nvme_lba, uint64_t page, bool write)
 {
     NVME_COMMAND *sq;
     NVME_COMPLETION *cq;
     NVME_COMMAND command;
-    uint64_t data;
     uint16_t cid;
     uint32_t timeout = 0;
 
-    if (!g_Ready || !buffer || g_SectorSize != 512U)
+    if (nvme_lba > 0x0000FFFFFFFFFFFFULL || page == 0)
         return false;
-
-    if (lba > 0x0000FFFFFFFFFFFFULL)
-        return false;
-
-    data = PmmAllocPage();
-    if (!data)
-        return false;
-
-    if (write)
-        memcpy((void *)(uintptr_t)data, buffer, 512);
 
     sq = (NVME_COMMAND *)(uintptr_t)g_IOSQPhysical;
     cq = (NVME_COMPLETION *)(uintptr_t)g_IOCQPhysical;
@@ -415,9 +446,11 @@ static bool Transfer(uint64_t lba, void *buffer, bool write)
     command.cdw0 = (write ? NVME_OP_WRITE : NVME_OP_READ) |
                    ((uint32_t)cid << 16);
     command.nsid = g_NamespaceId;
-    command.prp1 = data;
-    command.cdw10 = (uint32_t)lba;
-    command.cdw11 = (uint32_t)(lba >> 32);
+    command.prp1 = page;
+    command.cdw10 = (uint32_t)nvme_lba;
+    command.cdw11 = (uint32_t)(nvme_lba >> 32);
+
+    /* NLB: number of logical blocks minus one; always a single block. */
     command.cdw12 = 0;
 
     sq[g_IOSQTail] = command;
@@ -427,10 +460,9 @@ static bool Transfer(uint64_t lba, void *buffer, bool write)
     while (timeout++ < NVME_TIMEOUT)
     {
         NVME_COMPLETION *entry = &cq[g_IOCQHead];
-        uint16_t status = (uint16_t)((entry->dw3 >> 1) & 0x7FFFU);
-        uint8_t phase = (uint8_t)(entry->dw3 & 1U);
+        uint16_t status;
 
-        if (phase == g_IOCQPhase)
+        if (CqeMatch(entry, g_IOCQPhase, &status))
         {
             bool ok = (status == 0);
 
@@ -441,19 +473,78 @@ static bool Transfer(uint64_t lba, void *buffer, bool write)
                 g_IOCQPhase ^= 1U;
 
             RingDoorbell(1, true, g_IOCQHead);
-
-            if (ok && !write)
-                memcpy(buffer, (void *)(uintptr_t)data, 512);
-
-            PmmFreePage(data);
             return ok;
         }
 
         __asm__ volatile("pause");
     }
 
-    PmmFreePage(data);
     return false;
+}
+
+static bool Transfer(uint64_t lba, void *buffer, bool write)
+{
+    uint64_t data;
+    uint64_t nvme_lba;
+    uint32_t offset;
+
+    if (!g_Ready || !buffer ||
+        (g_SectorSize != 512U && g_SectorSize != 4096U))
+        return false;
+
+    if (lba > 0x0000FFFFFFFFFFFFULL)
+        return false;
+
+    /*
+     * The block layer always works in 512-byte sectors.  On a 4Kn device
+     * (4096-byte logical blocks) the caller's LBA/offset are translated to
+     * the parent NVMe block plus the byte offset inside it.  Each transfer
+     * moves one full 4096-byte block through the bounce page; the requested
+     * 512-byte slice is copied in/out at the matching offset.
+     */
+    nvme_lba = lba;
+    offset = 0;
+    if (g_SectorSize == 4096U)
+    {
+        nvme_lba = lba >> 3U;
+        offset = (uint32_t)((lba & 7U) * 512U);
+    }
+
+    data = PmmAllocPage();
+    if (!data)
+        return false;
+
+    if (write)
+    {
+        /*
+         * Read-modify-write: fetch the whole block first so the sibling
+         * 512-byte slices inside it (neighbouring FAT/MBR clusters) are
+         * preserved, then patch the one slice being written.
+         */
+        if (!TransferBlock(nvme_lba, data, false))
+        {
+            PmmFreePage(data);
+            return false;
+        }
+        memcpy((void *)(uintptr_t)(data + offset), buffer, 512);
+        if (!TransferBlock(nvme_lba, data, true))
+        {
+            PmmFreePage(data);
+            return false;
+        }
+    }
+    else
+    {
+        if (!TransferBlock(nvme_lba, data, false))
+        {
+            PmmFreePage(data);
+            return false;
+        }
+        memcpy(buffer, (void *)(uintptr_t)(data + offset), 512);
+    }
+
+    PmmFreePage(data);
+    return true;
 }
 
 bool NVMeInitialize(void)
@@ -519,5 +610,8 @@ bool NVMeWriteSector(uint64_t LBA, const void *Buffer)
 
 uint64_t NVMeGetSectorCount(void)
 {
-    return g_Ready ? g_SectorCount : 0;
+    /* The block layer and everything above it (MBR, FAT32, installer)
+       always work in 512-byte sectors.  Report the namespace capacity in
+       those units regardless of the native logical block size. */
+    return g_Ready ? g_SectorCount * (g_SectorSize / 512U) : 0;
 }

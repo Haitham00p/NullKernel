@@ -66,7 +66,10 @@ bool BlockIsReady(void)
 bool BlockRead(uint64_t LBA, void *Buffer)
 {
     if (!g_BlockReady || Buffer == 0)
+    {
+        DbgSerialWrite("[block] Read not ready\n");
         return false;
+    }
 
     if (NVMeIsReady())
         return NVMeReadSector(LBA, Buffer);

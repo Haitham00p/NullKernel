@@ -39,7 +39,7 @@ uint64_t PmmAllocPage(void){
 }
 bool PmmFreePage(uint64_t Physical){
     if((Physical&(PAGE_SIZE-1))!=0 || Physical>=MAX_PHYS) return false;
-    uint64_t n=Physical/PAGE_SIZE;if(bit(n)) return false;set(n);Free++;return true;
+    uint64_t n=Physical/PAGE_SIZE;if(!bit(n)) return false;clr(n);Free++;return true;
 }
 uint64_t PmmTotalPages(void){return Total;}
 uint64_t PmmFreePages(void){return Free;}
