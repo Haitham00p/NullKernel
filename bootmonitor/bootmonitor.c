@@ -317,6 +317,35 @@ static void PrintDanger(void)
     PC("RSP/RIP remain monitor-owned in jmp-a.",NPB_DIM);
 }
 
+static bool RequestNormalBootOnce(void)
+{
+    uint8_t mbr_buf[512];
+    uint8_t mailbox[512];
+    const MBR *table;
+    const MBRPartitionEntry *part = NULL;
+
+    if (!BlockRead(0, mbr_buf)) return false;
+    table = (const MBR *)mbr_buf;
+    if (!MBRIsValid(table)) return false;
+
+    for (uint32_t i = 0; i < 4U; i++)
+    {
+        const MBRPartitionEntry *candidate = MBRGetPartition(table, i);
+        if (candidate != NULL && candidate->BootIndicator == 0x80U)
+        {
+            part = candidate;
+            break;
+        }
+    }
+    if (part == NULL) part = MBRGetPartition(table, 0);
+    if (part == NULL || part->StartLBA < 2U) return false;
+
+    for (uint32_t i = 0; i < sizeof(mailbox); i++) mailbox[i] = 0;
+    mailbox[0] = 'N'; mailbox[1] = 'L'; mailbox[2] = 'M'; mailbox[3] = '1';
+    mailbox[4] = BOOTMONITOR_MODE_NORMAL;
+    return BlockWrite((uint64_t)part->StartLBA + 2U, mailbox);
+}
+
 static void ContinueBoot(void){
     if(!g_image||!g_name[0]){
         P("jmp: no kernel loaded");
@@ -336,6 +365,12 @@ static void ContinueBoot(void){
     if(!SafeName(name)){P("continue: invalid kernel name");return;}
     if(!VerifyLoaded()) return;
     if(!DiskFsWriteInPath(BM_DIR,BM_SEL,name,Len(name))){P("jmp: cannot save selection");return;}
+    /* jmp is a one-shot escape from NPB: tell NullL to chainload and let
+       the kernel continue in normal mode instead of showing its menu again. */
+    if(!RequestNormalBootOnce()){
+        P("jmp: cannot arm one-shot normal boot");
+        return;
+    }
     if(!StageLimine(name)){
         P("jmp: selection saved, but installed Limine config was not changed");
         P("jmp: boot source may be ISO/CD; NPB cannot rewrite a read-only ISO.");
