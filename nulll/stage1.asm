@@ -1,7 +1,7 @@
 BITS 16
 ORG 0x7C00
 
-STAGE2_LBA     equ 2055
+STAGE2_LBA     equ 0 ; resolved from the active MBR partition entry
 STAGE2_SECTORS equ 24
 STAGE2_LOAD    equ 0x8000
 
@@ -29,7 +29,11 @@ start:
     mov word [dap.count], STAGE2_SECTORS
     mov word [dap.offset], STAGE2_LOAD
     mov word [dap.segment], 0
-    mov dword [dap.lba_low], STAGE2_LBA
+    ; Stage 2 lives at partition_start + 7, inside FAT32 reserved sectors.
+    mov si, 0x7C00 + 0x1BE + 8
+    mov eax, [si]
+    add eax, 7
+    mov dword [dap.lba_low], eax
     mov dword [dap.lba_high], 0
 
     mov si, dap
