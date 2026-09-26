@@ -811,12 +811,11 @@ static bool InstallLimineBIOS(const MBR *FormattedMBR)
         if (!BlockWrite(Offset / 512U, Sector)) return false;
     }
     if (!BlockRead(0, Sector)) return false;
-    /* The Limine BIOS MBR bootsector stores the byte offset of stage 2 at
-       0x1A4 as an 8-byte little-endian field.  The embedded HDD image keeps
-       stage 2 immediately after the 512-byte bootsector, so patch the field
-       the same way `limine bios-install` does; without it the MBR returns to
-       the BIOS without ever loading stage 2. */
-    Sector[0x1A4] = 0x00; Sector[0x1A5] = 0x02;
+    /* Limine's BIOS MBR stores the absolute byte offset of its embedded
+       decompressor/stage-2 payload at 0x1A4.  The Limine HDD image places
+       that payload at byte offset 0x1000 (LBA 8), not directly after the
+       MBR.  This is the value limine bios-install must write here. */
+    Sector[0x1A4] = 0x00; Sector[0x1A5] = 0x10;
     Sector[0x1A6] = 0x00; Sector[0x1A7] = 0x00;
     Sector[0x1A8] = 0x00; Sector[0x1A9] = 0x00;
     Sector[0x1AA] = 0x00; Sector[0x1AB] = 0x00;
