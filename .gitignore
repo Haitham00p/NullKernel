@@ -1,1 +1,7 @@
 /build/
+
+# Local IDE / repository-recovery artifacts
+.idea/
+.git.corrupted/
+*.log
+.vault-stamp
