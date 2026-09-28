@@ -126,7 +126,8 @@ ASM_OBJECTS := \
 	$(BUILD_DIR)/arch/x86_64/bootasm.o \
 	$(BUILD_DIR)/arch/x86_64/cpu/ring3.o \
 	$(BUILD_DIR)/arch/x86_64/cpu/context.o \
-	$(BUILD_DIR)/kernel/LTSMT/ltsmt.o
+	$(BUILD_DIR)/kernel/LTSMT/ltsmt.o \
+	$(BUILD_DIR)/drivers/timer/RTC.o
 
 OBJECTS := $(C_SOURCES:%.c=$(BUILD_DIR)/%.o) $(ASM_OBJECTS)
 
@@ -177,6 +178,18 @@ $(BUILD_DIR)/arch/x86_64/bootasm.o: arch/x86_64/bootasm.asm
 	$(NASM) -f elf64 $< -o $@
 
 $(BUILD_DIR)/arch/x86_64/cpu/ring3.o: arch/x86_64/cpu/ring3.asm
+	@mkdir -p $(@D)
+	$(NASM) -f elf64 $< -o $@
+
+$(BUILD_DIR)/arch/x86_64/cpu/context.o: arch/x86_64/cpu/context.asm
+	@mkdir -p $(@D)
+	$(NASM) -f elf64 $< -o $@
+
+$(BUILD_DIR)/kernel/LTSMT/ltsmt.o: kernel/LTSMT/ltsmt.asm
+	@mkdir -p $(@D)
+	$(NASM) -f elf64 $< -o $@
+
+$(BUILD_DIR)/drivers/timer/RTC.o: drivers/timer/RTC.asm
 	@mkdir -p $(@D)
 	$(NASM) -f elf64 $< -o $@
 
@@ -233,10 +246,3 @@ play: $(ISO)
 
 clean:
 	rm -rf $(BUILD_DIR) .vault-stamp
-$(BUILD_DIR)/arch/x86_64/cpu/context.o: arch/x86_64/cpu/context.asm
-	@mkdir -p $(@D)
-	$(NASM) -f elf64 $< -o $@
-
-$(BUILD_DIR)/kernel/LTSMT/ltsmt.o: kernel/LTSMT/ltsmt.asm
-	@mkdir -p $(@D)
-	$(NASM) -f elf64 $< -o $@
