@@ -21,16 +21,31 @@ STAGE2="$SCRIPT_DIR/build/nulll/stage2.bin"
 [ -f "$STAGE1" ] || { echo "error: $STAGE1 missing; run make nulll" >&2; exit 1; }
 [ -f "$STAGE2" ] || { echo "error: $STAGE2 missing; run make nulll" >&2; exit 1; }
 
-IMG_OFFSET="$IMG@@$((PARTITION_START * 512))"
+# Use an explicit mtools drive definition for the partition instead of the
+# image@@offset shorthand.  The latter is valid mtools syntax, but mtools can
+# block on its image lock when a freshly reformatted raw image is being
+# rewritten immediately after mkfs.  NullOS owns the image during install, so
+# disable that lock for this private staging drive.
+MTOOLS_CONF="$(mktemp)"
+trap 'rm -f "$MTOOLS_CONF"' EXIT
+cat >"$MTOOLS_CONF" <<EOF
+# NullOS installer: FAT32 partition begins at LBA ${PARTITION_START}.
+drive n:
+    file="$IMG"
+    offset=$((PARTITION_START * 512))
+    nolock
+EOF
+export MTOOLSRC="$MTOOLS_CONF"
+
 echo "[*] staging NullOS FAT32 filesystem"
-mmd -i "$IMG_OFFSET" ::/BOOT 2>/dev/null || true
+mmd n:/BOOT 2>/dev/null || true
 # Remove the legacy third-party bootloader directory from existing images before staging files.
-mrd -i "$IMG_OFFSET" ::/BOOT/LIMINE 2>/dev/null || true
-mcopy -o -i "$IMG_OFFSET" "$KERNEL" ::/BOOT/KERNEL.ELF
+mrd n:/BOOT/LIMINE 2>/dev/null || true
+mcopy -o "$KERNEL" n:/BOOT/KERNEL.ELF
 if [ -d "$SCRIPT_DIR/rootfs" ]; then
-    mcopy -s -o -i "$IMG_OFFSET" "$SCRIPT_DIR/rootfs"/* ::/ 2>/dev/null || true
-    mmd -i "$IMG_OFFSET" ::/BOOT 2>/dev/null || true
-    mcopy -o -i "$IMG_OFFSET" "$KERNEL" ::/BOOT/KERNEL.ELF
+    mcopy -s -o "$SCRIPT_DIR/rootfs"/* n:/ 2>/dev/null || true
+    mmd n:/BOOT 2>/dev/null || true
+    mcopy -o "$KERNEL" n:/BOOT/KERNEL.ELF
 fi
 
 echo "[*] saving Old Boot Record at partition-1"
