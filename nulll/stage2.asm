@@ -714,7 +714,10 @@ build_bootinfo:
     ; The boot page tables map the first 1 GiB at 0xffffffff80000000.
     add dword [FBINFO_ADDR], 0x80000000
     mov dword [FBINFO_ADDR+4], 0xFFFFFFFF
-    mov dword [FBINFO_ADDR+16], [FBINFO_ADDR+8]
+    mov eax, [FBINFO_ADDR+32]
+    mul dword [FBINFO_ADDR+28]
+    mov dword [FBINFO_ADDR+16], eax
+    mov dword [FBINFO_ADDR+20], edx
 .done:
     ret
 
