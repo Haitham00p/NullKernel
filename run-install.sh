@@ -24,7 +24,7 @@ STAGE2="$SCRIPT_DIR/build/nulll/stage2.bin"
 IMG_OFFSET="$IMG@@$((PARTITION_START * 512))"
 echo "[*] staging NullOS FAT32 filesystem"
 mmd -i "$IMG_OFFSET" ::/BOOT 2>/dev/null || true
-# Remove the legacy Limine directory from existing images before staging files.
+# Remove the legacy third-party bootloader directory from existing images before staging files.
 mrd -i "$IMG_OFFSET" ::/BOOT/LIMINE 2>/dev/null || true
 mcopy -o -i "$IMG_OFFSET" "$KERNEL" ::/BOOT/KERNEL.ELF
 if [ -d "$SCRIPT_DIR/rootfs" ]; then
