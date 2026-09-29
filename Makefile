@@ -106,6 +106,7 @@ C_SOURCES := \
 	shell/selfhost.c \
 	shell/shell.c \
 	arch/x86_64/power/pwr.c \
+	fs/ISO9660/iso9660.c \
 	drivers/timer/PIT.c \
 	kernel/time/time.c \
 	source/kchar.c \
