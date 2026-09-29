@@ -5,6 +5,10 @@
 #include "fs/ramfs/ramfs.h"
 #include <stdint.h>
 
+void CmdRegTo(const char *Name);
+void CmdDelReg(const char *Name);
+void CmdfRegOut(const char *Name);
+void CmdRegIn(const char *Name, const void *Data, uint64_t Size);
 void CmdMsgFromNull(void); 
 void CmdHelp(const char *Category);
 void CmdAbout(void);

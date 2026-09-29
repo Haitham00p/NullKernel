@@ -19,6 +19,8 @@
  */
 typedef void (*DriverInitFn)(void);
 
+uint8_t RTCReadSeconds(void);
+
 typedef struct
 {
     const char   *name;

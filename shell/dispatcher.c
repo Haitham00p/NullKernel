@@ -4,117 +4,14 @@
 #include "kernel/terminal/terminal.h"
 #include "kernel/panic/panic.h"
 #include "../fs/ISO9660/iso9660.h"
-#include "../include/diskfs.h"
 #include "../include/kshell.h"
-#include "libc/stdlib.h"
-#include "commands/lowlevel.h"
-#include "bootmonitor/bootmonitor.h"
-#include "arch/x86_64/power/pwr.h"
-#include "kernel/ring/ring3.h"
-#include "mm/pmm.h"
-#include "mm/vmm.h"
-#include "arch/x86_64/acpi/acpi.h"
-#include "kernel/task/task.h"
-#include "kernel/sched/scheduler.h"
-#include "kernel/process/process.h"
-#include "kernel/syscall/syscall.h"
-#include "kernel/registry/registry.h"
+#include "include/drivers.h"
 
 void DispatcherDispatch(const PARSED_COMMAND *Command){
-    if (strcmp(Command->Command, "rob") == 0) {
-        if (Command->ArgCount != 0U) { TerminalPrintLine32("Usage: rob", 0x00FF0000U); return; }
-        ShellBootRunROB();
+    if (strcmp(Command->Command, "regout") == 0 || strcmp(Command->Command, "RegOut") == 0){
+        CmdEcho(Command);
         return;
     }
-    if (strcmp(Command->Command, "registry") == 0) {
-        if (Command->ArgCount != 0U) { TerminalPrintLine32("Usage: registry", 0x00FF0000U); return; }
-        TerminalWrite32("Registry version: ", PromColor);
-        TerminalPrintHex64Compact(RegistryVersion());
-        TerminalNewLine32(BackSpaceColor);
-        return;
-    }
-    if (strcmp(Command->Command, "proc") == 0) {
-        TerminalWrite32("Processes: ", PromColor); TerminalPrintHex64Compact(ProcessCount()); TerminalNewLine32(BackSpaceColor);
-        TerminalWrite32("Current PID: ", PromColor); TerminalPrintHex64Compact(ProcessCurrentId()); TerminalNewLine32(BackSpaceColor);
-        return;
-    }
-    if (strcmp(Command->Command, "procnew") == 0) {
-        if (Command->ArgCount != 0U) { TerminalPrintLine32("Usage: procnew", 0x00FF0000U); return; }
-        NullProcess *p=ProcessCreate();
-        TerminalPrintLine32(p ? "process created" : "process creation failed", p ? PromColor : 0x00FF0000U);
-        return;
-    }
-    if (strcmp(Command->Command, "syscalls") == 0) {
-        TerminalWrite32("Syscalls: ", PromColor); TerminalPrintHex64Compact(SyscallCount()); TerminalNewLine32(BackSpaceColor);
-        return;
-    }
-    if (strcmp(Command->Command, "sched") == 0) {
-        TerminalWrite32("Ticks: ", PromColor); TerminalPrintHex64Compact(SchedulerTicks());
-        TerminalWrite32(" Quantum: ", PromColor); TerminalPrintHex64Compact(SchedulerQuantum()); TerminalNewLine32(BackSpaceColor);
-        return;
-    }
-    if (strcmp(Command->Command, "quantum") == 0) {
-        if (Command->ArgCount != 1U) { TerminalPrintLine32("Usage: quantum <ticks>", 0x00FF0000U); return; }
-        uint64_t q=0; if(!ShellArgToUInt64(Command->Args[0],&q)||q==0){TerminalPrintLine32("quantum: invalid value",0x00FF0000U);return;}
-        SchedulerSetQuantum(q); TerminalPrintLine32("scheduler quantum updated",PromColor); return;
-    }
-    if (strcmp(Command->Command, "ring3") == 0) {
-        if (Command->ArgCount != 0U) { TerminalPrintLine32("Usage: ring3", 0x00FF0000U); return; }
-        Ring3Demo();
-        return;
-    }
-    if (strcmp(Command->Command, "mm") == 0) {
-        TerminalWrite32("PMM total/free pages: ", PromColor);
-        TerminalPrintHex64Compact(PmmTotalPages()); TerminalWrite32("/", PromColor);
-        TerminalPrintHex64Compact(PmmFreePages()); TerminalNewLine32(BackSpaceColor);
-        TerminalWrite32("VMM root: ", PromColor); TerminalPrintHex64Compact(VmmCurrentRoot()); TerminalNewLine32(BackSpaceColor);
-        return;
-    }
-    if (strcmp(Command->Command, "acpi") == 0) {
-        TerminalWrite32("ACPI: ", PromColor);
-        TerminalPrintLine32(AcpiReady() ? "ready" : "not available", PromColor);
-        if (AcpiReady()) { TerminalWrite32("XSDT: ", PromColor); TerminalPrintHex64Compact(AcpiXsdt()); TerminalNewLine32(BackSpaceColor); TerminalWrite32("LAPIC: ", PromColor); TerminalPrintHex64Compact(AcpiLocalApicAddress()); TerminalNewLine32(BackSpaceColor); TerminalWrite32("CPUs: ", PromColor); TerminalPrintHex64Compact(AcpiCpuCount()); TerminalNewLine32(BackSpaceColor); }
-        return;
-    }
-    if (strcmp(Command->Command, "taskdemo") == 0) { if (Command->ArgCount != 0U) { TerminalPrintLine32("Usage: taskdemo", 0x00FF0000U); return; } TaskRunDemo(); return; }
-    if (strcmp(Command->Command, "tasks") == 0) {
-        TerminalWrite32("Tasks: ", PromColor); TerminalPrintHex64Compact(TaskCount()); TerminalNewLine32(BackSpaceColor);
-        TerminalWrite32("Scheduler ticks: ", PromColor); TerminalPrintHex64Compact(SchedulerTicks()); TerminalNewLine32(BackSpaceColor);
-        return;
-    }
-
-    if (strcmp(Command->Command, "reboot-c") == 0)
-    {
-        if (Command->ArgCount != 0U)
-        {
-            TerminalPrintLine32("Usage: reboot-c", 0x00FF0000U);
-            return;
-        }
-
-        if (!DiskFsIsMounted() && !DiskFsMount())
-        {
-            TerminalPrintLine32("reboot-c: no FAT32 disk mounted", 0x00FF0000U);
-            return;
-        }
-
-        BootMonitorRequest();
-        TerminalPrintLine32("reboot-c: entering Null Boot Monitor on next boot...", 0x0000FFFFU);
-        Reboot();
-        return;
-    }
-
-    /* cp stays in the kernel: its recursive FAT32/path-safety implementation
-       must not be shadowed by the older /BIN/CP.EXE image. */
-    if (strcmp(Command->Command, "cp") == 0) {
-        if (Command->ArgCount != 2U) { TerminalPrintLine32("Usage: cp <source> <dest>", 0x00FF0000); return; }
-        CmdCp(Command->Args[0], Command->Args[1]);
-        return;
-    }
-
-    /* Disk commands shadow the built-ins: when /BIN/<cmd>.EXE exists on
-       the installed volume, it runs instead of the kernel built-in. */
-    if (DispatcherTryDiskCommand(Command)) return;
-
     if (strcmp(Command->Command, "regfill") == 0 || strcmp(Command->Command, "RegFill") == 0){
         CmdFill(Command);
         return;
@@ -125,11 +22,37 @@ void DispatcherDispatch(const PARSED_COMMAND *Command){
         TerminalPrintLine32("Usage: help [category]", 0x00FF0000);
         return;
     } 
-    /* ls, cd, pwd, mkdir, rmdir, touch, cat, rm are provided by /BIN
-       programs (LS.EXE, CD.EXE, ...) which shadow these via
-       DispatcherTryDiskCommand, so no kernel built-in is needed. */
+    if (strcmp(Command->Command, "ls") == 0) {
+        if (Command->ArgCount != 0U) { TerminalPrintLine32("Usage: ls", 0x00FF0000); return; }
+        CmdLs(); return;
+    }
+    if (strcmp(Command->Command, "cd") == 0) {
+        if (Command->ArgCount > 1U) { TerminalPrintLine32("Usage: cd [dir]", 0x00FF0000); return; }
+        CmdCd(Command->ArgCount == 0U ? 0 : Command->Args[0]); return;
+    }
+    if (strcmp(Command->Command, "pwd") == 0) {
+        if (Command->ArgCount != 0U) { TerminalPrintLine32("Usage: pwd", 0x00FF0000); return; }
+        CmdPwd(); return;
+    }
+    if (strcmp(Command->Command, "mkdir") == 0) {
+        if (Command->ArgCount != 1U) { TerminalPrintLine32("Usage: mkdir <dir>", 0x00FF0000); return; }
+        CmdMkdir(Command->Args[0]); return;
+    }
+    if (strcmp(Command->Command, "rmdir") == 0) {
+        if (Command->ArgCount != 1U) { TerminalPrintLine32("Usage: rmdir <dir>", 0x00FF0000); return; }
+        CmdRmdir(Command->Args[0]); return;
+    }
     if (strcmp(Command->Command, "isolist") == 0 || strcmp(Command->Command, "lsiso") == 0) {
         CmdIsoList(); return;
+    }
+    if (strcmp(Command->Command, "touch") == 0) {
+        if (Command->ArgCount != 1U) { TerminalPrintLine32("Usage: touch <file>", 0x00FF0000); return; }
+        CmdTouch(Command->Args[0]); return;
+    }
+    if (strcmp(Command->Command, "cat") == 0) { if (Command->ArgCount != 1U) { TerminalPrintLine32("Usage: cat <file>", 0x00FF0000); return; } CmdCat(Command->Args[0], NULL); return; }
+    if (strcmp(Command->Command, "rm") == 0) { if (Command->ArgCount < 1U || Command->ArgCount > 2U) { TerminalPrintLine32("Usage: rm <file> [-f]", 0x00FF0000); return; } /* * Protect the kernel image. * KERNEL.ELF can only be removed explicitly with -f. */ if (strcmp(Command->Args[0], "KERNEL.ELF") == 0 || strcmp(Command->Args[0], "kernel.elf") == 0) { if (Command->ArgCount == 2U && strcmp(Command->Args[1], "-f") == 0) { CmdRm(Command->Args[0]); return; } TerminalPrintLine32( "Msg from Null developer: What the hell are you doing?, add -f if you ARE in a virtual sandbox", PromColor ); return; } /* * Normal files. */ if (Command->ArgCount == 2U && strcmp(Command->Args[1], "-f") != 0) { TerminalPrintLine32("Usage: rm <file> [-f]", 0x00FF0000); return; } CmdRm(Command->Args[0]); return;
+
+        
     }
     if (strcmp(Command->Command, "write") == 0) { CmdWrite(Command); return; }
     if (strcmp(Command->Command, "suf") == 0) {
@@ -138,28 +61,8 @@ void DispatcherDispatch(const PARSED_COMMAND *Command){
     }
     if (strcmp(Command->Command, "edit") == 0) {
         if (Command->ArgCount != 1U) { TerminalPrintLine32("Usage: edit <file>", 0x00FF0000); return; }
+        
         CmdEdit(Command->Args[0]); return;
-    }
-    if (strcmp(Command->Command, "ncc") == 0) {
-        CmdNcc(Command); return;
-    }
-    if (strcmp(Command->Command, "cat") == 0) {
-        if (Command->ArgCount == 1U) {
-            CmdCat(Command->Args[0], NULL); return;
-        }
-        if (Command->ArgCount == 3U &&
-            (strcasecmp(Command->Args[1], "-gl") == 0 ||
-             strcasecmp(Command->Args[1], "--GetLine") == 0)) {
-            CmdCat(Command->Args[0], Command->Args[2]); return;
-        }
-        TerminalPrintLine32("Usage: cat <file> [-gl <line> | --GetLine <line>]", 0x00FF0000);
-        return;
-    }
-    if (strcmp(Command->Command, "n64a") == 0) {
-        CmdN64a(Command); return;
-    }
-    if (strcmp(Command->Command, "nld") == 0) {
-        CmdNld(Command); return;
     }
     if (strcmp(Command->Command, "about") == 0){
         CmdAbout();
@@ -174,7 +77,10 @@ void DispatcherDispatch(const PARSED_COMMAND *Command){
         CmdNewLine();
         return;
     }
-    /* clear is provided by /BIN/CLEAR.EXE */
+    if (strcmp(Command->Command, "clear") == 0){
+        CmdPurge();
+        return;
+    }
     if (strcmp(Command->Command, "panic") == 0){
         PanicKernel("Called Panic API For testing", (uintptr_t)PanicKernel);
         return;
@@ -183,20 +89,74 @@ void DispatcherDispatch(const PARSED_COMMAND *Command){
         CmdDevKit();
         return;
     }
+    if (strcmp(Command->Command, "regcreate") == 0){
+        if (Command->ArgCount == 0){
+            TerminalPrintLine32("Not Enough Arguments, 1 Arg needed", 0x00FF0000);
+            return;
+        }
+        CmdRegTo(Command->Args[0]);
+        return;
+    }
+    if (strcmp(Command->Command, "delreg") == 0){
+        if (Command->ArgCount == 0){
+            TerminalPrintLine32("Not Enough Arguments, 1 Arg needed", 0x00FF0000);
+            return;
+        }
+        CmdDelReg(Command->Args[0]);
+        return;
+    }
+    if (strcmp(Command->Command, "fregout") == 0){
+        if (Command->ArgCount == 0){
+            TerminalPrintLine32("Not Enough Arguments, 1 Arg needed", 0x00FF0000);
+            return;
+        }
+        CmdfRegOut(Command->Args[0]);
+        return;
+    }
+    if (strcmp(Command->Command, "regin") == 0)
+    {
+
+        if (Command->ArgCount < 2)
+        {
+            TerminalPrintLine32(
+                "Usage: regin <file> <text>",
+                0x00FF0000
+            );
+            return;
+        }
+
+        CmdRegIn(
+        Command->Args[0],                 
+        Command->Args[1],                 
+        strlen(Command->Args[1]) + 1       
+    );
+
+    return;
+    }
     if (strcmp(Command->Command, "reboot") == 0){
         CmdRbt();
         return;
+    
     }
     if (strcmp(Command->Command, "shutdown") == 0){
         CmdShdn();
         return;
     }
-    /* where is provided by /BIN/WHERE.EXE */
+    if (strcmp(Command->Command, "where") == 0){
+        if (Command->ArgCount > 1){
+            TerminalWrite32("Kernel/shell/bin/cmd.c: ", PromColor);
+            TerminalWrite32("Error: ", 0xFFFF0000);
+            TerminalWrite32("Too Much Arguments", PromColor);
+            return;
+        }
+        CmdShowAddr(Command->Args[0]);
+        return;
+    }
 
     // --- Low-Level Memory & CPU Commands ---
     if (strcmp(Command->Command, "peek") == 0) { CmdPeek(Command); return; }
     if (strcmp(Command->Command, "poke") == 0) { CmdPoke(Command); return; }
-    /* hexdump is provided by /BIN/HEXDUMP.EXE */
+    if (strcmp(Command->Command, "hexdump") == 0) { CmdHexDump(Command); return; }
     if (strcmp(Command->Command, "inb") == 0) { CmdInB(Command); return; }
     if (strcmp(Command->Command, "outb") == 0) { CmdOutB(Command); return; }
     if (strcmp(Command->Command, "inw") == 0) { CmdInW(Command); return; }
@@ -211,53 +171,8 @@ void DispatcherDispatch(const PARSED_COMMAND *Command){
     if (strcmp(Command->Command, "msr") == 0) { CmdMsr(Command); return; }
     if (strcmp(Command->Command, "diskread") == 0) { CmdDiskRead(Command); return; }
 
-    // --- Low-Level Lab Tools ---
-    if (strcmp(Command->Command, "cpuinfo") == 0) { LL_CpuInfo(); return; }
-    if (strcmp(Command->Command, "cpuidx") == 0) { LL_Cpuid(Command); return; }
-    if (strcmp(Command->Command, "cpuidmax") == 0) { LL_CpuidMax(); return; }
-    if (strcmp(Command->Command, "flags") == 0) { LL_Flags(); return; }
-    if (strcmp(Command->Command, "regs") == 0) { LL_Regs(); return; }
-    if (strcmp(Command->Command, "segs") == 0) { LL_Segs(); return; }
-    if (strcmp(Command->Command, "rsp") == 0) { LL_Rsp(); return; }
-    if (strcmp(Command->Command, "rbp") == 0) { LL_Rbp(); return; }
-    if (strcmp(Command->Command, "rip") == 0) { LL_Rip(); return; }
-    if (strcmp(Command->Command, "rdtscp") == 0) { LL_Rdtscp(); return; }
-    if (strcmp(Command->Command, "xgetbv") == 0) { LL_Xgetbv(Command); return; }
-    if (strcmp(Command->Command, "crinfo") == 0) { LL_CrInfo(); return; }
-    if (strcmp(Command->Command, "stack") == 0) { LL_Stack(Command); return; }
-    if (strcmp(Command->Command, "tscbench") == 0) { LL_Bench(Command); return; }
-    if (strcmp(Command->Command, "pause") == 0) { LL_Pause(); return; }
-    if (strcmp(Command->Command, "cmos") == 0) { LL_Cmos(Command); return; }
-    if (strcmp(Command->Command, "rtc") == 0) { LL_Rtc(); return; }
-    if (strcmp(Command->Command, "pci") == 0) { LL_Pci(Command); return; }
-    if (strcmp(Command->Command, "pciscan") == 0) { LL_PciScan(Command); return; }
-    if (strcmp(Command->Command, "pcidump") == 0) { LL_PciDump(Command); return; }
-    if (strcmp(Command->Command, "pit") == 0) { LL_Pit(); return; }
-    if (strcmp(Command->Command, "pic") == 0) { LL_Pic(); return; }
-    if (strcmp(Command->Command, "iodly") == 0) { LL_IoDelay(); return; }
-    if (strcmp(Command->Command, "e9") == 0) { LL_E9(Command); return; }
-    if (strcmp(Command->Command, "portwatch") == 0) { LL_PortWatch(Command); return; }
-    if (strcmp(Command->Command, "memscan") == 0) { LL_MemScan(Command); return; }
-    if (strcmp(Command->Command, "memfill") == 0) { LL_MemFill(Command); return; }
-    if (strcmp(Command->Command, "pmemfill") == 0) { LL_PMemFill(Command); return; }
-    if (strcmp(Command->Command, "memxor") == 0) { LL_MemXor(Command); return; }
-    if (strcmp(Command->Command, "bits") == 0) { LL_Bits(Command); return; }
-    if (strcmp(Command->Command, "endian") == 0) { LL_Endian(Command); return; }
-    if (strcmp(Command->Command, "align") == 0) { LL_Align(Command); return; }
-    if (strcmp(Command->Command, "cpuidbits") == 0) { LL_CpuidBits(); return; }
-    if (strcmp(Command->Command, "hypervisor") == 0) { LL_Hypervisor(); return; }
-    if (strcmp(Command->Command, "tscinfo") == 0) { LL_TscInfo(); return; }
-    if (strcmp(Command->Command, "cacheinfo") == 0) { LL_CacheInfo(); return; }
-    if (strcmp(Command->Command, "fpuinfo") == 0) { LL_FpuInfo(); return; }
-    if (strcmp(Command->Command, "simdinfo") == 0) { LL_SimdInfo(); return; }
-    if (strcmp(Command->Command, "ioports") == 0) { LL_IoPorts(); return; }
-    if (strcmp(Command->Command, "pageinfo") == 0) { LL_PageInfo(); return; }
-    if (strcmp(Command->Command, "dbgregs") == 0) { LL_DbgRegs(); return; }
-    if (strcmp(Command->Command, "gdtidt") == 0) { LL_GdtIdt(); return; }
-    if (strcmp(Command->Command, "serial") == 0) { LL_Serial(Command); return; }
-
     // --- High-Level System & Utility Commands ---
-    /* neofetch/sysinfo provided by /BIN/NEOFETCH.EXE */
+    if (strcmp(Command->Command, "neofetch") == 0 || strcmp(Command->Command, "sysinfo") == 0) { CmdNeofetch(); return; }
     if (strcmp(Command->Command, "matrix") == 0) { CmdMatrix(); return; }
     if (strcmp(Command->Command, "calc") == 0) { CmdCalc(Command); return; }
     if (strcmp(Command->Command, "tree") == 0) { CmdTree(); return; }
@@ -320,8 +235,18 @@ void DispatcherDispatch(const PARSED_COMMAND *Command){
         ShellArgToUInt64(Command->Args[11], &Last6);
         CmdNSong(Frequ1, Last1, Frequ2, Last2, Frequ3, Last3, Frequ4, Last4, Frequ5, Last5, Frequ6, Last6);
         return;
+    
     }
-
+    if (strcmp(Command->Command, "RTC") == 0){
+        if (Command->ArgCount != 0){
+            TerminalPrintLine32("No Args Needed", PromColor);
+            return;
+        }
+        uint8_t secs = RTCReadSeconds();
+        TerminalWriteUInt64(secs, PromColor);
+        TerminalNewLine32(BackSpaceColor);
+        return;
+    }
     TerminalWrite32("Kernel/shell/bin/cmd.c: ", PromColor);
     TerminalWrite32("Error: ", 0xFFFF0000);
     TerminalWrite32("Command Not found or Corrupted API: ", PromColor);
