@@ -25,9 +25,9 @@ VBE_MODE_BUF      equ 0x00006400
 E820_ADDR         equ 0x00005000
 E820_MAX          equ 128
 KERNEL_STAGING    equ 0x02000000
-PAGE_PML4         equ 0x00009000
-PAGE_PDPT         equ 0x0000A000
-PAGE_PD           equ 0x0000B000
+PAGE_PML4         equ 0x00011000
+PAGE_PDPT         equ 0x00012000
+PAGE_PD           equ 0x00013000
 KERNEL_PHYS_BASE  equ 0x00100000
 NULLBOOT_MAGIC_LO equ 0x55424F54
 NULLBOOT_MAGIC_HI equ 0x4E554C4C
@@ -636,6 +636,9 @@ setup_vbe:
     mov dword [FBINFO_ADDR+16], eax
     mov dword [FBINFO_ADDR+20], 0
 
+    xor ax, ax
+    mov es, ax
+
     mov al, [VBE_MODE_BUF+21]
     mov [FBINFO_ADDR+40], al
     mov al, [VBE_MODE_BUF+22]
@@ -657,6 +660,8 @@ setup_vbe:
     ; A zero framebuffer pointer is a valid "headless" result.
     mov dword [FBINFO_ADDR], 0
     mov dword [FBINFO_ADDR+4], 0
+    xor ax, ax
+    mov es, ax
     clc
     ret
 
@@ -760,6 +765,12 @@ build_page_tables:
     cmp ecx, 512
     jb .pd
 
+    ret
+
+enter_long_mode:
+    cli
+    lgdt [gdt64_descriptor]
+
     mov eax, PAGE_PML4
     mov cr3, eax
 
@@ -776,8 +787,7 @@ build_page_tables:
     or eax, 1 << 31
     mov cr0, eax
 
-    lgdt [gdt64_descriptor]
-    ret
+    jmp 0x08:long_mode_entry
 
 BITS 64
 long_mode_entry:
@@ -789,7 +799,7 @@ long_mode_entry:
     mov fs, ax
     mov gs, ax
 
-    mov rsp, 0x0000000000009000
+    mov rsp, 0x0000000000018000
     and rsp, -16
     sub rsp, 8
 
