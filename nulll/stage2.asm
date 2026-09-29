@@ -36,7 +36,7 @@ FBINFO_SIZE       equ 48
 MANIFEST_MAX_EXT  equ 30
 MAILBOX_SECTOR    equ 2
 MANIFEST_SECTOR   equ 3
-STAGE2_SECTORS    equ 64
+STAGE2_SECTORS    equ 48
 
 start:
     jmp 0x0000:stage2_main
