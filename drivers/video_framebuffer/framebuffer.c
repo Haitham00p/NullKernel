@@ -139,3 +139,234 @@ void FbPresent32(void)
     }
     g_dirty = false;
 }
+
+void FbPrintPixel32(uint32_t x, uint32_t y, uint32_t color)
+{
+    if (x >= fb_width || y >= fb_height) return;
+    FbMarkDirty(x, y, x, y);
+    uint32_t *pixel = (uint32_t *)((uint8_t *)fb_active + y * fb_pitch + x * BytePerPixel);
+    *pixel = color;
+}
+
+void FbCleanScreen32(uint32_t color)
+{
+    FbMarkDirty(0, 0, (uint32_t)fb_width - 1U, (uint32_t)fb_height - 1U);
+    for (uint32_t y = 0; y < fb_height; y++)
+    {
+        for (uint32_t x = 0; x < fb_width; x++)
+        {
+            FbPrintPixel32(x, y, color);
+        }
+    }
+}
+
+void FbDrawChar32(uint8_t c,
+                  uint32_t x,
+                  uint32_t y,
+                  uint32_t color)
+{
+    if (c >= 128) return;
+    FbMarkDirty(x, y, x + FONT_WIDTH - 1U, y + FONT_HEIGHT - 1U);
+    for (uint32_t row = 0; row < FONT_HEIGHT; row++)
+    {
+        uint8_t line = font8x16[c][row];
+
+        for (uint32_t col = 0; col < FONT_WIDTH; col++)
+        {
+            if (line & (0x80 >> col))
+            {
+                FbPrintPixel32(x + col,
+                               y + row,
+                               color);
+            }
+        }
+    }
+}
+
+void FrDrawLine32(uint32_t x0,
+                  uint32_t y0,
+                  uint32_t x1,
+                  uint32_t y1,
+                  uint32_t color)
+{
+    int32_t dx = (int32_t)x1 - (int32_t)x0;
+    int32_t dy = (int32_t)y1 - (int32_t)y0;
+
+    int32_t sx = (dx >= 0) ? 1 : -1;
+    int32_t sy = (dy >= 0) ? 1 : -1;
+
+    if (dx < 0)
+        dx = -dx;
+
+    if (dy < 0)
+        dy = -dy;
+
+    int32_t err = dx - dy;
+
+    while (1)
+    {
+        FbPrintPixel32(x0, y0, color);
+
+        if (x0 == x1 && y0 == y1)
+            break;
+
+        int32_t e2 = 2 * err;
+
+        if (e2 > -dy)
+        {
+            err -= dy;
+            x0 += sx;
+        }
+
+        if (e2 < dx)
+        {
+            err += dx;
+            y0 += sy;
+        }
+    }
+}
+
+void FbDrawCharScaled32(uint8_t c,
+                        uint32_t x,
+                        uint32_t y,
+                        uint32_t scale,
+                        uint32_t color)
+{
+    if (scale == 0 || c >= 128) return;
+
+    FbMarkDirty(x, y, x + FONT_WIDTH * scale - 1U, y + FONT_HEIGHT * scale - 1U);
+
+    for (uint32_t Row = 0; Row < FONT_HEIGHT; Row++)
+    {
+        uint8_t Line = font8x16[c][Row];
+        for (uint32_t Col = 0; Col < FONT_WIDTH; Col++)
+        {
+            if (Line & (0x80 >> Col))
+            {
+                FbFillRect32(x + Col * scale, y + Row * scale,
+                             scale, scale, color);
+            }
+        }
+    }
+}
+
+void FbPrintString32(const char *str,
+                     uint32_t x,
+                     uint32_t y,
+                     uint32_t color)
+{
+    while (str && *str)
+    {
+        if (*str == '\n')
+        {
+            x = 0;
+            y += FONT_HEIGHT;
+            str++;
+            continue;
+        }
+
+        if (*str == '\t')
+        {
+            x += FONT_WIDTH * 4;
+            str++;
+            continue;
+        }
+
+        if (x + FONT_WIDTH >= fb_width)
+        {
+            x = 0;
+            y += FONT_HEIGHT;
+        }
+
+        FbDrawChar32((uint8_t)*str,
+                     x,
+                     y,
+                     color);
+
+        x += FONT_WIDTH;
+        str++;
+    }
+}
+
+void FbFillRect32(uint32_t x,
+                  uint32_t y,
+                  uint32_t width,
+                  uint32_t height,
+                  uint32_t color)
+{
+    FbMarkDirty(x, y, x + width - 1U, y + height - 1U);
+    for (uint32_t Row = 0; Row < height; Row++)
+    {
+        for (uint32_t Col = 0; Col < width; Col++)
+        {
+            FbPrintPixel32(x + Col,
+                           y + Row,
+                           color);
+        }
+    }
+}
+
+uint32_t FbGetWidth32(void)
+{
+    return fb_width;
+}
+
+uint32_t FbGetHeight32(void)
+{
+    return fb_height;
+}
+
+uint32_t *FbGetAddress32(void)
+{
+    return fb_active;
+}
+
+uint32_t FbGetPitchPixels32(void)
+{
+    return (uint32_t)(fb_pitch / BytePerPixel);
+}
+
+void FbDrawRect32(uint32_t x,
+                   uint32_t y,
+                   uint32_t width,
+                   uint32_t height,
+                   uint32_t color)
+{
+    FbMarkDirty(x, y, x + width - 1U, y + height - 1U);
+    for (uint32_t i = 0; i < width; i++)
+    {
+        FbPrintPixel32(x + i, y, color);
+        FbPrintPixel32(x + i, y + height - 1, color);
+    }
+
+    for (uint32_t i = 0; i < height; i++)
+    {
+        FbPrintPixel32(x, y + i, color);
+        FbPrintPixel32(x + width - 1, y + i, color);
+    }
+}
+
+uint32_t FbReadPixel32(uint32_t x, uint32_t y)
+{
+    if (x >= fb_width || y >= fb_height) return 0;
+    uint32_t *pixel = (uint32_t *)((uint8_t *)fb_active + y * fb_pitch + x * BytePerPixel);
+    return *pixel;
+}
+
+void FbCopyRect32(uint32_t SrcX,
+                   uint32_t SrcY,
+                   uint32_t DstX,
+                   uint32_t DstY,
+                   uint32_t Width,
+                   uint32_t Height)
+{
+    FbMarkDirty(DstX, DstY, DstX + Width - 1U, DstY + Height - 1U);
+    for (uint32_t Row = 0; Row < Height; Row++)
+    {
+        for (uint32_t Col = 0; Col < Width; Col++)
+        {
+            uint32_t Color = FbReadPixel32(SrcX + Col, SrcY + Row);
+            FbPrintPixel32(DstX + Col, DstY + Row, Color);
+        }
+    }
+}
