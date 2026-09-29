@@ -652,9 +652,12 @@ setup_vbe:
     mov [FBINFO_ADDR+43], al
     mov al, [VBE_MODE_BUF+25]
     mov [FBINFO_ADDR+44], al
-    mov byte [FBINFO_ADDR+45], 0
-    mov byte [FBINFO_ADDR+46], 0
-    mov byte [FBINFO_ADDR+47], 0
+    mov al, [VBE_MODE_BUF+26]
+    mov [FBINFO_ADDR+45], al
+    mov al, [VBE_MODE_BUF+27]
+    mov [FBINFO_ADDR+46], al
+    mov al, [VBE_MODE_BUF+28]
+    mov [FBINFO_ADDR+47], al
 
     ; Address is filled as higher-half alias in build_bootinfo.
     clc
