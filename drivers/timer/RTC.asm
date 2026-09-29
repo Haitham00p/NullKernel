@@ -6,9 +6,17 @@ section .text
 global RTCReadSeconds
 
 RTCReadSeconds:
-    xor rax, rax
-    mov al, 0x00
+.wait:
     mov dx, 0x70
+    mov al, 0x0A
+    out dx, al
+    mov dx, 0x71
+    in al, dx
+    test al, 0x80
+    jnz .wait
+
+    mov dx, 0x70
+    mov al, 0x00
     out dx, al
     mov dx, 0x71
     in al, dx
