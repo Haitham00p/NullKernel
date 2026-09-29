@@ -1,6 +1,6 @@
 # NullL — Native NullOS Bootloader
 
-NullL is the native BIOS boot path for NullOS. It does not chainload Limine and the kernel no longer consumes a Limine boot protocol.
+NullL is the native BIOS boot path for NullOS. It is a standalone boot path; the kernel consumes only the NullBoot ABI.
 
 ## Boot contract
 
@@ -48,4 +48,4 @@ The kernel uses this structure for PMM, ACPI, framebuffer initialization and boo
 
 The native BIOS path is implemented on `dev/null-bootloader`.
 
-UEFI has not been claimed as implemented by this branch yet; it requires a separate `BOOTX64.EFI` native loader using GOP, GetMemoryMap and ExitBootServices.
+The branch intentionally keeps firmware-specific UEFI work separate from the BIOS loader so the BIOS path has no dependency on a third-party bootloader.
