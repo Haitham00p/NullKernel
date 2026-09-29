@@ -31,7 +31,7 @@ if [ -d "$SCRIPT_DIR/rootfs" ]; then
 fi
 
 echo "[*] saving Old Boot Record at partition-1"
-dd if="$IMG" of="$IMG" bs=512 skip=$((PARTITION_START - 1)) seek=$((PARTITION_START - 1)) count=1 conv=notrunc status=none
+dd if="$IMG" of="$IMG" bs=512 skip=0 seek=$((PARTITION_START - 1)) count=1 conv=notrunc status=none
 
 echo "[*] installing NullL stage1"
 dd if="$STAGE1" of="$IMG" bs=446 count=1 conv=notrunc status=none
