@@ -47,11 +47,21 @@ bool BlockInitialize(void)
         return true;
     }
 
-    if (IDESelectDisk())
+    if (IDEInitialize())
     {
-        g_BlockReady = true;
-        BlockPrintBackend("legacy ATA/IDE");
-        return true;
+        if (IDESelectDisk())
+        {
+            g_BlockReady = true;
+            BlockPrintBackend("legacy ATA/IDE");
+            return true;
+        }
+
+        if (IDEIsATAPI())
+        {
+            g_BlockReady = true;
+            BlockPrintBackend("ATAPI optical");
+            return true;
+        }
     }
 
     DbgWarn("Block device: no storage device available", (uintptr_t)BlockInitialize);

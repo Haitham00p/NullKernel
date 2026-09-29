@@ -17,21 +17,28 @@ ORG 0x8000
 ;   partition + 7 = this stage2
 ;
 STAGE2_LOAD       equ 0x00008000
-MANIFEST_BUF      equ 0x00006000
+MANIFEST_BUF      equ 0x00006800
 BOOTINFO_ADDR     equ 0x00006000
 FBINFO_ADDR       equ 0x00006100
 VBE_CTRL_BUF      equ 0x00006200
 VBE_MODE_BUF      equ 0x00006400
 E820_ADDR         equ 0x00005000
 E820_MAX          equ 128
-KERNEL_STAGING    equ 0x02000000
-PAGE_PML4         equ 0x00011000
-PAGE_PDPT         equ 0x00012000
-PAGE_PD           equ 0x00013000
-PAGE_FBPD         equ 0x00014000
+KERNEL_STAGING    equ 0x0000E000
+KERNEL_STAGING_END equ 0x000A0000
+KERNEL_STAGING_MAX equ (KERNEL_STAGING_END - KERNEL_STAGING)
+; The four tables are built only after the ELF segments have been copied out
+; to their physical addresses, so they reuse the kernel staging area. They must
+; stay below 1 MiB: the kernel PMM's first allocatable page is exactly
+; 0x100000, so anything at or above that can be handed out by PmmAllocPage and
+; corrupt these tables. Nothing else uses 0x10000-0x1FFFF.
+PAGE_PML4         equ 0x00010000
+PAGE_PDPT         equ 0x00011000
+PAGE_PD_HI        equ 0x00012000
+PAGE_FBPD         equ 0x00013000
 FB_VA_LO          equ 0xC0000000
 FB_VA_HI          equ 0xFFFFFFFF
-KERNEL_PHYS_BASE  equ 0x00100000
+KERNEL_PHYS_BASE  equ 0x00200000
 NULLBOOT_MAGIC_LO equ 0x55424F54
 NULLBOOT_MAGIC_HI equ 0x4E554C4C
 BOOTINFO_SIZE     equ 104
@@ -50,7 +57,11 @@ stage2_main:
     mov ds, ax
     mov es, ax
     mov ss, ax
-    mov sp, 0x7000
+    ; The stack grows down, so its top must sit below every scratch buffer.
+    ; E820 map is 0x5000, bootinfo 0x6000 and manifest 0x6800; a top of
+    ; 0x7000 put the live stack straight through all of them and corrupted
+    ; the loader's own return state.
+    mov sp, 0x4000
     sti
     mov [boot_drive], dl
 
@@ -81,7 +92,7 @@ native_boot:
 
     call setup_vbe
     ; VBE is optional. The kernel remains usable without a framebuffer.
-    
+
     call build_bootinfo
     call build_page_tables
     call enter_long_mode
@@ -115,7 +126,7 @@ menu:
     jmp .wait
 
 .normal:
-    xor al, al
+    mov al, 1
     jmp .select
 .asm:
     mov al, 2
@@ -154,7 +165,6 @@ keyboard_get_menu_key:
     ; Consume the key. AL=ASCII, AH=scan code.
     xor ah, ah
     int 0x16
-
     cmp al, '1'
     je .key1
     cmp al, '2'
@@ -344,8 +354,14 @@ load_kernel:
     je .fail
     cmp eax, MANIFEST_MAX_EXT
     ja .fail
+    ; The BIOS only honours a 16-bit segment:offset buffer, so the kernel has
+    ; to be staged in the low-memory window below the VGA aperture.
+    mov eax, [kernel_size]
+    cmp eax, KERNEL_STAGING_MAX
+    ja .fail
 
-    ; Load every extent to the contiguous staging area at 32 MiB.
+    ; Load every extent into the contiguous staging buffer.
+    mov dword [loaded_bytes], 0
     xor ebx, ebx
 .extent_loop:
     cmp ebx, [extent_count]
@@ -376,26 +392,51 @@ load_kernel:
     jbe .chunk_ok
     mov eax, 127
 .chunk_ok:
+    test eax, eax
+    jz .fail
     mov word [kernel_dap.count], ax
-
+    ; This firmware ignores the 64-bit flat pointer and silently transfers to
+    ; segment:offset instead, so address the staging buffer that way. Because
+    ; segment*16 has its low four bits clear, the offset can only hold the
+    ; low nibble of the linear address and the segment holds the rest.
     mov eax, [kernel_dest]
-    mov dword [kernel_dap.flat_low], eax
+    mov edx, eax
+    and edx, 0x0F
+    mov word [kernel_dap.offset], dx
+    shr eax, 4
+    mov word [kernel_dap.segment], ax
+    mov dword [kernel_dap.flat_low], 0
     mov dword [kernel_dap.flat_high], 0
-    mov word [kernel_dap.offset], 0
-    mov word [kernel_dap.segment], 0
+    mov eax, [extent_remaining]
+    mov eax, [kernel_dap.lba_low]
+    mov ax, [kernel_dap.count]
+    mov ax, [kernel_dap.offset]
+    mov ax, [kernel_dap.segment]
+    mov ax, [boot_drive]
 
     mov si, kernel_dap
     mov dl, [boot_drive]
     mov ah, 0x42
     int 0x13
     jc .fail
-
+    mov bx, ax
     movzx eax, word [kernel_dap.count]
+    ; Guard: a zero-length transfer would otherwise spin forever.
+    test eax, eax
+    jz .fail
+    movzx ecx, ax              ; sectors the firmware reports as transferred
+    ; Never let a misbehaving firmware drive the counters past the extent.
+    mov edx, [extent_remaining]
+    cmp ecx, edx
+    jbe .rem_ok
+    mov ecx, edx
+.rem_ok:
+    mov eax, ecx
     shl eax, 9
     add [kernel_dest], eax
     add [loaded_bytes], eax
-    sub [extent_remaining], eax
-    shr eax, 9
+    sub [extent_remaining], ecx
+    add [kernel_dap.lba_low], ecx
     jmp .read_chunk
 
 .next_extent:
@@ -554,9 +595,14 @@ collect_e820:
     mov edx, 0x534D4150
     mov ecx, 24
     mov di, E820_ADDR
-    mov eax, ebp
-    imul eax, 24
+    ; di = E820_ADDR + entry_index*24.
+    ; INT 15h needs AX=0xE820, EDX=0x534D4150, ECX=24 and EBX preserved.
+    ; imul writes only AX, so save/restore AX around the offset math.
+    push ax
+    mov ax, bp
+    imul ax, bp, 24
     add di, ax
+    pop ax
     int 0x15
     jc .finish
     cmp eax, 0x534D4150
@@ -714,7 +760,10 @@ setup_vbe:
     mov [FBINFO_ADDR+24], eax
     mov ax, [VBE_MODE_BUF+20]
     mov [FBINFO_ADDR+28], eax
-    mov eax, [VBE_MODE_BUF+16]
+    ; BytesPerScanLine is a 16-bit VBE field. Reading it as a dword also
+    ; swallows XResolution into the high half, producing a pitch of
+    ; (XRes << 16) | pitch and a garbage framebuffer size downstream.
+    movzx eax, word [VBE_MODE_BUF+16]
     mov [FBINFO_ADDR+32], eax
     movzx eax, byte [VBE_MODE_BUF+25]
     mov [FBINFO_ADDR+36], ax
@@ -801,8 +850,8 @@ build_bootinfo:
     mov dword [BOOTINFO_ADDR+80], 0
     mov dword [BOOTINFO_ADDR+84], 0
     mov dword [BOOTINFO_ADDR+88], STAGE2_LOAD
-    mov dword [BOOTINFO_ADDR+92], STAGE2_LOAD + STAGE2_SECTORS*512
-    mov dword [BOOTINFO_ADDR+96], 0
+    mov dword [BOOTINFO_ADDR+92], 0
+    mov dword [BOOTINFO_ADDR+96], STAGE2_LOAD + STAGE2_SECTORS*512
     mov dword [BOOTINFO_ADDR+100], 0
 
     ; Give the framebuffer its own higher-half window at
@@ -833,31 +882,39 @@ build_bootinfo:
 ; ---------------------------------------------------------------------------
 
 build_page_tables:
-    ; Clear 3 pages.
+    ; Clear all 4 tables. They sit contiguously in the staging area, above
+    ; the 0x4000 stack top and outside every scratch buffer.
     mov edi, PAGE_PML4
     xor eax, eax
-    mov ecx, 3072/4
+    mov ecx, 4096/4
     rep stosd
 
-    ; PML4[0] -> PDPT, PML4[511] -> PDPT.
+    ; PML4[0] -> PDPT (lower half), PML4[511] -> PDPT.
     a32 mov dword [PAGE_PML4+0], PAGE_PDPT | 3
     a32 mov dword [PAGE_PML4+4], 0
     a32 mov dword [PAGE_PML4+511*8], PAGE_PDPT | 3
     a32 mov dword [PAGE_PML4+511*8+4], 0
 
-    ; PDPT[0] and [510] and [511] -> PD.
-    a32 mov dword [PAGE_PDPT+0], PAGE_PD | 3
-    a32 mov dword [PAGE_PDPT+510*8], PAGE_PD | 3
+    ; PDPT[0] -> one 1 GiB identity page (keeps the loader stub reachable),
+    ; PDPT[510] -> higher-half PD, PDPT[511] -> framebuffer PD.
+    a32 mov dword [PAGE_PDPT+0], 0x83
+    a32 mov dword [PAGE_PDPT+4], 0
+    a32 mov dword [PAGE_PDPT+510*8], PAGE_PD_HI | 3
+    a32 mov dword [PAGE_PDPT+510*8+4], 0
     a32 mov dword [PAGE_PDPT+511*8], PAGE_FBPD | 3
+    a32 mov dword [PAGE_PDPT+511*8+4], 0
 
-    ; 2 MiB identity map for the first 1 GiB. The kernel higher-half
-    ; window ffffffff80000000 uses PDPT[510].
+    ; Higher half: ffffffff80000000 must land on KERNEL_PHYS_BASE, because the
+    ; kernel is linked for KERNEL_VMA but loaded at its LMA. Identity mapping
+    ; the window to physical 0 would jump into low memory instead. The load
+    ; address must be 2 MiB aligned or a PDE would set a reserved bit.
     xor ecx, ecx
-.pd:
+.pdhi:
     mov eax, ecx
     shl eax, 21
+    add eax, KERNEL_PHYS_BASE
     or eax, 0x83
-    mov edi, PAGE_PD
+    mov edi, PAGE_PD_HI
     mov edx, ecx
     shl edx, 3
     add edi, edx
@@ -865,13 +922,9 @@ build_page_tables:
     mov dword [edi+4], 0
     inc ecx
     cmp ecx, 512
-    jb .pd
+    jb .pdhi
 
     ; Separate 2 MiB mappings for the VBE framebuffer window.
-    mov edi, PAGE_FBPD
-    xor eax, eax
-    mov ecx, 512
-    rep stosd
     mov eax, [FBINFO_ADDR+8]
     test eax, eax
     jz .fb_done
@@ -919,6 +972,17 @@ enter_long_mode:
     or eax, 1 << 8
     wrmsr
 
+    ; Both PE (bit 0) and PG (bit 31) are required before the far jump.
+    ; Setting only PG leaves the CPU in real mode, where "jmp 0x08:..." is
+    ; interpreted as segment 0x08 (base 0x80) and the 64-bit entry never runs.
+    ; Read the paging structures back immediately before switching them on.
+    a32 mov eax, [PAGE_PML4]
+    a32 mov eax, [PAGE_PDPT+510*8]
+    a32 mov eax, [PAGE_PD_HI]
+    ; Enter protected mode first, then enable paging as a separate step.
+    mov eax, cr0
+    or eax, 1
+    mov cr0, eax
     mov eax, cr0
     or eax, 1 << 31
     mov cr0, eax
@@ -1060,7 +1124,7 @@ mailbox_dap:
 
 align 4, db 0
 manifest_dap:
-    db 0x18, 0
+    db 0x10, 0
 .count dw 0
 .offset dw 0
 .segment dw 0
@@ -1071,7 +1135,7 @@ manifest_dap:
 
 align 4, db 0
 kernel_dap:
-    db 0x18, 0
+    db 0x10, 0
 .count dw 0
 .offset dw 0
 .segment dw 0

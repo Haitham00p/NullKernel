@@ -139,7 +139,7 @@ all: vault nulll
 
 nulll: $(NULLL_STAGE1) $(NULLL_STAGE2)
 
-$(KERNEL): $(OBJECTS)
+$(KERNEL): $(OBJECTS) | arch/x86_64/linker.ld
 	@mkdir -p $(@D)
 	$(LD) $(LDFLAGS) -o $@ $^
 

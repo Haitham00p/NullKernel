@@ -98,9 +98,22 @@ void kernel_main(NullBootInfo *BootInfo)
         HeapType = Entry->Type;
     }
 
-    if (HeapBase < 0x400000)
+    /*
+     * The heap must start above the kernel image itself. A 1 MiB floor alone
+     * is not enough: the kernel's own .bss extends past 1 MiB, so a heap based
+     * there lets the first large allocation (the framebuffer back-buffer)
+     * overwrite live kernel data.
+     */
+    uintptr_t HeapFloor = 0x400000;
+    if (BootInfo->KernelPhysicalEnd > HeapFloor)
     {
-        uint64_t Drop = 0x400000 - HeapBase;
+        HeapFloor = ((uintptr_t)BootInfo->KernelPhysicalEnd + 0xFFF) &
+                    ~(uintptr_t)0xFFF;
+    }
+
+    if (HeapBase < HeapFloor)
+    {
+        uint64_t Drop = HeapFloor - HeapBase;
         if (Drop >= HeapLength)
             HeapLength = 0;
         else

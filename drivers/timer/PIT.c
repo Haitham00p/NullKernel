@@ -39,12 +39,24 @@ void PITTest(void){
 }
 
 void PITSleepTicks(uint64_t Ticks){
+    /*
+     * PITTicks only advances from the PIT IRQ0 handler, so a sleep is only
+     * meaningful with interrupts enabled. Entering with IF clear (early boot,
+     * the panic path) would otherwise spin on a hlt that can never wake.
+     */
+    uint64_t Flags;
+    __asm__ volatile("pushfq; popq %0" : "=r"(Flags) : : "memory");
+    __asm__ volatile("sti" ::: "memory");
+
     uint64_t CurrentTicks = PITGetTicks();
     uint64_t NeededTicks = CurrentTicks + Ticks;
     while (CurrentTicks < NeededTicks){
-        __asm__ volatile ("hlt");
+        __asm__ volatile("hlt");
         CurrentTicks = PITGetTicks();
     }
+
+    if ((Flags & 0x200) == 0)
+        __asm__ volatile("cli" ::: "memory");
 }
 
 uint64_t PITGetMilliseconds(){

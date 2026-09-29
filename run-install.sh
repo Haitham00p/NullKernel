@@ -169,7 +169,7 @@ with open(img_path, "r+b") as f:
 
         for i, c in enumerate(chain):
             chunk = data[i * cluster_bytes:(i + 1) * cluster_bytes]
-            write_cluster(c, chunk.ljust(cluster_bytes, b"\\x00"))
+            write_cluster(c, chunk.ljust(cluster_bytes, b"\x00"))
 
         p = read_cluster(parent)
         slot = next((off for off in range(0, cluster_bytes, 32)
