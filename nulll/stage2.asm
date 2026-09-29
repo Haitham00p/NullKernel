@@ -743,9 +743,9 @@ build_bootinfo:
 
 build_page_tables:
     ; Clear 3 pages.
-    mov di, PAGE_PML4
+    mov edi, PAGE_PML4
     xor eax, eax
-    mov cx, 3072/4
+    mov ecx, 3072/4
     rep stosd
 
     ; PML4[0] -> PDPT, PML4[511] -> PDPT.
@@ -777,9 +777,9 @@ build_page_tables:
     jb .pd
 
     ; Separate 2 MiB mappings for the VBE framebuffer window.
-    mov di, PAGE_FBPD
+    mov edi, PAGE_FBPD
     xor eax, eax
-    mov cx, 512
+    mov ecx, 512
     rep stosd
     mov eax, [FBINFO_ADDR+8]
     test eax, eax
@@ -849,7 +849,7 @@ long_mode_entry:
     sub rsp, 8
 
     mov rdi, BOOTINFO_ADDR
-    mov rax, [BOOTINFO_ADDR+72]
+    mov rax, [abs BOOTINFO_ADDR+72]
     jmp rax
 
 fatal_disk:
@@ -869,6 +869,7 @@ fatal:
     hlt
     jmp .hang
 
+BITS 16
 old_record:
     mov si, loading_old
     call puts
