@@ -28,6 +28,17 @@ LIMINE_CONF="$SCRIPT_DIR/iso/boot/limine/limine.conf"
 LIMINE_BIN="$SCRIPT_DIR/limine-binary/limine"
 ISO="$SCRIPT_DIR/build/NullOS.iso"
 
+QEMU_PID=""
+cleanup() {
+    if [ -n "$QEMU_PID" ]; then
+        kill "$QEMU_PID" 2>/dev/null || true
+        wait "$QEMU_PID" 2>/dev/null || true
+        QEMU_PID=""
+    fi
+    rm -f /tmp/nullos-mon.sock
+}
+trap cleanup INT TERM EXIT
+
 echo "[*] checking build products"
 if [ ! -f "$KERNEL" ] || [ ! -f "$ISO" ]; then
     echo "[*] kernel.elf or NullOS.iso missing, running make"
@@ -89,8 +100,9 @@ EOF
         grep -q "INSTALL RESULT" /tmp/nullos-install-serial.log 2>/dev/null && break
         sleep 1
     done
-    kill "$QEMU_PID" 2>/dev/null
-    wait "$QEMU_PID" 2>/dev/null
+    kill "$QEMU_PID" 2>/dev/null || true
+    wait "$QEMU_PID" 2>/dev/null || true
+    QEMU_PID=""
     grep "INSTALL RESULT" /tmp/nullos-install-serial.log || {
         echo "error: installer did not complete" >&2
         exit 1
