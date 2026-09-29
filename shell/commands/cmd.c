@@ -307,6 +307,63 @@ void CmdPurge(void){
     TerminalClear32(BackSpaceColor);
 }
 
+void CmdfRegOut(const char *Name)
+{
+    RamFile *File = RamFsFind(Name);
+
+    if (File == NULL)
+    {
+        TerminalPrintLine32("File Not Found", PromColor);
+        return;
+    }
+
+    if (File->Data != NULL && File->Size != 0U)
+        TerminalWrite32((const char *)File->Data, PromColor);
+
+    TerminalNewLine32(PromColor);
+}
+
+void CmdRegTo(const char *Name)
+{
+    if (RamFsFind(Name) != NULL)
+    {
+        TerminalPrintLine32("Registry entry already exists", PromColor);
+        return;
+    }
+
+    if (RamFsCreate(Name) == NULL)
+        TerminalPrintLine32("Cannot Create File", 0x00FF0000);
+}
+
+void CmdRegIn(const char *Name, const void *Data, uint64_t Size)
+{
+    RamFile *File = RamFsFind(Name);
+
+    if (File == NULL)
+        File = RamFsCreate(Name);
+
+    if (File == NULL)
+    {
+        TerminalPrintLine32("Cannot Create File", 0x00FF0000);
+        return;
+    }
+
+    RamFsWrite(File, Data, Size);
+}
+
+void CmdDelReg(const char *Name)
+{
+    RamFile *File = RamFsFind(Name);
+
+    if (File == NULL)
+    {
+        TerminalPrintLine32("File Not Found", PromColor);
+        return;
+    }
+
+    RamFsDelete(File);
+}
+
 void CmdEcho(const PARSED_COMMAND *command)
 {
     if (command->ArgCount < 1)
