@@ -240,7 +240,7 @@ void CmdAbout(void){
     TerminalWrite32("Architecture: ", 0xFFFFFFFF);
     TerminalPrintLine32("x86_64 Long Mode", 0x00FF00FF);
     TerminalWrite32("Bootloader: ", 0xFFFFFFFF);
-    TerminalPrintLine32("Limine BIOS/UEFI", 0x00FF00FF);
+    TerminalPrintLine32("NullL native BIOS", 0x00FF00FF);
 }
 
 static void RegFormatHex(char *Out, uint32_t V)
@@ -1575,7 +1575,7 @@ void CmdNeofetch(void)
     TerminalWrite32("  OS           : ", 0x0057DB92); TerminalPrintLine32("NullOS 0.5 (x86_64 Edition)", PromColor);
     TerminalWrite32("  Kernel       : ", 0x0057DB92); TerminalPrintLine32("NullKernel 0.5.0", PromColor);
     TerminalWrite32("  Architecture : ", 0x0057DB92); TerminalPrintLine32("x86_64 Long Mode", PromColor);
-    TerminalWrite32("  Bootloader   : ", 0x0057DB92); TerminalPrintLine32("Limine BIOS/UEFI", PromColor);
+    TerminalWrite32("  Bootloader   : ", 0x0057DB92); TerminalPrintLine32("NullL native BIOS", PromColor);
     TerminalWrite32("  Display      : ", 0x0057DB92);
     TerminalPrintHex64Compact(FbGetWidth32());
     TerminalWrite32("x", PromColor);
