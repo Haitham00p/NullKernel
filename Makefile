@@ -133,7 +133,7 @@ OBJECTS := $(C_SOURCES:%.c=$(BUILD_DIR)/%.o) $(ASM_OBJECTS)
 
 -include $(C_SOURCES:%.c=$(BUILD_DIR)/%.d)
 
-.PHONY: all clean vault run play install boot iso nulll
+.PHONY: all clean vault run play test install boot iso nulll
 
 .NOTPARALLEL:
 
@@ -243,6 +243,11 @@ run: all
 
 play: $(ISO)
 	./start.sh
+
+# Fast development test: rebuild the ISO and boot it directly.
+# Does not install or modify nullos.img.
+test: $(ISO)
+	$(QEMU) -boot order=d -cdrom $(ISO) -m 3 -serial stdio -no-reboot
 
 clean:
 	rm -rf $(BUILD_DIR) .vault-stamp
