@@ -1,7 +1,9 @@
 BITS 16
 ORG 0x7C00
 
-STAGE2_SECTORS equ 24
+; NullL stage-1: MBR-resident loader.
+; Loads stage2 from FAT32 reserved sectors at partition_start + 7.
+STAGE2_SECTORS equ 64
 STAGE2_LOAD    equ 0x8000
 
 start:
@@ -18,7 +20,6 @@ stage1_main:
 
     mov [boot_drive], dl
 
-    ; Verify BIOS EDD/LBA extensions before using INT 13h AH=42.
     mov ah, 0x41
     mov bx, 0x55AA
     int 0x13
@@ -31,8 +32,7 @@ stage1_main:
     mov word [dap.count], STAGE2_SECTORS
     mov word [dap.offset], STAGE2_LOAD
     mov word [dap.segment], 0
-    ; Stage 2 lives at partition_start + 7, inside FAT32 reserved sectors.
-    ; Prefer the active MBR partition (boot indicator 0x80).
+
     mov si, 0x7C00 + 0x1BE
     mov cx, 4
 .find_active:
@@ -54,6 +54,7 @@ stage1_main:
     int 0x13
     jc disk_error
 
+    mov dl, [boot_drive]
     jmp 0x0000:STAGE2_LOAD
 
 disk_error:
@@ -88,6 +89,4 @@ dap:
 .lba_low dd 0
 .lba_high dd 0
 
-; The installer merges this 446-byte boot code with the existing MBR
-; partition table and signature.
 times 446-($-$$) db 0
