@@ -28,6 +28,9 @@ KERNEL_STAGING    equ 0x02000000
 PAGE_PML4         equ 0x00011000
 PAGE_PDPT         equ 0x00012000
 PAGE_PD           equ 0x00013000
+PAGE_FBPD         equ 0x00014000
+FB_VA_LO          equ 0xC0000000
+FB_VA_HI          equ 0xFFFFFFFF
 KERNEL_PHYS_BASE  equ 0x00100000
 NULLBOOT_MAGIC_LO equ 0x55424F54
 NULLBOOT_MAGIC_HI equ 0x4E554C4C
@@ -711,18 +714,26 @@ build_bootinfo:
     mov dword [BOOTINFO_ADDR+96], 0
     mov dword [BOOTINFO_ADDR+100], 0
 
-    ; Turn VBE physical framebuffer into the kernel higher-half alias.
+    ; Give the framebuffer its own higher-half window at
+    ; ffffffff:c0000000. This is separate from the kernel's first-1GiB alias.
     mov eax, [FBINFO_ADDR+8]
     test eax, eax
     jz .done
-    mov [FBINFO_ADDR], eax
-    ; The boot page tables map the first 1 GiB at 0xffffffff80000000.
-    add dword [FBINFO_ADDR], 0x80000000
-    mov dword [FBINFO_ADDR+4], 0xFFFFFFFF
+    mov ebx, eax
+    and ebx, 0xFFE00000
+    mov eax, [FBINFO_ADDR+8]
+    sub eax, ebx
+    mov [fb_offset], eax
+
     mov eax, [FBINFO_ADDR+32]
     mul dword [FBINFO_ADDR+28]
     mov dword [FBINFO_ADDR+16], eax
     mov dword [FBINFO_ADDR+20], edx
+
+    mov eax, FB_VA_LO
+    add eax, [fb_offset]
+    mov [FBINFO_ADDR], eax
+    mov dword [FBINFO_ADDR+4], FB_VA_HI
 .done:
     ret
 
@@ -746,10 +757,10 @@ build_page_tables:
     ; PDPT[0] and [510] and [511] -> PD.
     mov dword [PAGE_PDPT+0], PAGE_PD | 3
     mov dword [PAGE_PDPT+510*8], PAGE_PD | 3
-    mov dword [PAGE_PDPT+511*8], PAGE_PD | 3
+    mov dword [PAGE_PDPT+511*8], PAGE_FBPD | 3
 
-    ; 2 MiB identity map for the first 1 GiB. This simultaneously provides
-    ; the higher-half aliases at ffffffff80000000 and ffffffffC0000000.
+    ; 2 MiB identity map for the first 1 GiB. The kernel higher-half
+    ; window ffffffff80000000 uses PDPT[510].
     xor ecx, ecx
 .pd:
     mov eax, ecx
@@ -765,6 +776,40 @@ build_page_tables:
     cmp ecx, 512
     jb .pd
 
+    ; Separate 2 MiB mappings for the VBE framebuffer window.
+    mov di, PAGE_FBPD
+    xor eax, eax
+    mov cx, 512
+    rep stosd
+    mov eax, [FBINFO_ADDR+8]
+    test eax, eax
+    jz .fb_done
+    and eax, 0xFFE00000
+    mov [fb_phys_base], eax
+    mov eax, [FBINFO_ADDR+16]
+    mov edx, [fb_offset]
+    add eax, edx
+    add eax, 0x001FFFFF
+    shr eax, 21
+    mov [fb_pages], eax
+    xor ecx, ecx
+.fb_map:
+    cmp ecx, [fb_pages]
+    jae .fb_done
+    mov eax, ecx
+    shl eax, 21
+    add eax, [fb_phys_base]
+    or eax, 0x83
+    mov edi, PAGE_FBPD
+    mov edx, ecx
+    shl edx, 3
+    add edi, edx
+    mov [edi], eax
+    mov dword [edi+4], 0
+    inc ecx
+    cmp ecx, 512
+    jb .fb_map
+.fb_done:
     ret
 
 enter_long_mode:
@@ -894,6 +939,9 @@ mode_ptr_off dw 0
 mode_ptr_seg dw 0
 candidate_mode dw 0
 chosen_mode dw 0
+fb_offset dd 0
+fb_phys_base dd 0
+fb_pages dd 0
 
 title db 13,10,"NULLLOADER - NATIVE BOOT CONTROL",13,10,0
 normal db "  [1] Normal-Mode",13,10,0
