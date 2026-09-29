@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #define BytePerPixel 4
 
+static NullBootFramebuffer *framebuffer;
 static uint32_t *fb_address;   /* hardware front buffer (what the display scans) */
 static uint32_t *fb_back;      /* off-screen back buffer used for compositing   */
 static uint32_t *fb_active;    /* the buffer draw calls currently target        */
@@ -64,8 +65,7 @@ void FbInitDoubleBuffer(void)
         return;
 
     /*
-     * Limine gives framebuffer->address as an HHDM virtual pointer.
-     * Re-establish that mapping after NullOS switches to its own VMM root.
+     * NullL hands the kernel a stable higher-half framebuffer address.
      */
     if (!FbMapHardwareBuffer())
         return;
