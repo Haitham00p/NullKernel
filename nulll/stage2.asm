@@ -749,15 +749,15 @@ build_page_tables:
     rep stosd
 
     ; PML4[0] -> PDPT, PML4[511] -> PDPT.
-    mov dword [PAGE_PML4+0], PAGE_PDPT | 3
-    mov dword [PAGE_PML4+4], 0
-    mov dword [PAGE_PML4+511*8], PAGE_PDPT | 3
-    mov dword [PAGE_PML4+511*8+4], 0
+    a32 mov dword [PAGE_PML4+0], PAGE_PDPT | 3
+    a32 mov dword [PAGE_PML4+4], 0
+    a32 mov dword [PAGE_PML4+511*8], PAGE_PDPT | 3
+    a32 mov dword [PAGE_PML4+511*8+4], 0
 
     ; PDPT[0] and [510] and [511] -> PD.
-    mov dword [PAGE_PDPT+0], PAGE_PD | 3
-    mov dword [PAGE_PDPT+510*8], PAGE_PD | 3
-    mov dword [PAGE_PDPT+511*8], PAGE_FBPD | 3
+    a32 mov dword [PAGE_PDPT+0], PAGE_PD | 3
+    a32 mov dword [PAGE_PDPT+510*8], PAGE_PD | 3
+    a32 mov dword [PAGE_PDPT+511*8], PAGE_FBPD | 3
 
     ; 2 MiB identity map for the first 1 GiB. The kernel higher-half
     ; window ffffffff80000000 uses PDPT[510].
