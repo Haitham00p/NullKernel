@@ -39,7 +39,7 @@ const FAT32BootSector *DiskFsBoot(void);
    directory. Returns false when the entry is not present. */
 bool DiskFsFindInRoot(const char *Name, FAT32DirectoryEntry *Entry);
 
-/* Navigates to an absolute path like "/BOOT/LIMINE". */
+/* Navigates to an absolute path like "/BOOT". */
 bool DiskFsChdirPath(const char *Path);
 
 /* Creates an empty file (no-op when the file already exists). */
