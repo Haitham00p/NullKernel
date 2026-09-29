@@ -344,8 +344,9 @@ static bool UpdateNativeKernelManifest(void)
     if (Part == NULL)
         return false;
 
-    if (!BlockRead(Part->StartLBA, &Boot))
+    if (!BlockRead(Part->StartLBA, Sector))
         return false;
+    memcpy(&Boot, Sector, sizeof(Boot));
     if (!FAT32IsValid(&Boot))
         return false;
     if (!FAT32DirectoryOpenRoot(&Root, &Boot, Part->StartLBA))
