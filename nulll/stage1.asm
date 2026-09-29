@@ -3,7 +3,7 @@ ORG 0x7C00
 
 ; NullL stage-1: MBR-resident loader.
 ; Loads stage2 from FAT32 reserved sectors at partition_start + 7.
-STAGE2_SECTORS equ 64
+STAGE2_SECTORS equ 48
 STAGE2_LOAD    equ 0x8000
 
 start:
