@@ -129,19 +129,6 @@ static bool NameForKernelId(const char *id, char *name, uint32_t cap)
     DiskFsCdRoot();return false;
 }
 
-static bool ReadBootConfig(char *out,uint32_t cap)
-{
-    uint8_t b[4096];uint32_t got=0,i;
-    if(cap<2U || !DiskFsReadInPath("/BOOT/LIMINE","limine.conf",b,sizeof(b)-1,&got)) return false;
-    b[got]=0;
-    for(i=0;i+5<got;i++) if(b[i]=='p'&&b[i+1]=='a'&&b[i+2]=='t'&&b[i+3]=='h'&&b[i+4]==':'){
-        uint32_t s=i+5;while(s<got&&(b[s]==' '||b[s]=='\t'))s++;
-        uint32_t e=s;while(e<got&&b[e]!='\n'&&b[e]!='\r')e++;
-        uint32_t n=e-s;if(n>=cap)n=cap-1;for(uint32_t j=0;j<n;j++)out[j]=(char)b[s+j];out[n]=0;return true;
-    }
-    return false;
-}
-
 static bool Validate(const uint8_t *img,uint32_t size,uint64_t *entry,
                      uint64_t *lo,uint64_t *hi){
     const BM_EHDR *e; uint32_t i; bool have=false; uint64_t l=UINT64_MAX,h=0;
@@ -218,25 +205,6 @@ static void ShowKernels(void){
     DiskFsCdRoot();
 }
 
-static bool StageLimine(const char *name){
-    uint8_t *buf=(uint8_t*)kmalloc(4096);uint32_t got=0,i,j,n=Len(name);
-    const char *needle="path: boot():/boot/";const uint32_t nl=19;
-    if(!buf||n>80){if(buf)kfree(buf);return false;}
-    if(!DiskFsReadInPath("/BOOT/LIMINE","limine.conf",buf,4095,&got)){kfree(buf);return false;}
-    for(i=0;i+nl<got;i++){
-        bool ok=true;for(j=0;j<nl;j++)if(buf[i+j]!=(uint8_t)needle[j]){ok=false;break;}
-        if(!ok)continue;
-        uint32_t end=i+nl;while(end<got&&buf[end]!='\n'&&buf[end]!='\r')end++;
-        uint32_t old=end-(i+nl),tail=got-end,newgot=got-old+n;
-        if(newgot>=4095){kfree(buf);return false;}
-        if(n>old)for(j=tail;j;j--)buf[end+(n-old)+j-1]=buf[end+j-1];
-        else if(n<old)for(j=0;j<tail;j++)buf[end-(old-n)+j]=buf[end+j];
-        got=newgot;for(j=0;j<n;j++)buf[i+nl+j]=(uint8_t)name[j];
-        bool wr=DiskFsWriteInPath("/BOOT/LIMINE","limine.conf",buf,got);kfree(buf);return wr;
-    }
-    kfree(buf);return false;
-}
-
 static bool VerifyLoaded(void)
 {
     uint64_t e,l,h;
@@ -304,9 +272,8 @@ static void PrintStatus(void)
     if(g_control_granted)TerminalPrintLine32(g_control_name,NPB_GREEN);
     else TerminalPrintLine32("not granted",NPB_YELLOW);
     TerminalWrite32("  entry         : ",NPB_DIM);TerminalPrintHex64Compact(g_image?g_entry:0);TerminalNewLine32(0);
-    char path[256];
-    TerminalWrite32("  Limine path   : ",NPB_DIM);
-    if(ReadBootConfig(path,sizeof(path)))TerminalPrintLine32(path,NPB_CYAN);else TerminalPrintLine32("unreadable",NPB_RED);
+    TerminalWrite32("  boot source   : ",NPB_DIM);
+    TerminalPrintLine32("NullL native /BOOT/kernel.elf",NPB_CYAN);
 }
 
 static void PrintDanger(void)
@@ -365,18 +332,12 @@ static void ContinueBoot(void){
     if(!SafeName(name)){P("continue: invalid kernel name");return;}
     if(!VerifyLoaded()) return;
     if(!DiskFsWriteInPath(BM_DIR,BM_SEL,name,Len(name))){P("jmp: cannot save selection");return;}
-    /* jmp is a one-shot escape from NPB: tell NullL to chainload and let
-       the kernel continue in normal mode instead of showing its menu again. */
+    /* jmp arms the native NullL one-shot normal mode and reboots. */
     if(!RequestNormalBootOnce()){
         P("jmp: cannot arm one-shot normal boot");
         return;
     }
-    if(!StageLimine(name)){
-        P("jmp: selection saved, but installed Limine config was not changed");
-        P("jmp: boot source may be ISO/CD; NPB cannot rewrite a read-only ISO.");
-    }else{
-        TerminalWrite32("JMP -> ",NPB_ORANGE);TerminalPrintLine32(name,NPB_GREEN);
-    }
+    TerminalWrite32("JMP -> ",NPB_ORANGE);TerminalPrintLine32(name,NPB_GREEN);
     Reboot();
 }
 
@@ -392,7 +353,7 @@ static void Help(void){
     P("  meminfo                 show staged image size");
     P("  status                  show NPB state");
     P("  verify                  revalidate staged ELF");
-    P("  config                  show current Limine kernel path");
+    P("  config                  show native NullL boot source");
     P("  kernels                 alias for ShowKernels");
     P("  danger                  show dangerous-mode warning");
     P("  ids                     explain kernel IDs");
