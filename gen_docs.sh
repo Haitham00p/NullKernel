@@ -29,7 +29,6 @@ while IFS= read -r f; do
 done < <(find "$ROOT" -name "*.h" -type f \
     -not -path "*/build/*" \
     -not -path "*/.git/*" \
-    -not -path "*/limine-binary/*" \
     | sort)
 
 echo "Generated $count header/API files in $OUT and rootfs/DOCS"
