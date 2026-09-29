@@ -33,7 +33,7 @@ fi
 echo "[*] installing NullL stage1"
 dd if="$STAGE1" of="$IMG" bs=446 count=1 conv=notrunc status=none
 echo "[*] installing NullL stage2"
-dd if="$STAGE2" of="$IMG" bs=512 seek=$((PARTITION_START + STAGE2_OFFSET)) count=64 conv=notrunc status=none
+dd if="$STAGE2" of="$IMG" bs=512 seek=$((PARTITION_START + STAGE2_OFFSET)) count=48 conv=notrunc status=none
 dd if=/dev/zero of="$IMG" bs=512 seek=$((PARTITION_START + MAILBOX_OFFSET)) count=1 conv=notrunc status=none
 
 python3 - "$IMG" "$KERNEL" <<'PY'
