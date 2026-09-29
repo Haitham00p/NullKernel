@@ -12,6 +12,7 @@ MANIFEST_OFFSET=3
 if [ ! -f "$IMG" ]; then ./mkdisk.sh "$IMG"; fi
 command -v mcopy >/dev/null 2>&1 || { echo "error: mtools is required" >&2; exit 1; }
 command -v mmd >/dev/null 2>&1 || { echo "error: mtools is required" >&2; exit 1; }
+command -v mrd >/dev/null 2>&1 || { echo "error: mtools (mrd) is required" >&2; exit 1; }
 
 KERNEL="$SCRIPT_DIR/build/kernel.elf"
 STAGE1="$SCRIPT_DIR/build/nulll/stage1.bin"
@@ -23,6 +24,8 @@ STAGE2="$SCRIPT_DIR/build/nulll/stage2.bin"
 IMG_OFFSET="$IMG@@$((PARTITION_START * 512))"
 echo "[*] staging NullOS FAT32 filesystem"
 mmd -i "$IMG_OFFSET" ::/BOOT 2>/dev/null || true
+# Remove the legacy Limine directory from existing images before staging files.
+mrd -i "$IMG_OFFSET" ::/BOOT/LIMINE 2>/dev/null || true
 mcopy -o -i "$IMG_OFFSET" "$KERNEL" ::/BOOT/KERNEL.ELF
 if [ -d "$SCRIPT_DIR/rootfs" ]; then
     mcopy -s -o -i "$IMG_OFFSET" "$SCRIPT_DIR/rootfs"/* ::/ 2>/dev/null || true
