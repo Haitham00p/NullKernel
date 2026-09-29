@@ -132,22 +132,62 @@ menu:
 ; ---------------------------------------------------------------------------
 ; Menu keyboard input
 ; ---------------------------------------------------------------------------
-; Read the keyboard controller directly instead of relying on INT 16h.
-; This keeps the NullL menu independent of BIOS keyboard-buffer behavior.
-; Accept both common PS/2 scan-code sets used by BIOS/QEMU:
-;   Set 1: 1=02, 2=03, 3=04, 0=0B
-;   Set 2: 1=16, 2=1E, 3=26, 0=45
+; BIOS-first keyboard reader with a PS/2-controller fallback.
+;
+; Why this is hybrid:
+;   - INT 16h is the firmware's canonical keyboard interface and works with
+;     both legacy PS/2 and BIOS USB-keyboard emulation.
+;   - Some firmware/QEMU combinations can leave the BIOS keyboard service
+;     unusable while the 8042 still has bytes available, so we also inspect
+;     ports 0x64/0x60.
+;
+; Return:
+;   AL = ASCII '0'..'3' for a menu key
+;   AL = 0 for any other key
 keyboard_get_menu_key:
-.wait_key:
+.wait:
+    ; First ask BIOS whether a key is already available.
+    mov ah, 0x01
+    int 0x16
+    jz .controller
+
+    ; Consume the key. AL=ASCII, AH=scan code.
+    xor ah, ah
+    int 0x16
+
+    cmp al, '1'
+    je .key1
+    cmp al, '2'
+    je .key2
+    cmp al, '3'
+    je .key3
+    cmp al, '0'
+    je .key0
+    xor al, al
+    ret
+
+.controller:
+    ; BIOS did not report a key. Check the 8042 output buffer.
     in al, 0x64
     test al, 1
-    jz .wait_key
+    jz .wait
+
     in al, 0x60
 
-    ; Ignore key-release bytes.
+    ; Set-1 break code: bit 7 set.
     test al, 0x80
-    jnz .wait_key
+    jnz .wait
 
+    ; Set-2 release prefix.
+    cmp al, 0xF0
+    je .wait
+
+    ; Extended-key prefix. The following byte is not one of our menu keys.
+    cmp al, 0xE0
+    je .wait
+
+    ; Set 1: 1=02, 2=03, 3=04, 0=0B
+    ; Set 2: 1=16, 2=1E, 3=26, 0=45
     cmp al, 0x02
     je .key1
     cmp al, 0x16
@@ -164,6 +204,7 @@ keyboard_get_menu_key:
     je .key0
     cmp al, 0x45
     je .key0
+
     xor al, al
     ret
 
