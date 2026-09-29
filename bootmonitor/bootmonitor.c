@@ -6,6 +6,9 @@
 #include "drivers/input/keyboard/keyboard.h"
 #include "drivers/storage/block/block.h"
 #include "fs/partition/mbr/mbr.h"
+#include "fs/fat32/directory/directory.h"
+#include "fs/fat32/fat/fat.h"
+#include "fs/fat32/vbr/vbr.h"
 #include "mm/heap/heap.h"
 #include "mm/vmm.h"
 #include "lib/string/string.h"
@@ -249,6 +252,10 @@ static bool GrantControl(const char *name)
     }
     kfree(check);
 
+    if (!UpdateNativeKernelManifest()){
+        P("gc: committed kernel.elf but native NullL manifest update failed");
+        return false;
+    }
     strcpy(g_control_name,"kernel.elf");
     g_control_granted=true;
 
@@ -311,6 +318,98 @@ static bool RequestNormalBootOnce(void)
     mailbox[0] = 'N'; mailbox[1] = 'L'; mailbox[2] = 'M'; mailbox[3] = '1';
     mailbox[4] = BOOTMONITOR_MODE_NORMAL;
     return BlockWrite((uint64_t)part->StartLBA + 2U, mailbox);
+}
+
+static bool UpdateNativeKernelManifest(void)
+{
+    uint8_t Sector[512];
+    MBR Table;
+    const MBRPartitionEntry *Part;
+    FAT32BootSector Boot;
+    FAT32Directory Root, BootDir;
+    FAT32DirectoryEntry Kernel;
+    uint32_t Cluster;
+    uint32_t Remaining;
+    uint32_t Extents = 0;
+    uint64_t ExtentLBA[30];
+    uint32_t ExtentCount[30];
+
+    if (!BlockRead(0, Sector))
+        return false;
+    memcpy(&Table, Sector, sizeof(Table));
+    if (!MBRIsValid(&Table))
+        return false;
+
+    Part = MBRGetPartition(&Table, 0);
+    if (Part == NULL)
+        return false;
+
+    if (!BlockRead(Part->StartLBA, &Boot))
+        return false;
+    if (!FAT32IsValid(&Boot))
+        return false;
+    if (!FAT32DirectoryOpenRoot(&Root, &Boot, Part->StartLBA))
+        return false;
+    if (!FAT32DirectoryFind(&Root, "BOOT", &Kernel))
+        return false;
+    if (!(Kernel.Attributes & FAT32_ATTRIBUTE_DIRECTORY))
+        return false;
+    if (!FAT32DirectoryOpen(&BootDir, &Boot, Part->StartLBA,
+                            FAT32DirectoryEntryFirstCluster(&Kernel)))
+        return false;
+    if (!FAT32DirectoryFind(&BootDir, "KERNEL.ELF", &Kernel))
+        return false;
+
+    Remaining = (Kernel.FileSize + 511U) / 512U;
+    Cluster = FAT32DirectoryEntryFirstCluster(&Kernel);
+    memset(Sector, 0, sizeof(Sector));
+    *(uint32_t *)(Sector + 0) = 0x4B4C4C4E; /* NLLK */
+    *(uint32_t *)(Sector + 4) = 1U;
+    *(uint32_t *)(Sector + 8) = Kernel.FileSize;
+
+    while (Remaining != 0U && Cluster >= 2U && !FATIsEndOfChain(Cluster))
+    {
+        uint32_t LBA = FAT32ClusterToLBA(&Boot, Part->StartLBA, Cluster);
+        uint32_t Count = Boot.SectorsPerCluster;
+        if (Count > Remaining)
+            Count = Remaining;
+
+        if (Extents != 0U &&
+            ExtentLBA[Extents - 1U] + ExtentCount[Extents - 1U] == LBA)
+        {
+            ExtentCount[Extents - 1U] += Count;
+        }
+        else
+        {
+            if (Extents >= 30U)
+                return false;
+            ExtentLBA[Extents] = LBA;
+            ExtentCount[Extents] = Count;
+            Extents++;
+        }
+
+        Remaining -= Count;
+        if (Remaining == 0U)
+            break;
+
+        uint32_t Next = 0;
+        if (!FATReadEntry(&Boot, Part->StartLBA, Cluster, &Next))
+            return false;
+        Cluster = Next;
+    }
+
+    if (Remaining != 0U)
+        return false;
+
+    *(uint32_t *)(Sector + 12) = Extents;
+    for (uint32_t i = 0; i < Extents; i++)
+    {
+        uint32_t Off = 16U + i * 16U;
+        *(uint64_t *)(Sector + Off) = ExtentLBA[i];
+        *(uint32_t *)(Sector + Off + 8U) = ExtentCount[i];
+    }
+
+    return BlockWrite((uint64_t)Part->StartLBA + 3U, Sector);
 }
 
 static void ContinueBoot(void){
