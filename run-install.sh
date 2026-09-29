@@ -30,6 +30,9 @@ if [ -d "$SCRIPT_DIR/rootfs" ]; then
     mcopy -o -i "$IMG_OFFSET" "$KERNEL" ::/BOOT/KERNEL.ELF
 fi
 
+echo "[*] saving Old Boot Record at partition-1"
+dd if="$IMG" of="$IMG" bs=512 skip=$((PARTITION_START - 1)) seek=$((PARTITION_START - 1)) count=1 conv=notrunc status=none
+
 echo "[*] installing NullL stage1"
 dd if="$STAGE1" of="$IMG" bs=446 count=1 conv=notrunc status=none
 echo "[*] installing NullL stage2"
