@@ -271,9 +271,6 @@ load_kernel:
     mov [kernel_dap.lba_high], eax
     mov eax, [esi+8]        ; sector count
     mov [extent_remaining], eax
-    mov eax, ebx
-    shl eax, 4
-    add esi, eax
 
     ; Destination = KERNEL_STAGING + bytes already loaded.
     mov eax, [loaded_bytes]
