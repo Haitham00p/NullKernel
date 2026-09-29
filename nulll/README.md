@@ -1,31 +1,51 @@
-# NullL
+# NullL — Native NullOS Bootloader
 
-NullL is the native bootloader for NullOS.
+NullL is the native BIOS boot path for NullOS. It does not chainload Limine and the kernel no longer consumes a Limine boot protocol.
 
-## Contract
+## Boot contract
 
-Firmware -> NullL -> ELF64 -> NullBootInfo -> NullOS.
+```
+BIOS
+  -> MBR stage1
+  -> FAT32 reserved-sector stage2
+  -> NLLK kernel extent manifest
+  -> ELF64 PT_LOAD loader
+  -> E820 memory map + BIOS RSDP
+  -> VBE linear framebuffer (optional)
+  -> NullBootInfo
+  -> NullOS higher-half kernel
+```
 
-NullL does not chainload Limine and does not use the Limine boot protocol.
+## Disk layout
 
-The BIOS and UEFI loaders must produce the same NullBootInfo ABI. The kernel receives a pointer to NullBootInfo in RDI.
+Relative to the active FAT32 partition:
 
-## Memory
+- sector 2: NLM1 one-shot boot-mode mailbox
+- sector 3: NLLK kernel extent manifest
+- sector 7: NullL stage2
+- sector 1: FAT32 FSInfo
+- sector 6: FAT32 backup VBR
+- partition-1: saved Old Boot Record
 
-The kernel remains a higher-half ELF:
+The MBR contains only the NullL stage1 code plus the existing partition table.
 
-- VMA: 0xffffffff80000000
-- physical/LMA base: 0x00100000
+## Kernel ABI
 
-The loader maps the kernel physical load addresses into the higher-half virtual addresses before entering the ELF entry point.
+`include/nullboot.h` defines the firmware-to-kernel ABI. NullL passes its address in RDI when entering the ELF64 kernel entry point.
 
-## Firmware paths
+The ABI carries:
 
-- bios/: legacy BIOS stage1/stage2 path.
-- uefi/: native x86-64 UEFI PE/COFF loader.
-- elf/: common ELF64 validation/loading rules.
-- bootinfo/: common handoff ABI.
+- E820 memory map
+- framebuffer physical/virtual information
+- BIOS boot drive
+- kernel physical range
+- kernel entry point
+- loader range
 
-## Non-goals
+The kernel uses this structure for PMM, ACPI, framebuffer initialization and boot diagnostics.
 
-NullL does not become a filesystem driver for the kernel. It only implements enough storage access to locate and load the configured kernel image.
+## Current scope
+
+The native BIOS path is implemented on `dev/null-bootloader`.
+
+UEFI has not been claimed as implemented by this branch yet; it requires a separate `BOOTX64.EFI` native loader using GOP, GetMemoryMap and ExitBootServices.
