@@ -74,12 +74,6 @@ bool FAT32FileWriteFromReader(FAT32Directory *Directory, const char *Name,
         PreviousCluster = Cluster;
     }
 
-    if (strcmp(Name, "limine-bios.sys") == 0)
-    {
-        return FAT32DirectoryCreateLongFileEntry(
-            Directory, Name, "LIMINE~1.SYS", FAT32_ATTRIBUTE_ARCHIVE,
-            FirstCluster, Size, 0);
-    }
     return FAT32DirectoryCreateEntry(Directory, Name, FAT32_ATTRIBUTE_ARCHIVE,
                                      FirstCluster, Size, 0);
 }
@@ -95,9 +89,7 @@ bool FAT32FileVerifyFromReader(const FAT32Directory *Directory, const char *Name
     uint32_t Offset = 0U;
 
     if (Directory == NULL || Name == NULL || Reader == NULL ||
-        !(strcmp(Name, "limine-bios.sys") == 0 ?
-          FAT32DirectoryFind(Directory, "LIMINE~1.SYS", &Entry) :
-          FAT32DirectoryFind(Directory, Name, &Entry)) || Entry.FileSize != Size)
+        !FAT32DirectoryFind(Directory, Name, &Entry) || Entry.FileSize != Size)
     {
         return false;
     }

@@ -10,16 +10,14 @@
 #include "kernel/debug/debug.h"
 #include "shell/shell.h"
 #include "include/diskfs.h"
-#include "vendor/limine/limine.h"
+#include "include/nullboot.h"
 #include <stddef.h>
 #include "mm/heap/heap.h"
 #include "kernel/panic/panic.h"
 #include "include/drivers.h"
-#include "../fs/ISO9660/iso9660.h"
 #include "drivers/storage/ide/ide.h"
 #include "arch/x86_64/power/pwr.h"
 #include "../Kernel/drivers/timer/PIT.h"
-#include "installer/installer.h"
 #include "libc/stdlib.h"
 #include "libc/stdio.h"
 #include "bootmonitor/bootmonitor.h"
@@ -34,10 +32,16 @@
 #include "kernel/sched/scheduler.h"
 #include "kernel/registry/registry.h"
 
-extern struct limine_memmap_request MemMapReq;
+volatile NullBootInfo *NullBoot = NULL;
 
-void kernel_main(void)
+void kernel_main(NullBootInfo *BootInfo)
 {
+    NullBoot = BootInfo;
+    if (BootInfo == NULL || BootInfo->Magic != NULLBOOT_MAGIC ||
+        BootInfo->Version != NULLBOOT_VERSION)
+    {
+        for (;;) __asm__ volatile("cli; hlt");
+    }
     {
         uint64_t cr0, cr4;
         __asm__ volatile("mov %%cr0, %0" : "=r"(cr0));
@@ -52,10 +56,10 @@ void kernel_main(void)
     DbgSerialInit();
     FbInit32();
 
-    if (MemMapReq.response == NULL)
-        PanicKernel("Memory Map Not Found", (uintptr_t)kernel_main);
+    if (BootInfo->MemoryMap == 0 || BootInfo->MemoryMapCount == 0)
+        PanicKernel("NullBoot memory map missing", (uintptr_t)kernel_main);
 
-    DbgBoot("Kernel entry point reached", (uintptr_t)kernel_main);
+    DbgBoot("NullL native kernel entry", (uintptr_t)kernel_main);
 
     GdtInitialize();
     DbgInfo("GDT/TSS and ring descriptors online", (uintptr_t)GdtInitialize);
@@ -76,25 +80,31 @@ void kernel_main(void)
     DbgInfo("Keyboard driver ready", (uintptr_t)KbdInitialize);
     DbgIntr("Keyboard driver ready (IRQ1)", (uintptr_t)KbdInitialize);
 
-    struct limine_memmap_response *Response = MemMapReq.response;
-    struct limine_memmap_entry *Entry;
+    const NullBootMemoryEntry *MemoryMap =
+        (const NullBootMemoryEntry *)(uintptr_t)BootInfo->MemoryMap;
     uintptr_t HeapBase = 0;
     uint64_t HeapLength = 0;
     uint64_t HeapType = 0;
 
-    for (uint32_t i = 0; i < Response->entry_count; i++){
-        Entry = Response->entries[i];
-        if (Entry->type != LIMINE_MEMMAP_USABLE) continue;
-        if (Entry->length <= HeapLength) continue;
-        HeapBase = Entry->base;
-        HeapLength = Entry->length;
-        HeapType = Entry->type;
+    for (uint32_t i = 0; i < BootInfo->MemoryMapCount; i++)
+    {
+        const NullBootMemoryEntry *Entry = &MemoryMap[i];
+        if (Entry->Type != NULLBOOT_MEM_USABLE)
+            continue;
+        if (Entry->Length <= HeapLength)
+            continue;
+        HeapBase = (uintptr_t)Entry->Base;
+        HeapLength = Entry->Length;
+        HeapType = Entry->Type;
     }
 
-    if (HeapBase < 0x400000){
+    if (HeapBase < 0x400000)
+    {
         uint64_t Drop = 0x400000 - HeapBase;
-        if (Drop >= HeapLength) HeapLength = 0;
-        else {
+        if (Drop >= HeapLength)
+            HeapLength = 0;
+        else
+        {
             HeapBase += Drop;
             HeapLength -= Drop;
         }
@@ -103,8 +113,19 @@ void kernel_main(void)
     if (HeapBase == 0)
         PanicKernel("No Usable Entry Found For Heap", (uintptr_t)HeapInitialize);
 
-    PmmInitialize(Response);
-    PmmReserveRange(0x100000, 0x100000);
+    PmmInitialize(BootInfo);
+    PmmReserveRange(BootInfo->KernelPhysicalBase,
+                    BootInfo->KernelPhysicalEnd - BootInfo->KernelPhysicalBase);
+    PmmReserveRange(BootInfo->LoaderBase,
+                    BootInfo->LoaderEnd - BootInfo->LoaderBase);
+    PmmReserveRange(0x5000, 0x7000);
+    if (BootInfo->Framebuffer != 0)
+    {
+        const NullBootFramebuffer *Frame =
+            (const NullBootFramebuffer *)(uintptr_t)BootInfo->Framebuffer;
+        if (Frame->PhysicalAddress != 0 && Frame->Size != 0)
+            PmmReserveRange(Frame->PhysicalAddress, Frame->Size);
+    }
     PmmReserveRange(HeapBase, HeapLength);
     VmmInitialize();
     DbgInfo("Physical/virtual memory managers online", (uintptr_t)VmmInitialize);
@@ -119,7 +140,6 @@ void kernel_main(void)
     FbInitDoubleBuffer();
     TerminalInit32();
     TerminalClear32(0x00000000);
-    ISOInitialize();
     PITInitialize(Freq);
     DbgInfo("PIT is online", (uintptr_t)PITInitialize);
     DbgInfo("Kernel heap online", (uintptr_t)HeapInitialize);
@@ -144,29 +164,6 @@ void kernel_main(void)
 
     __asm__ volatile("sti");
     TerminalPrintLine32("InterruptSys online", 0xFFFFFFFF);
-
-    if (ISOIsReady())
-    {
-        InstallerResult Result = InstallerRun();
-
-        if (Result == INSTALLER_RESULT_SUCCEEDED)
-        {
-            TerminalPrintLine32("Installer complete. Rebooting into the installed disk...", 0x0000FF00);
-            DbgSerialWrite("INSTALLER: SUCCEEDED, rebooting now\n");
-            for (volatile uint64_t Delay = 0; Delay < 10000000ULL; Delay++)
-                __asm__ volatile("pause");
-            Reboot();
-            for (;;) __asm__ volatile("hlt");
-        }
-        else if (Result == INSTALLER_RESULT_FAILED)
-        {
-            /* The target disk may be half-written.  Never continue into the
-               normal shell after a failed install. */
-            TerminalPrintLine32("INSTALLER: FAILED - see diagnostics above. Halted.", 0xFFFF0000);
-            DbgSerialWrite("INSTALLER: FAILED, halting (no shell)\n");
-            for (;;) __asm__ volatile("hlt");
-        }
-    }
 
     TerminalClear32(BackSpaceColor);
     DiskFsMount();

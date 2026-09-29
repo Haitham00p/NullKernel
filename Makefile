@@ -1,7 +1,6 @@
 CC      := gcc
 LD      := ld
 NASM    := nasm
-LIMINE  ?= limine-binary
 QEMU    ?= qemu-system-x86_64
 GENVAULT := ncc/genvault.sh
 
@@ -78,7 +77,6 @@ C_SOURCES := \
 	kernel/sched/scheduler.c \
 	kernel/registry/registry.c \
 	kernel/elf/elf_loader.c \
-	installer/installer.c \
 	lib/delay/delay.c \
 	lib/string/string.c \
 	libc/ctype.c \
@@ -133,15 +131,13 @@ OBJECTS := $(C_SOURCES:%.c=$(BUILD_DIR)/%.o) $(ASM_OBJECTS)
 
 -include $(C_SOURCES:%.c=$(BUILD_DIR)/%.d)
 
-.PHONY: all clean vault run play test install boot iso nulll
+.PHONY: all clean vault run boot install nulll
 
 .NOTPARALLEL:
 
-all: vault $(ISO)
+all: vault nulll
 
 nulll: $(NULLL_STAGE1) $(NULLL_STAGE2)
-
-iso: $(ISO)
 
 $(KERNEL): $(OBJECTS)
 	@mkdir -p $(@D)
@@ -193,8 +189,6 @@ $(BUILD_DIR)/drivers/timer/RTC.o: drivers/timer/RTC.asm
 	@mkdir -p $(@D)
 	$(NASM) -f elf64 $< -o $@
 
-ROOTFS_FILES := $(shell find rootfs -type f 2>/dev/null)
-
 $(NULLL_STAGE1): nulll/stage1.asm
 	@mkdir -p $(@D)
 	$(NASM) -f bin $< -o $@
@@ -203,51 +197,15 @@ $(NULLL_STAGE2): nulll/stage2.asm
 	@mkdir -p $(@D)
 	$(NASM) -f bin $< -o $@
 
-$(ISO): $(KERNEL) $(ROOTFS_FILES) $(NULLL_STAGE1) $(NULLL_STAGE2) iso/boot/limine/limine.conf iso/EFI/BOOT/BOOTX64.EFI
-	@mkdir -p $(ISO_DIR)/boot/limine $(ISO_DIR)/boot/nulll $(ISO_DIR)/EFI/BOOT
-	cp $(KERNEL) $(ISO_DIR)/boot/kernel.elf
-	rm -rf $(ISO_DIR)/rootfs
-	cp -r rootfs $(ISO_DIR)/rootfs
-	cp $(LIMINE)/limine-bios-cd.bin $(ISO_DIR)/boot/limine/
-	cp $(LIMINE)/limine-bios.sys $(ISO_DIR)/boot/limine/
-	cp $(LIMINE)/limine-uefi-cd.bin $(ISO_DIR)/boot/limine/
-	cp iso/boot/limine/limine.conf $(ISO_DIR)/boot/limine/
-	cp $(NULLL_STAGE1) $(ISO_DIR)/boot/nulll/stage1.bin
-	cp $(NULLL_STAGE2) $(ISO_DIR)/boot/nulll/stage2.bin
-	cp iso/EFI/BOOT/BOOTX64.EFI $(ISO_DIR)/EFI/BOOT/
-	xorriso -as mkisofs -R -r -J \
-		-b boot/limine/limine-bios-cd.bin -no-emul-boot \
-		-boot-load-size 4 -boot-info-table \
-		--efi-boot boot/limine/limine-uefi-cd.bin -no-emul-boot \
-		-o $@ $(ISO_DIR)
-	$(LIMINE)/limine bios-install $@
-	@xorriso -indev $@ -ls /rootfs >/dev/null
-	@xorriso -indev $@ -ls /rootfs/BIN >/dev/null
-	@xorriso -indev $@ -ls /boot/kernel.elf >/dev/null
+install: $(KERNEL) $(NULLL_STAGE1) $(NULLL_STAGE2)
+	./run-install.sh $(DISK)
 
-install: $(ISO)
-	./run-install.sh $(DISK) --auto
+boot: install
+	@if [ -f /tmp/nullos-qemu.pid ]; then kill -9 "$$(cat /tmp/nullos-qemu.pid)" 2>/dev/null || true; rm -f /tmp/nullos-qemu.pid; fi
+	qemu-system-x86_64 -m 3 -boot order=c -drive "file=$(DISK),format=raw,if=ide,index=0" -serial stdio -display gtk
 
-boot: $(DISK)
-	@if [ -f /tmp/nullos-qemu.pid ]; then \
-		kill -9 "$$(cat /tmp/nullos-qemu.pid)" 2>/dev/null || true; \
-		rm -f /tmp/nullos-qemu.pid; \
-	fi
-	@sleep 1
-	qemu-system-x86_64 -m 256 -boot order=c \
-		-drive "file=$(DISK),format=raw,if=ide,index=0" \
-		-serial file:/tmp/nullos-serial.log -display gtk
-
-run: all
-	./start.sh
-
-play: $(ISO)
-	./start.sh
-
-# Fast development test: rebuild the ISO and boot it directly.
-# Does not install or modify nullos.img.
-test: $(ISO)
-	$(QEMU) -boot order=d -cdrom $(ISO) -m 3 -serial stdio -no-reboot
+run: install
+	qemu-system-x86_64 -m 3 -boot order=c -drive "file=$(DISK),format=raw,if=ide,index=0" -serial stdio -display gtk
 
 clean:
 	rm -rf $(BUILD_DIR) .vault-stamp

@@ -1,7 +1,7 @@
 #include "framebuffer.h"
 #include "drivers/video_font/font.h"
 #include "lib/delay/delay.h"
-#include "vendor/limine/limine.h"
+#include "include/nullboot.h"
 #include "mm/heap/heap.h"
 #include "mm/vmm.h"
 #include <stdint.h>
@@ -9,20 +9,7 @@
 #include <stdbool.h>
 #define BytePerPixel 4
 
-__attribute__((used, section(".requests"))) volatile struct limine_memmap_request MemMapReq = {
-    .id = LIMINE_MEMMAP_REQUEST,
-    .revision = 0};
-
-__attribute__((used, section(".requests"))) static volatile struct limine_framebuffer_request FrBuf32 = {
-    .id = LIMINE_FRAMEBUFFER_REQUEST,
-    .revision = 0};
-
-__attribute__((used, section(".requests"))) static volatile struct limine_hhdm_request HhdmReq = {
-    .id = LIMINE_HHDM_REQUEST,
-    .revision = 0};
-
-static struct limine_framebuffer *framebuffer;
-
+static NullBootFramebuffer *framebuffer;
 static uint32_t *fb_address;   /* hardware front buffer (what the display scans) */
 static uint32_t *fb_back;      /* off-screen back buffer used for compositing   */
 static uint32_t *fb_active;    /* the buffer draw calls currently target        */
@@ -42,71 +29,23 @@ void FbMarkDirty(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1);
 
 static bool FbMapHardwareBuffer(void)
 {
-    if (framebuffer == NULL || framebuffer->address == NULL)
-        return false;
-    if (HhdmReq.response == NULL)
-        return false;
-
-    uint64_t virtual_start = (uint64_t)(uintptr_t)framebuffer->address;
-    uint64_t hhdm = HhdmReq.response->offset;
-    if (virtual_start < hhdm)
-        return false;
-
-    uint64_t physical_start = virtual_start - hhdm;
-    uint64_t bytes = framebuffer->pitch * framebuffer->height;
-    if (bytes == 0)
-        return false;
-
-    /*
-     * The framebuffer is a kernel resource. Never create its mapping in a
-     * process/task address space. Temporarily enter KernelRoot, map every
-     * framebuffer page there, then restore the real interrupted CR3.
-     */
-    uint64_t saved_root = VmmCurrentRoot();
-    uint64_t kernel_root = VmmKernelRoot();
-    if (kernel_root == 0)
-        return false;
-
-    if (saved_root != kernel_root)
-        VmmLoadRoot(kernel_root);
-
-    uint64_t virtual_page = virtual_start & ~0xFFFULL;
-    uint64_t physical_page = physical_start & ~0xFFFULL;
-    uint64_t end = (virtual_start + bytes + 0xFFFULL) & ~0xFFFULL;
-
-    bool ok = true;
-    for (; virtual_page < end;
-         virtual_page += 0x1000ULL, physical_page += 0x1000ULL)
-    {
-        if (!VmmMapPage(virtual_page, physical_page, VMM_W | VMM_NX))
-        {
-            ok = false;
-            break;
-        }
-    }
-
-    if (saved_root != kernel_root)
-        VmmLoadRoot(saved_root);
-
-    return ok;
+    return framebuffer != NULL && framebuffer->Address != 0;
 }
 
 void FbInit32(void)
 {
-    if (FrBuf32.response == NULL)
-    {
-        return; // It means that This OS has failed to init Fb (FrameBuffer).
-    }
-    
-    framebuffer = FrBuf32.response->framebuffers[0];
-    fb_address = (uint32_t *)framebuffer->address;
-    fb_width = framebuffer->width;
-    fb_height = framebuffer->height;
-    fb_pitch = framebuffer->pitch;
-    fb_bpp = framebuffer->bpp;
+    if (NullBoot == NULL || NullBoot->Framebuffer == 0)
+        return;
 
-    /* Draw straight to the front buffer until the heap is up and the
-       double-buffer (back buffer) has been allocated by FbInitDoubleBuffer(). */
+    framebuffer = (NullBootFramebuffer *)(uintptr_t)NullBoot->Framebuffer;
+    if (framebuffer->Address == 0 || framebuffer->Width == 0 || framebuffer->Height == 0)
+        return;
+
+    fb_address = (uint32_t *)(uintptr_t)framebuffer->Address;
+    fb_width = framebuffer->Width;
+    fb_height = framebuffer->Height;
+    fb_pitch = framebuffer->Pitch;
+    fb_bpp = framebuffer->Bpp;
     fb_active = fb_address;
 }
 
@@ -114,9 +53,7 @@ void FbInit32(void)
    directly mapped kernel virtual addresses. */
 uint64_t FbGetHhdmOffset32(void)
 {
-    if (HhdmReq.response == NULL)
-        return 0;
-    return HhdmReq.response->offset;
+    return 0;
 }
 
 /* Allocate the off-screen back buffer and switch compositing to it. Must be
@@ -128,8 +65,7 @@ void FbInitDoubleBuffer(void)
         return;
 
     /*
-     * Limine gives framebuffer->address as an HHDM virtual pointer.
-     * Re-establish that mapping after NullOS switches to its own VMM root.
+     * NullL hands the kernel a stable higher-half framebuffer address.
      */
     if (!FbMapHardwareBuffer())
         return;
@@ -186,32 +122,8 @@ void FbMarkDirty(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1)
    while(1) loop) costs nothing and can never stall the system. */
 void FbPresent32(void)
 {
-    if (fb_back == NULL || fb_address == NULL)
-        return; /* double buffer not up yet; nothing to present, just typin' ;) */
-    if (!g_dirty)
-        return; /* nothing changed; cheap no-op */
-
-    /*
-     * The timer IRQ can run while a different task/process CR3 is active.
-     * The framebuffer lives in Limine's HHDM, so make sure that mapping exists
-     * in the page-table root that is actually active at the moment of present.
-     */
-    uint64_t framebuffer_virtual = (uint64_t)(uintptr_t)fb_address;
-    uint64_t framebuffer_physical = 0;
-    if (HhdmReq.response != NULL)
-    {
-        uint64_t hhdm = HhdmReq.response->offset;
-        if (framebuffer_virtual >= hhdm)
-            framebuffer_physical = framebuffer_virtual - hhdm;
-    }
-
-    if (framebuffer_physical == 0 ||
-        VmmGetPhysical(framebuffer_virtual & ~0xFFFULL) !=
-            (framebuffer_physical & ~0xFFFULL))
-    {
-        if (!FbMapHardwareBuffer())
-            return;
-    }
+    if (fb_back == NULL || fb_address == NULL || !g_dirty)
+        return;
 
     uint32_t x0 = g_dx0, y0 = g_dy0, x1 = g_dx1, y1 = g_dy1;
     if (x1 >= fb_width)  x1 = (uint32_t)fb_width - 1U;
@@ -220,14 +132,13 @@ void FbPresent32(void)
     uint32_t pitch_px = (uint32_t)(fb_pitch / BytePerPixel);
     for (uint32_t y = y0; y <= y1; y++)
     {
-        uint32_t *src = (uint32_t *)fb_back   + (size_t)y * pitch_px + x0;
-        uint32_t *dst = (uint32_t *)fb_address + (size_t)y * pitch_px + x0;
+        uint32_t *src = fb_back + (size_t)y * pitch_px + x0;
+        uint32_t *dst = fb_address + (size_t)y * pitch_px + x0;
         for (uint32_t x = x0; x <= x1; x++)
             dst[x - x0] = src[x - x0];
     }
     g_dirty = false;
 }
-
 
 void FbPrintPixel32(uint32_t x, uint32_t y, uint32_t color)
 {

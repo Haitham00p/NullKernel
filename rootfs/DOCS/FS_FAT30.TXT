@@ -92,7 +92,7 @@ bool FAT32DirectoryCreateEntry(FAT32Directory *Directory, const char *Name,
                                uint8_t Attributes, uint32_t FirstCluster,
                                uint32_t FileSize, FAT32DirectoryEntry *Entry);
 
-/* Creates an entry using an explicit short name (e.g. "LIMINE~1.SYS"). */
+/* Creates an entry using an explicit FAT 8.3 short name. */
 bool FAT32DirectoryCreateLongFileEntry(FAT32Directory *Directory,
                                        const char *Name,
                                        const char *ShortName,

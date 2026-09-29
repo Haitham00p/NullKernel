@@ -6,6 +6,9 @@
 #include "drivers/input/keyboard/keyboard.h"
 #include "drivers/storage/block/block.h"
 #include "fs/partition/mbr/mbr.h"
+#include "fs/fat32/directory/directory.h"
+#include "fs/fat32/fat/fat.h"
+#include "fs/fat32/vbr/vbr.h"
 #include "mm/heap/heap.h"
 #include "mm/vmm.h"
 #include "lib/string/string.h"
@@ -46,6 +49,10 @@ static uint64_t g_entry;
 static char g_name[96];
 static bool g_control_granted;
 static char g_control_name[96];
+
+/* Forward declarations for functions used before their definitions. */
+static bool UpdateNativeKernelManifest(void);
+static bool ReadBootConfig(char *out, uint32_t cap);
 
 static uint32_t Len(const char *s) { uint32_t n=0; while(s && s[n]) n++; return n; }
 static bool Eq(const char *a,const char *b){return strcasecmp(a,b)==0;}
@@ -129,19 +136,6 @@ static bool NameForKernelId(const char *id, char *name, uint32_t cap)
     DiskFsCdRoot();return false;
 }
 
-static bool ReadBootConfig(char *out,uint32_t cap)
-{
-    uint8_t b[4096];uint32_t got=0,i;
-    if(cap<2U || !DiskFsReadInPath("/BOOT/LIMINE","limine.conf",b,sizeof(b)-1,&got)) return false;
-    b[got]=0;
-    for(i=0;i+5<got;i++) if(b[i]=='p'&&b[i+1]=='a'&&b[i+2]=='t'&&b[i+3]=='h'&&b[i+4]==':'){
-        uint32_t s=i+5;while(s<got&&(b[s]==' '||b[s]=='\t'))s++;
-        uint32_t e=s;while(e<got&&b[e]!='\n'&&b[e]!='\r')e++;
-        uint32_t n=e-s;if(n>=cap)n=cap-1;for(uint32_t j=0;j<n;j++)out[j]=(char)b[s+j];out[n]=0;return true;
-    }
-    return false;
-}
-
 static bool Validate(const uint8_t *img,uint32_t size,uint64_t *entry,
                      uint64_t *lo,uint64_t *hi){
     const BM_EHDR *e; uint32_t i; bool have=false; uint64_t l=UINT64_MAX,h=0;
@@ -218,31 +212,32 @@ static void ShowKernels(void){
     DiskFsCdRoot();
 }
 
-static bool StageLimine(const char *name){
-    uint8_t *buf=(uint8_t*)kmalloc(4096);uint32_t got=0,i,j,n=Len(name);
-    const char *needle="path: boot():/boot/";const uint32_t nl=19;
-    if(!buf||n>80){if(buf)kfree(buf);return false;}
-    if(!DiskFsReadInPath("/BOOT/LIMINE","limine.conf",buf,4095,&got)){kfree(buf);return false;}
-    for(i=0;i+nl<got;i++){
-        bool ok=true;for(j=0;j<nl;j++)if(buf[i+j]!=(uint8_t)needle[j]){ok=false;break;}
-        if(!ok)continue;
-        uint32_t end=i+nl;while(end<got&&buf[end]!='\n'&&buf[end]!='\r')end++;
-        uint32_t old=end-(i+nl),tail=got-end,newgot=got-old+n;
-        if(newgot>=4095){kfree(buf);return false;}
-        if(n>old)for(j=tail;j;j--)buf[end+(n-old)+j-1]=buf[end+j-1];
-        else if(n<old)for(j=0;j<tail;j++)buf[end-(old-n)+j]=buf[end+j];
-        got=newgot;for(j=0;j<n;j++)buf[i+nl+j]=(uint8_t)name[j];
-        bool wr=DiskFsWriteInPath("/BOOT/LIMINE","limine.conf",buf,got);kfree(buf);return wr;
-    }
-    kfree(buf);return false;
-}
-
 static bool VerifyLoaded(void)
 {
     uint64_t e,l,h;
     if(!g_image){PC("verify: nothing staged",NPB_YELLOW);return false;}
     if(!Validate(g_image,g_size,&e,&l,&h)){PC("verify: STAGED IMAGE FAILED VALIDATION",NPB_RED);return false;}
     PC("verify: staged ELF is valid",NPB_GREEN);return true;
+}
+
+static bool ReadBootConfig(char *out, uint32_t cap)
+{
+    uint32_t size = 0;
+    const char path[] = "/BOOT/kernel.elf";
+
+    if (!out || cap < 2U)
+        return false;
+    if (!DiskFsFileSizeInPath(BM_DIR, "kernel.elf", &size) || size == 0U)
+        return false;
+
+    uint32_t i = 0;
+    while (i + 1U < cap && path[i])
+    {
+        out[i] = path[i];
+        i++;
+    }
+    out[i] = 0;
+    return true;
 }
 
 static bool GrantControl(const char *name)
@@ -281,6 +276,10 @@ static bool GrantControl(const char *name)
     }
     kfree(check);
 
+    if (!UpdateNativeKernelManifest()){
+        P("gc: committed kernel.elf but native NullL manifest update failed");
+        return false;
+    }
     strcpy(g_control_name,"kernel.elf");
     g_control_granted=true;
 
@@ -304,9 +303,8 @@ static void PrintStatus(void)
     if(g_control_granted)TerminalPrintLine32(g_control_name,NPB_GREEN);
     else TerminalPrintLine32("not granted",NPB_YELLOW);
     TerminalWrite32("  entry         : ",NPB_DIM);TerminalPrintHex64Compact(g_image?g_entry:0);TerminalNewLine32(0);
-    char path[256];
-    TerminalWrite32("  Limine path   : ",NPB_DIM);
-    if(ReadBootConfig(path,sizeof(path)))TerminalPrintLine32(path,NPB_CYAN);else TerminalPrintLine32("unreadable",NPB_RED);
+    TerminalWrite32("  boot source   : ",NPB_DIM);
+    TerminalPrintLine32("NullL native /BOOT/kernel.elf",NPB_CYAN);
 }
 
 static void PrintDanger(void)
@@ -346,6 +344,99 @@ static bool RequestNormalBootOnce(void)
     return BlockWrite((uint64_t)part->StartLBA + 2U, mailbox);
 }
 
+static bool UpdateNativeKernelManifest(void)
+{
+    uint8_t Sector[512];
+    MBR Table;
+    const MBRPartitionEntry *Part;
+    FAT32BootSector Boot;
+    FAT32Directory Root, BootDir;
+    FAT32DirectoryEntry Kernel;
+    uint32_t Cluster;
+    uint32_t Remaining;
+    uint32_t Extents = 0;
+    uint64_t ExtentLBA[30];
+    uint32_t ExtentCount[30];
+
+    if (!BlockRead(0, Sector))
+        return false;
+    memcpy(&Table, Sector, sizeof(Table));
+    if (!MBRIsValid(&Table))
+        return false;
+
+    Part = MBRGetPartition(&Table, 0);
+    if (Part == NULL)
+        return false;
+
+    if (!BlockRead(Part->StartLBA, Sector))
+        return false;
+    memcpy(&Boot, Sector, sizeof(Boot));
+    if (!FAT32IsValid(&Boot))
+        return false;
+    if (!FAT32DirectoryOpenRoot(&Root, &Boot, Part->StartLBA))
+        return false;
+    if (!FAT32DirectoryFind(&Root, "BOOT", &Kernel))
+        return false;
+    if (!(Kernel.Attributes & FAT32_ATTRIBUTE_DIRECTORY))
+        return false;
+    if (!FAT32DirectoryOpen(&BootDir, &Boot, Part->StartLBA,
+                            FAT32DirectoryEntryFirstCluster(&Kernel)))
+        return false;
+    if (!FAT32DirectoryFind(&BootDir, "KERNEL.ELF", &Kernel))
+        return false;
+
+    Remaining = (Kernel.FileSize + 511U) / 512U;
+    Cluster = FAT32DirectoryEntryFirstCluster(&Kernel);
+    memset(Sector, 0, sizeof(Sector));
+    *(uint32_t *)(Sector + 0) = 0x4B4C4C4E; /* NLLK */
+    *(uint32_t *)(Sector + 4) = 1U;
+    *(uint32_t *)(Sector + 8) = Kernel.FileSize;
+
+    while (Remaining != 0U && Cluster >= 2U && !FATIsEndOfChain(Cluster))
+    {
+        uint32_t LBA = FAT32ClusterToLBA(&Boot, Part->StartLBA, Cluster);
+        uint32_t Count = Boot.SectorsPerCluster;
+        if (Count > Remaining)
+            Count = Remaining;
+
+        if (Extents != 0U &&
+            ExtentLBA[Extents - 1U] + ExtentCount[Extents - 1U] == LBA)
+        {
+            ExtentCount[Extents - 1U] += Count;
+        }
+        else
+        {
+            if (Extents >= 30U)
+                return false;
+            ExtentLBA[Extents] = LBA;
+            ExtentCount[Extents] = Count;
+            Extents++;
+        }
+
+        Remaining -= Count;
+        if (Remaining == 0U)
+            break;
+
+        uint32_t Next = 0;
+        if (!FATReadEntry(&Boot, Part->StartLBA, Cluster, &Next))
+            return false;
+        Cluster = Next;
+    }
+
+    if (Remaining != 0U)
+        return false;
+
+    *(uint32_t *)(Sector + 12) = Extents;
+    for (uint32_t i = 0; i < Extents; i++)
+    {
+        uint32_t Off = 16U + i * 16U;
+        *(uint64_t *)(Sector + Off) = ExtentLBA[i];
+        *(uint32_t *)(Sector + Off + 8U) = ExtentCount[i];
+    }
+
+    return BlockWrite((uint64_t)Part->StartLBA + 3U, Sector);
+}
+
 static void ContinueBoot(void){
     if(!g_image||!g_name[0]){
         P("jmp: no kernel loaded");
@@ -365,18 +456,12 @@ static void ContinueBoot(void){
     if(!SafeName(name)){P("continue: invalid kernel name");return;}
     if(!VerifyLoaded()) return;
     if(!DiskFsWriteInPath(BM_DIR,BM_SEL,name,Len(name))){P("jmp: cannot save selection");return;}
-    /* jmp is a one-shot escape from NPB: tell NullL to chainload and let
-       the kernel continue in normal mode instead of showing its menu again. */
+    /* jmp arms the native NullL one-shot normal mode and reboots. */
     if(!RequestNormalBootOnce()){
         P("jmp: cannot arm one-shot normal boot");
         return;
     }
-    if(!StageLimine(name)){
-        P("jmp: selection saved, but installed Limine config was not changed");
-        P("jmp: boot source may be ISO/CD; NPB cannot rewrite a read-only ISO.");
-    }else{
-        TerminalWrite32("JMP -> ",NPB_ORANGE);TerminalPrintLine32(name,NPB_GREEN);
-    }
+    TerminalWrite32("JMP -> ",NPB_ORANGE);TerminalPrintLine32(name,NPB_GREEN);
     Reboot();
 }
 
@@ -392,7 +477,7 @@ static void Help(void){
     P("  meminfo                 show staged image size");
     P("  status                  show NPB state");
     P("  verify                  revalidate staged ELF");
-    P("  config                  show current Limine kernel path");
+    P("  config                  show native NullL boot source");
     P("  kernels                 alias for ShowKernels");
     P("  danger                  show dangerous-mode warning");
     P("  ids                     explain kernel IDs");

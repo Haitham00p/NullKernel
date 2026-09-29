@@ -30,7 +30,7 @@ bool EmergencyActive(void)
 
 #ifdef RESCUE
 
-/* The embedded kernel is XOR-scrambled at build time (key 0x5A) so Limine's
+/* The embedded kernel is XOR-scrambled at build time (key 0x5A) so NullL's
    request-marker scan cannot see a second kernel buried inside this one. */
 #define EMERGENCY_BLOB_KEY 0x5AU
 
@@ -134,171 +134,12 @@ static void EmergencyCheckKernel(uint32_t ExpectedSize)
     }
 }
 
-/* Scans limine.conf text and returns the file name that the /MyOS entry
-   points at (the tail after the last '/'). Returns false on failure. */
-static bool EmergencyConfigKernelName(const uint8_t *Conf, uint32_t Size,
-                                     char *Out, uint32_t OutSize)
+/* Native NullL rescue path: the kernel is already loaded by NullL,
+   so there is no external bootloader configuration to inspect. */
+static void EmergencyCheckNullLBoot(void)
 {
-    uint32_t i = 0;
-    bool InsideEntry = false;
-
-    while (i < Size)
-    {
-        uint32_t LineStart = i;
-        while (i < Size && (Conf[i] != '\n' && Conf[i] != '\r'))
-        {
-            i++;
-        }
-        uint32_t LineLen = i - LineStart;
-        if (i < Size && Conf[i] == '\r')
-            i++;
-        if (i < Size && Conf[i] == '\n')
-            i++;
-
-        if (LineLen == 0)
-            continue;
-
-        uint32_t S = 0;
-        while (S < LineLen && (Conf[LineStart + S] == ' ' ||
-                               Conf[LineStart + S] == '\t'))
-            S++;
-        if (S >= LineLen)
-            continue;
-
-        if (Conf[LineStart + S] == '/')
-        {
-            if (InsideEntry)
-                break; /* next entry -> RESCUE, stop */
-            InsideEntry = true;
-            continue;
-        }
-
-        if (InsideEntry && LineLen >= 5 &&
-            Conf[LineStart + S] == 'p' &&
-            Conf[LineStart + S + 1] == 'a' &&
-            Conf[LineStart + S + 2] == 't' &&
-            Conf[LineStart + S + 3] == 'h' &&
-            Conf[LineStart + S + 4] == ':')
-        {
-            /* Walk the whole value and find the last '/' so the tail after
-               it (the kernel file name) is what gets returned. */
-            uint32_t End = LineLen;
-            while (End > S + 5 && (Conf[LineStart + End - 1] == ' ' ||
-                                   Conf[LineStart + End - 1] == '\t' ||
-                                   Conf[LineStart + End - 1] == '\r'))
-            {
-                End--;
-            }
-            uint32_t LastSlash = 0;
-            bool HaveSlash = false;
-            uint32_t v = S + 5;
-            while (v < End)
-            {
-                if (Conf[LineStart + v] == '/')
-                {
-                    LastSlash = v;
-                    HaveSlash = true;
-                }
-                v++;
-            }
-            uint32_t n = 0;
-            uint32_t Start = HaveSlash ? LastSlash + 1U : S + 5U;
-            while (Start + n < End && Conf[LineStart + Start + n] != ' ' &&
-                   Conf[LineStart + Start + n] != '\t' && n + 1 < OutSize)
-            {
-                Out[n] = Conf[LineStart + Start + n];
-                n++;
-            }
-            Out[n] = '\0';
-            if (n > 0)
-            {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-/* Checks limine.conf's kernel path when the on-disk image is healthy. */
-static void EmergencyCheckLimineConf(void)
-{
-    uint8_t *Conf = NULL;
-    uint32_t Got = 0;
-    uint32_t Size = 0;
-    char Name[32];
-
-    /* Prefer the copy Limine actually read: the ISO copy first. Note that
-       ISO9660 canonical names are 8.3, so limine.conf can exist verbatim
-       (Rock Ridge) or as LIMINE.CON (native). Try both spellings. */
-    {
-        ISODirRecord Record;
-        if (ISOIsReady() &&
-            (ISOFindPath("/boot/limine/limine.conf", &Record) ||
-             ISOFindPath("/boot/limine/limine.con", &Record)))
-        {
-            Conf = (uint8_t *)kmalloc(EMERGENCY_CONF_MAX);
-            if (Conf == NULL)
-            {
-                TerminalPrintLine32("[conf] out of memory while reading limine.conf",
-                                    EMERGENCY_RED);
-                return;
-            }
-            if (!ISOReadFile(&Record, Conf, EMERGENCY_CONF_MAX - 1U, &Got))
-            {
-                TerminalPrintLine32("[conf] ISO limine.conf unreadable", EMERGENCY_RED);
-                return;
-            }
-            Size = Got;
-            Conf[Size] = '\0';
-        }
-        else
-        {
-            Conf = (uint8_t *)kmalloc(EMERGENCY_CONF_MAX);
-            if (Conf == NULL)
-            {
-                TerminalPrintLine32("[conf] out of memory while reading limine.conf",
-                                    EMERGENCY_RED);
-                return;
-            }
-            if (DiskFsCdRoot() && DiskFsCd("BOOT") && DiskFsCd("LIMINE") &&
-                DiskFsRead("limine.conf", Conf, EMERGENCY_CONF_MAX - 1U, &Got))
-            {
-                Conf[Got] = '\0';
-                Size = Got;
-            }
-        }
-    }
-
-    if (Conf == NULL || Size == 0)
-    {
-        TerminalPrintLine32("[conf] limine.conf not found anywhere", EMERGENCY_YELLOW);
-        return;
-    }
-
-    if (!EmergencyConfigKernelName(Conf, Size, Name, sizeof(Name)))
-    {
-        TerminalPrintLine32("[conf] cannot find the kernel path in limine.conf",
-                            EMERGENCY_YELLOW);
-        return;
-    }
-
-    /* kernel.elf on the disk is confirmed healthy by the caller, so the
-       only use of the config is to double check the path. */
-    TerminalWrite32("[conf] kernel path in limine.conf: ", 0x00FFFFFF);
-    TerminalPrintLine32(Name, 0x00FFFFFF);
-
-    if (strcasecmp(Name, "kernel.elf") == 0)
-    {
-        TerminalPrintLine32("[conf] kernel.elf is healthy - the path in limine.conf is fine",
-                            EMERGENCY_GREEN);
-    }
-    else
-    {
-        TerminalPrintLine32("[conf] WARNING - the path in limine.conf is wrong",
-                            EMERGENCY_YELLOW);
-        TerminalPrintLine32("[conf] kernel.elf is healthy - fix the path in limine.conf, not the kernel",
-                            EMERGENCY_GREEN);
-    }
+    TerminalPrintLine32("[boot] native NullL boot path active", EMERGENCY_GREEN);
+    TerminalPrintLine32("[boot] /BOOT/KERNEL.ELF is the kernel image", 0x00FFFFFF);
 }
 
 void EmergencyRun(void)
@@ -352,7 +193,7 @@ void EmergencyRun(void)
     }
     TerminalNewLine32(0x00000000);
 
-    EmergencyCheckLimineConf();
+    EmergencyCheckNullLBoot();
     TerminalNewLine32(0x00000000);
 
     ShellInitialize();
