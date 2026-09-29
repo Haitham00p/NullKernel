@@ -50,6 +50,10 @@ static char g_name[96];
 static bool g_control_granted;
 static char g_control_name[96];
 
+/* Forward declarations for functions used before their definitions. */
+static bool UpdateNativeKernelManifest(void);
+static bool ReadBootConfig(char *out, uint32_t cap);
+
 static uint32_t Len(const char *s) { uint32_t n=0; while(s && s[n]) n++; return n; }
 static bool Eq(const char *a,const char *b){return strcasecmp(a,b)==0;}
 static bool ElfName(const char *s){
@@ -214,6 +218,26 @@ static bool VerifyLoaded(void)
     if(!g_image){PC("verify: nothing staged",NPB_YELLOW);return false;}
     if(!Validate(g_image,g_size,&e,&l,&h)){PC("verify: STAGED IMAGE FAILED VALIDATION",NPB_RED);return false;}
     PC("verify: staged ELF is valid",NPB_GREEN);return true;
+}
+
+static bool ReadBootConfig(char *out, uint32_t cap)
+{
+    uint32_t size = 0;
+    const char path[] = "/BOOT/kernel.elf";
+
+    if (!out || cap < 2U)
+        return false;
+    if (!DiskFsFileSizeInPath(BM_DIR, "kernel.elf", &size) || size == 0U)
+        return false;
+
+    uint32_t i = 0;
+    while (i + 1U < cap && path[i])
+    {
+        out[i] = path[i];
+        i++;
+    }
+    out[i] = 0;
+    return true;
 }
 
 static bool GrantControl(const char *name)
