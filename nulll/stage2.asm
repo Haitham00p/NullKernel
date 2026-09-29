@@ -103,8 +103,7 @@ menu:
     call puts
 
 .wait:
-    xor ah, ah
-    int 0x16
+    call keyboard_get_menu_key
     cmp al, '1'
     je .normal
     cmp al, '2'
@@ -129,6 +128,57 @@ menu:
     jc fatal_disk
     mov [requested_mode], al
     jmp native_boot
+
+; ---------------------------------------------------------------------------
+; Menu keyboard input
+; ---------------------------------------------------------------------------
+; Read the keyboard controller directly instead of relying on INT 16h.
+; This keeps the NullL menu independent of BIOS keyboard-buffer behavior.
+; Accept both common PS/2 scan-code sets used by BIOS/QEMU:
+;   Set 1: 1=02, 2=03, 3=04, 0=0B
+;   Set 2: 1=16, 2=1E, 3=26, 0=45
+keyboard_get_menu_key:
+.wait_key:
+    in al, 0x64
+    test al, 1
+    jz .wait_key
+    in al, 0x60
+
+    ; Ignore key-release bytes.
+    test al, 0x80
+    jnz .wait_key
+
+    cmp al, 0x02
+    je .key1
+    cmp al, 0x16
+    je .key1
+    cmp al, 0x03
+    je .key2
+    cmp al, 0x1E
+    je .key2
+    cmp al, 0x04
+    je .key3
+    cmp al, 0x26
+    je .key3
+    cmp al, 0x0B
+    je .key0
+    cmp al, 0x45
+    je .key0
+    xor al, al
+    ret
+
+.key1:
+    mov al, '1'
+    ret
+.key2:
+    mov al, '2'
+    ret
+.key3:
+    mov al, '3'
+    ret
+.key0:
+    mov al, '0'
+    ret
 
 ; ---------------------------------------------------------------------------
 ; BIOS / disk helpers
