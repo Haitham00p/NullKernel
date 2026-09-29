@@ -119,6 +119,13 @@ void kernel_main(NullBootInfo *BootInfo)
     PmmReserveRange(BootInfo->LoaderBase,
                     BootInfo->LoaderEnd - BootInfo->LoaderBase);
     PmmReserveRange(0x5000, 0x7000);
+    if (BootInfo->Framebuffer != 0)
+    {
+        const NullBootFramebuffer *Frame =
+            (const NullBootFramebuffer *)(uintptr_t)BootInfo->Framebuffer;
+        if (Frame->PhysicalAddress != 0 && Frame->Size != 0)
+            PmmReserveRange(Frame->PhysicalAddress, Frame->Size);
+    }
     PmmReserveRange(HeapBase, HeapLength);
     VmmInitialize();
     DbgInfo("Physical/virtual memory managers online", (uintptr_t)VmmInitialize);
