@@ -305,10 +305,35 @@ bool NetDnsResolve(const char *name,uint32_t *address)
 
 void NetInitialize(void)
 {
-    g_Ip=0;g_Mask=0;g_Gateway=0;g_Dns=0;g_ArpValid=false;g_Tcp.active=false;
-    if(!E1000Initialize()){DbgInfo("NET: E1000 unavailable",0);return;}
-    E1000GetMac(g_Mac);
-    if(DhcpRequest()) DbgInfo("NET: DHCP configured",(uintptr_t)g_Ip); else DbgInfo("NET: DHCP failed",0);
+    /*
+     * E1000 is a hardware driver and is initialized by its own DRIVER_INIT
+     * entry. Do not initialize it again here: doing so allocates a second
+     * set of RX/TX rings and resets the controller during kernel startup.
+     *
+     * Network configuration is deliberately not performed from the driver
+     * registry. DHCP is a blocking protocol operation and must not be able
+     * to stall the kernel before the shell starts.
+     */
+    g_Ip=0;
+    g_Mask=0;
+    g_Gateway=0;
+    g_Dns=0;
+    g_ArpValid=false;
+    g_Tcp.active=false;
+
+    if(!E1000IsReady())
+    {
+        DbgInfo("NET: E1000 unavailable",0);
+        return;
+    }
+
+    if(!E1000GetMac(g_Mac))
+    {
+        DbgInfo("NET: E1000 MAC unavailable",0);
+        return;
+    }
+
+    DbgInfo("NET: stack ready",(uintptr_t)g_Mac[0]);
 }
 
 bool NetIsUp(void){return E1000IsReady()&&g_Ip!=0;}
