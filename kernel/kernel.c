@@ -226,15 +226,32 @@ void kernel_main(NullBootInfo *BootInfo)
      * interrupts. If the shell now appears, the fault is definitively in
      * the timer/preemption/render path rather than filesystem/network boot.
      */
+    /*
+     * Absolute interrupt-path isolation:
+     * mask BOTH hardware IRQs that are enabled by IRQInitialize().
+     * STI therefore cannot dispatch either PIT or keyboard while we test
+     * the post-shell path. This rules out an immediate IRQ1 fault as well
+     * as the already-isolated IRQ0/PIT path.
+     */
     PICMaskIRQ(IRQ_TIMER);
+    PICMaskIRQ(IRQ_KEYBOARD);
+
+    DbgSerialWrite("[DIAG] before sti\n");
     __asm__ volatile("sti");
-    TerminalPrintLine32("InterruptSys online (PIT masked)", 0xFFFFFFFF);
+    DbgSerialWrite("[DIAG] after sti\n");
+    TerminalPrintLine32("InterruptSys online (HW IRQs masked)", 0xFFFFFFFF);
     DbgInfo("Reached post-STI checkpoint", (uintptr_t)kernel_main);
 
-    DbgBootLogFlush();
+    /*
+     * Do not touch the FAT32 filesystem from this diagnostic path.
+     * The prompt is already rendered by ShellInitialize(); the boot-log
+     * flush can only obscure whether execution actually reaches ShellUpdate.
+     */
+    DbgSerialWrite("[DIAG] entering shell loop\n");
 
     while (1)
     {
+        DbgSerialWrite("[DIAG] shell update\n");
         ShellUpdate();
         __asm__ volatile("hlt");
     }
