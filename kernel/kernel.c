@@ -204,10 +204,7 @@ void kernel_main(NullBootInfo *BootInfo)
     ShellApplyDefDir();
     ShellInitialize();
 
-    /* Bring up networking only after the terminal and shell are visible. */
-    DbgInfo("NET: deferred initialization", (uintptr_t)NetInitialize);
-    NetInitialize();
-
+    /* Network initialization is deliberately disabled during boot. */
     DbgBootLogFlush();
 
     while (1)
