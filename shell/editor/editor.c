@@ -19,11 +19,9 @@
 #define EDITOR_C_STRING     0xFF22C55EU /* green  */
 #define EDITOR_C_NUMBER     0xFFFFB86CU /* orange */
 #define EDITOR_C_HEADER     0xFFC586C0U /* purple (includes) */
-#define EDITOR_C_DIRECTIVE  0xFFC586C0U /* purple (asm) */
 #define EDITOR_C_KEYWORD    0xFF4FC1FFU /* blue   */
 #define EDITOR_C_TYPE       0xFF4EC9B0U /* teal   */
 #define EDITOR_C_API        0xFFFFD866U /* yellow */
-#define EDITOR_C_LABEL      0xFFFFFFFFU /* white  */
 #define EDITOR_GRAY         0x00808080U
 #define EDITOR_V_COLOR      0x00FF8000U
 
@@ -53,7 +51,6 @@ static bool EditorRunning;
 static bool EditorDirty;
 static bool EditorIsCFile;
 static bool EditorIsVFile;
-static bool EditorIsAsmFile;
 static char EditorDir[64];
 static char EditorName[64];
 static bool EditorHasDir;
@@ -245,148 +242,6 @@ static bool EditorClampScroll(void)
     return false;
 }
 
-static void EditorPaintLineAsm(uint32_t Line)
-{
-    term_screen_t *scr = TerminalGetScreen();
-    uint32_t Start = EditorLineStartByLine(Line);
-    uint32_t End = EditorLineEnd(Start);
-    uint32_t Row = Line - EditorTopLine;
-    uint32_t i = Start;
-    uint32_t cells = 0;
-    char Ch;
-
-    if (Row > scr->rows - 2U)
-    {
-        return;
-    }
-    TerminalSetCursor32(0, Row * scr->font_height);
-
-    while (i < End && cells < scr->cols)
-    {
-        Ch = EditorBuffer[i];
-
-        if (Ch == ' ' || Ch == '\t' || Ch == '\r')
-        {
-            TerminalPutChar32(Ch, EDITOR_FG);
-            i++;
-            cells++;
-            continue;
-        }
-        if (Ch == ';')
-        {
-            while (i < End && cells < scr->cols)
-            {
-                TerminalPutChar32(EditorBuffer[i], EDITOR_C_COMMENT);
-                i++;
-                cells++;
-            }
-            break;
-        }
-        if (Ch == '"' || Ch == '\'')
-        {
-            char end = Ch;
-            TerminalPutChar32(Ch, EDITOR_C_STRING);
-            i++;
-            cells++;
-            while (i < End && cells < scr->cols)
-            {
-                char s = EditorBuffer[i];
-                if (s == end)
-                {
-                    TerminalPutChar32(end, EDITOR_C_STRING);
-                    i++;
-                    cells++;
-                    break;
-                }
-                if (s == '\\' && i + 1U < End)
-                {
-                    TerminalPutChar32('\\', EDITOR_C_STRING);
-                    TerminalPutChar32(EditorBuffer[i + 1U], EDITOR_C_STRING);
-                    i += 2U;
-                    cells += 2U;
-                    continue;
-                }
-                TerminalPutChar32(s, EDITOR_C_STRING);
-                i++;
-                cells++;
-            }
-            continue;
-        }
-        if (((Ch >= 'a' && Ch <= 'z') || (Ch >= 'A' && Ch <= 'Z') ||
-             Ch == '_' || Ch == '.') ||
-            (Ch == '%'))
-        {
-            uint32_t j = i;
-            while (j < End && ((EditorBuffer[j] >= 'a' && EditorBuffer[j] <= 'z') ||
-                   (EditorBuffer[j] >= 'A' && EditorBuffer[j] <= 'Z') ||
-                   (EditorBuffer[j] >= '0' && EditorBuffer[j] <= '9') ||
-                   EditorBuffer[j] == '_' || EditorBuffer[j] == '.' ||
-                   EditorBuffer[j] == '%'))
-            {
-                j++;
-            }
-            uint32_t wlen = j - i;
-            uint32_t color = EDITOR_FG;
-            if (HlIsAsmMnemonic(EditorBuffer + i, wlen))
-            {
-                color = EDITOR_C_KEYWORD;
-            }
-            else if (HlIsAsmDirective(EditorBuffer + i, wlen))
-            {
-                color = EDITOR_C_DIRECTIVE;
-            }
-            else if (HlIsAsmRegister(EditorBuffer + i, wlen))
-            {
-                color = EDITOR_C_NUMBER;
-            }
-            else if (EditorBuffer[i] == '%')
-            {
-                color = EDITOR_C_DIRECTIVE;
-            }
-            else if (EditorBuffer[i] == '.' || HlIsAsmApi(EditorBuffer + i, wlen))
-            {
-                color = EDITOR_C_API;
-            }
-            while (i < j && cells < scr->cols)
-            {
-                TerminalPutChar32(EditorBuffer[i], color);
-                i++;
-                cells++;
-            }
-            continue;
-        }
-        if ((Ch >= '0' && Ch <= '9') ||
-            (Ch == '$' && i + 1U < End && EditorBuffer[i + 1U] >= '0' &&
-             EditorBuffer[i + 1U] <= '9'))
-        {
-            uint32_t j = i;
-            while (j < End && ((EditorBuffer[j] >= '0' && EditorBuffer[j] <= '9') ||
-                   EditorBuffer[j] == 'x' || EditorBuffer[j] == 'X' ||
-                   EditorBuffer[j] == '$' ||
-                   (EditorBuffer[j] >= 'a' && EditorBuffer[j] <= 'f') ||
-                   (EditorBuffer[j] >= 'A' && EditorBuffer[j] <= 'F')))
-            {
-                j++;
-            }
-            while (i < j && cells < scr->cols)
-            {
-                TerminalPutChar32(EditorBuffer[i], EDITOR_C_NUMBER);
-                i++;
-                cells++;
-            }
-            continue;
-        }
-        TerminalPutChar32(Ch, EDITOR_FG);
-        i++;
-        cells++;
-    }
-
-    for (uint32_t c = cells; c < scr->cols; c++)
-    {
-        TerminalPutChar32(' ', EDITOR_BG);
-    }
-}
-
 static void EditorPaintLine(uint32_t Line, bool *inBlock)
 {
     term_screen_t *scr = TerminalGetScreen();
@@ -402,12 +257,6 @@ static void EditorPaintLine(uint32_t Line, bool *inBlock)
         return;
     }
     TerminalSetCursor32(0, Row * scr->font_height);
-
-    if (EditorIsAsmFile)
-    {
-        EditorPaintLineAsm(Line);
-        return;
-    }
 
     if (!EditorIsCFile)
     {
@@ -808,37 +657,6 @@ static bool EditorPathIsV(const char *Path)
     return true;
 }
 
-static bool EditorPathIsAsm(const char *Path)
-{
-    uint32_t len = 0;
-
-    while (Path[len] != '\0')
-    {
-        len++;
-    }
-    if (len < 4U)
-    {
-        return false;
-    }
-    char e1 = Path[len - 1U];
-    char e2 = Path[len - 2U];
-    char e3 = Path[len - 3U];
-    char dot = Path[len - 4U];
-    if (dot != '.')
-    {
-        return false;
-    }
-    if (e3 == 'a' || e3 == 'A')
-    {
-        return (e2 == 's' || e2 == 'S') && (e1 == 'm' || e1 == 'M');
-    }
-    if (e3 == 's' || e3 == 'S')
-    {
-        return (e2 == 'm' || e2 == 'M') && (e1 == ' ' || e1 == '\0');
-    }
-    return false;
-}
-
 static bool EditorSplitPath(const char *Path, char *Dir, char *Name, bool *HasDir)
 {
     uint32_t len = 0;
@@ -899,7 +717,6 @@ bool EditorOpen(const char *Path)
     strcpy(EditorPath, Path);
     EditorIsCFile = EditorPathIsC(Path);
     EditorIsVFile = EditorPathIsV(Path);
-    EditorIsAsmFile = EditorPathIsAsm(Path);
     if (!EditorSplitPath(Path, EditorDir, EditorName, &EditorHasDir))
     {
         return false;
