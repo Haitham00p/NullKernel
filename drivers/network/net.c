@@ -397,7 +397,7 @@ static void HandleUdp(const IpHdr *ip,const uint8_t *p,uint16_t len)
     }
 }
 
-static bool DhcpRequest(void)
+bool NetDhcpRequest(void)
 {
     if(!E1000IsReady()) return false;
 
