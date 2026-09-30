@@ -165,12 +165,30 @@ static uint32_t Route(uint32_t dst)
 static bool IpSend(uint32_t dst, uint8_t proto, const void *data, uint16_t len)
 {
     uint8_t p[ETH_MTU-ETH_HDR]; IpHdr *h=(IpHdr*)p;
-    uint32_t next=Route(dst);
-    if (len > sizeof(p)-sizeof(IpHdr) || !ArpResolve(next)) return false;
+    uint8_t bcast[6]={0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+    const uint8_t *next_mac;
+    if (len > sizeof(p)-sizeof(IpHdr)) return false;
+
+    /*
+     * DHCP starts before we have an IPv4 address, so a DHCP packet must be
+     * sent directly to the Ethernet broadcast address. Never ARP for
+     * 255.255.255.255 (or for 0.0.0.0 while configuring the interface).
+     */
+    if (dst == NET_IP(255,255,255,255))
+    {
+        next_mac = bcast;
+    }
+    else
+    {
+        uint32_t next=Route(dst);
+        if (!ArpResolve(next)) return false;
+        next_mac = g_ArpMac;
+    }
+
     h->vhl=0x45; h->tos=0; h->len=Be16((uint16_t)(sizeof(IpHdr)+len)); h->id=Be16(g_IpId++);
     h->frag=Be16(0x4000); h->ttl=64; h->proto=proto; h->sum=0; h->src=g_Ip; h->dst=dst;
     Cp(p+sizeof(IpHdr),(const uint8_t*)data,len); h->sum=Sum16(h,sizeof(IpHdr));
-    return EtherSend(g_ArpMac,ETH_IPV4,p,(uint16_t)(sizeof(IpHdr)+len));
+    return EtherSend(next_mac,ETH_IPV4,p,(uint16_t)(sizeof(IpHdr)+len));
 }
 
 static bool IcmpSendEcho(uint32_t dst)
@@ -230,7 +248,9 @@ static void HandleIpv4(const uint8_t*p,uint16_t len)
     uint16_t ihl=(uint16_t)((h->vhl&15)*4); if(ihl<20 || ihl>len) return;
     uint16_t total=Be16(h->len); if(total>len || total<ihl) return;
     const uint8_t *body=p+ihl; uint16_t blen=(uint16_t)(total-ihl);
-    if(h->proto==IP_PROTO_ICMP) HandleIcmp(h,body,blen); else if(h->proto==IP_PROTO_TCP) HandleTcp(h,body,blen);
+    if(h->proto==IP_PROTO_ICMP) HandleIcmp(h,body,blen);
+    else if(h->proto==IP_PROTO_TCP) HandleTcp(h,body,blen);
+    else if(h->proto==IP_PROTO_UDP) HandleUdp(h,body,blen);
 }
 
 void NetPoll(void)
@@ -247,28 +267,201 @@ void NetPoll(void)
 bool NetPing(uint32_t ip)
 { return IcmpSendEcho(ip); }
 
-static void DhcpBuild(uint8_t *p,uint32_t xid,uint8_t type)
+typedef struct
 {
-    DhcpFixed *d=(DhcpFixed*)p; Z(p,300); d->op=1; d->htype=1; d->hlen=6; d->xid=xid; d->flags=Be16(0x8000); Cp(d->chaddr,g_Mac,6);
-    uint8_t *o=p+sizeof(DhcpFixed); o[0]=99;o[1]=130;o[2]=83;o[3]=99; o+=4;
-    o[0]=53;o[1]=1;o[2]=type;o+=3; o[0]=55;o[1]=3;o[2]=1;o[3]=3;o[4]=6;o+=5; o[0]=255;
+    bool waiting;
+    bool offered;
+    uint32_t xid;
+    uint32_t offered_ip;
+    uint32_t server_ip;
+} DhcpState;
+
+static DhcpState g_Dhcp;
+
+static void DhcpBuild(uint8_t *p,uint32_t xid,uint8_t type,
+                      uint32_t requested_ip,uint32_t server_ip)
+{
+    DhcpFixed *d=(DhcpFixed*)p;
+    Z(p,300);
+    d->op=1;
+    d->htype=1;
+    d->hlen=6;
+    d->xid=xid;
+    d->flags=Be16(0x8000);
+    Cp(d->chaddr,g_Mac,6);
+
+    uint8_t *o=p+sizeof(DhcpFixed);
+    o[0]=99;o[1]=130;o[2]=83;o[3]=99;o+=4;
+
+    o[0]=53;o[1]=1;o[2]=type;o+=3;       /* DHCP message type. */
+    o[0]=55;o[1]=3;o[2]=1;o[3]=3;o[4]=6;o+=5; /* Mask/router/DNS. */
+
+    if(type==3 && requested_ip!=0)
+    {
+        o[0]=50;o[1]=4;
+        o[2]=(uint8_t)requested_ip;
+        o[3]=(uint8_t)(requested_ip>>8);
+        o[4]=(uint8_t)(requested_ip>>16);
+        o[5]=(uint8_t)(requested_ip>>24);
+        o+=6;
+
+        if(server_ip!=0)
+        {
+            o[0]=54;o[1]=4;
+            o[2]=(uint8_t)server_ip;
+            o[3]=(uint8_t)(server_ip>>8);
+            o[4]=(uint8_t)(server_ip>>16);
+            o[5]=(uint8_t)(server_ip>>24);
+            o+=6;
+        }
+    }
+
+    o[0]=255;
 }
 
-static bool DhcpParse(const uint8_t*p,uint16_t len,uint32_t xid)
+static bool DhcpParse(const uint8_t *p,uint16_t len,uint32_t xid,
+                      uint8_t *message_type,uint32_t *server_ip)
 {
-    if(len<sizeof(DhcpFixed)+4) return false; const DhcpFixed*d=(const DhcpFixed*)p;
+    if(len<sizeof(DhcpFixed)+4) return false;
+    const DhcpFixed *d=(const DhcpFixed*)p;
     if(d->xid!=xid || d->op!=2 || d->yiaddr==0) return false;
-    const uint8_t*o=p+sizeof(DhcpFixed); if(o[0]!=99||o[1]!=130||o[2]!=83||o[3]!=99) return false; o+=4;
-    uint32_t end=(uint32_t)len; uint32_t pos=(uint32_t)(o-p); while(pos+1<end){uint8_t code=o[0]; if(code==255) break; if(code==0){o++;pos++;continue;}uint8_t n=o[1];if(pos+2+n>end)break;
-        if(code==1&&n==4)g_Mask=Rd32(o+2); else if(code==3&&n>=4)g_Gateway=Rd32(o+2); else if(code==6&&n>=4)g_Dns=Rd32(o+2); o+=2+n;pos+=2+n;}
-    g_Ip=d->yiaddr; return true;
+
+    const uint8_t *o=p+sizeof(DhcpFixed);
+    if(o[0]!=99||o[1]!=130||o[2]!=83||o[3]!=99) return false;
+    o+=4;
+
+    uint8_t mt=0;
+    uint32_t mask=0, gateway=0, dns=0, sid=0;
+    uint32_t pos=(uint32_t)(o-p);
+    uint32_t end=(uint32_t)len;
+
+    while(pos+1<end)
+    {
+        uint8_t code=o[0];
+        if(code==255) break;
+        if(code==0){o++;pos++;continue;}
+
+        uint8_t n=o[1];
+        if(pos+2U+n>end) return false;
+
+        if(code==53 && n==1) mt=o[2];
+        else if(code==1 && n==4) mask=Rd32(o+2);
+        else if(code==3 && n>=4) gateway=Rd32(o+2);
+        else if(code==6 && n>=4) dns=Rd32(o+2);
+        else if(code==54 && n>=4) sid=Rd32(o+2);
+
+        o+=2+n;
+        pos+=2+n;
+    }
+
+    if(message_type) *message_type=mt;
+    if(server_ip) *server_ip=sid;
+
+    if(mt==2) /* OFFER */
+    {
+        g_Dhcp.offered_ip=d->yiaddr;
+        g_Dhcp.server_ip=sid;
+        g_Dhcp.offered=true;
+        return true;
+    }
+
+    if(mt==5) /* ACK */
+    {
+        g_Ip=d->yiaddr;
+        g_Mask=mask;
+        g_Gateway=gateway;
+        g_Dns=dns;
+        g_Dhcp.server_ip=sid;
+        return true;
+    }
+
+    return false;
+}
+
+static void HandleUdp(const IpHdr *ip,const uint8_t *p,uint16_t len)
+{
+    if(len<sizeof(UdpHdr)) return;
+    const UdpHdr *u=(const UdpHdr*)p;
+    uint16_t src=Be16(u->src);
+    uint16_t dst=Be16(u->dst);
+    uint16_t total=Be16(u->len);
+
+    if(total<sizeof(UdpHdr) || total>len) return;
+
+    if(g_Dhcp.waiting && src==DHCP_SERVER_PORT && dst==DHCP_CLIENT_PORT)
+    {
+        uint8_t type=0;
+        uint32_t server=0;
+        (void)DhcpParse(p+sizeof(UdpHdr),(uint16_t)(total-sizeof(UdpHdr)),
+                        g_Dhcp.xid,&type,&server);
+    }
 }
 
 static bool DhcpRequest(void)
 {
-    uint8_t p[300]; uint32_t xid=++g_Rng; DhcpBuild(p,xid,1);
-    if(!UdpBuild(NET_IP(255,255,255,255),DHCP_CLIENT_PORT,DHCP_SERVER_PORT,p,300)) return false;
-    for(uint32_t i=0;i<300000;i++){uint8_t f[ETH_MTU];uint16_t l=0;NetPoll();if(E1000ReceiveFrame(f,sizeof(f),&l)){if(l>=42){EthHdr*e=(EthHdr*)f;if(Be16(e->type)==ETH_IPV4){IpHdr*ip=(IpHdr*)(f+14);if(ip->proto==IP_PROTO_UDP){UdpHdr*u=(UdpHdr*)((uint8_t*)ip+20);if(Be16(u->src)==67&&Be16(u->dst)==68){if(DhcpParse((uint8_t*)u+8,(uint16_t)(Be16(u->len)-8),xid))return true;}}}}}__asm__ volatile("pause");}
+    if(!E1000IsReady()) return false;
+
+    g_Ip=0;
+    g_Mask=0;
+    g_Gateway=0;
+    g_Dns=0;
+    g_ArpValid=false;
+
+    g_Dhcp.waiting=true;
+    g_Dhcp.offered=false;
+    g_Dhcp.xid=++g_Rng;
+    g_Dhcp.offered_ip=0;
+    g_Dhcp.server_ip=0;
+
+    uint8_t p[300];
+    DhcpBuild(p,g_Dhcp.xid,1,0,0); /* DISCOVER */
+
+    if(!UdpBuild(NET_IP(255,255,255,255),DHCP_CLIENT_PORT,
+                 DHCP_SERVER_PORT,p,300))
+    {
+        g_Dhcp.waiting=false;
+        return false;
+    }
+
+    for(uint32_t i=0;i<300000;i++)
+    {
+        NetPoll();
+
+        if(g_Dhcp.offered)
+            break;
+
+        __asm__ volatile("pause");
+    }
+
+    if(!g_Dhcp.offered)
+    {
+        g_Dhcp.waiting=false;
+        return false;
+    }
+
+    DhcpBuild(p,g_Dhcp.xid,3,g_Dhcp.offered_ip,g_Dhcp.server_ip); /* REQUEST */
+
+    if(!UdpBuild(NET_IP(255,255,255,255),DHCP_CLIENT_PORT,
+                 DHCP_SERVER_PORT,p,300))
+    {
+        g_Dhcp.waiting=false;
+        return false;
+    }
+
+    for(uint32_t i=0;i<300000;i++)
+    {
+        NetPoll();
+
+        if(g_Ip!=0)
+        {
+            g_Dhcp.waiting=false;
+            return true;
+        }
+
+        __asm__ volatile("pause");
+    }
+
+    g_Dhcp.waiting=false;
     return false;
 }
 
@@ -332,6 +525,9 @@ void NetInitialize(void)
         DbgInfo("NET: E1000 MAC unavailable",0);
         return;
     }
+
+    g_Dhcp.waiting=false;
+    g_Dhcp.offered=false;
 
     DbgInfo("NET: stack ready",(uintptr_t)g_Mac[0]);
 }
