@@ -1,4 +1,3 @@
 #include "net.h"
-#include "include/drivers.h"
 
-DRIVER_INIT(NetInitialize);
+/* Network bring-up is intentionally deferred until the shell is alive. */
