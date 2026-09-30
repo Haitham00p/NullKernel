@@ -541,8 +541,12 @@ void NetInitialize(void)
 
     if(!E1000IsReady())
     {
-        DbgInfo("NET: E1000 unavailable",0);
-        return;
+        DbgInfo("NET: initializing E1000",0);
+        if(!E1000Initialize())
+        {
+            DbgInfo("NET: E1000 unavailable",0);
+            return;
+        }
     }
 
     if(!E1000GetMac(g_Mac))
