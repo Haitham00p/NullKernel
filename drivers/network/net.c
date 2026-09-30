@@ -36,6 +36,8 @@ static uint32_t g_Dns;
 static uint16_t g_IpId;
 static uint32_t g_Rng = 0x4E554C4C;
 
+static void HandleUdp(const IpHdr *ip,const uint8_t *p,uint16_t len);
+
 static uint8_t g_ArpMac[6];
 static uint32_t g_ArpIp;
 static bool g_ArpValid;
@@ -215,7 +217,8 @@ bool NetUdpSend(uint32_t ip,uint16_t src,uint16_t dst,const void*data,uint16_t l
 
 static void HandleArp(const uint8_t *p,uint16_t len)
 {
-    if(len<sizeof(ArpPkt)) return; const ArpPkt *a=(const ArpPkt*)p;
+    if(len < sizeof(ArpPkt)) return;
+    const ArpPkt *a=(const ArpPkt*)p;
     if(Be16(a->ptype)!=ARP_PTYPE_IPV4 || a->hlen!=6 || a->plen!=4) return;
     g_ArpIp=a->spa; Cp(g_ArpMac,a->sha,6); g_ArpValid=true;
     if(Be16(a->oper)==ARP_REQUEST && a->tpa==g_Ip) ArpSendReply(a);
@@ -223,7 +226,8 @@ static void HandleArp(const uint8_t *p,uint16_t len)
 
 static void HandleIcmp(const IpHdr *ip,const uint8_t*p,uint16_t len)
 {
-    if(len<sizeof(IcmpHdr)) return; const IcmpHdr *h=(const IcmpHdr*)p;
+    if(len < sizeof(IcmpHdr)) return;
+    const IcmpHdr *h=(const IcmpHdr*)p;
     if(h->type==ICMP_ECHO_REQUEST && ip->dst==g_Ip)
     {
         uint8_t out[1500]; if(len>sizeof(out)) return; Cp(out,p,len); IcmpHdr *r=(IcmpHdr*)out;
@@ -233,7 +237,8 @@ static void HandleIcmp(const IpHdr *ip,const uint8_t*p,uint16_t len)
 
 static void HandleTcp(const IpHdr *ip,const uint8_t*p,uint16_t len)
 {
-    if(len<sizeof(TcpHdr)) return; const TcpHdr *t=(const TcpHdr*)p;
+    if(len < sizeof(TcpHdr)) return;
+    const TcpHdr *t=(const TcpHdr*)p;
     uint16_t off=(uint16_t)((t->off>>4)*4); if(off<20 || off>len) return;
     uint8_t flags=t->flags;
     if(!g_Tcp.active || ip->src!=g_Tcp.remote_ip || Be16(t->src)!=g_Tcp.remote_port) return;
@@ -243,8 +248,10 @@ static void HandleTcp(const IpHdr *ip,const uint8_t*p,uint16_t len)
 
 static void HandleIpv4(const uint8_t*p,uint16_t len)
 {
-    if(len<sizeof(IpHdr)) return; const IpHdr *h=(const IpHdr*)p;
-    if((h->vhl>>4)!=4 || h->dst!=g_Ip && h->dst!=NET_IP(255,255,255,255)) return;
+    if(len < sizeof(IpHdr)) return;
+    const IpHdr *h=(const IpHdr*)p;
+    if((h->vhl>>4)!=4 ||
+       (h->dst!=g_Ip && h->dst!=NET_IP(255,255,255,255))) return;
     uint16_t ihl=(uint16_t)((h->vhl&15)*4); if(ihl<20 || ihl>len) return;
     uint16_t total=Be16(h->len); if(total>len || total<ihl) return;
     const uint8_t *body=p+ihl; uint16_t blen=(uint16_t)(total-ihl);
@@ -258,7 +265,8 @@ void NetPoll(void)
     uint8_t frame[ETH_MTU]; uint16_t len=0;
     while(E1000ReceiveFrame(frame,sizeof(frame),&len))
     {
-        if(len<sizeof(EthHdr)) continue; const EthHdr *e=(const EthHdr*)frame;
+        if(len < sizeof(EthHdr)) continue;
+        const EthHdr *e=(const EthHdr*)frame;
         uint16_t type=Be16(e->type); const uint8_t *p=frame+sizeof(EthHdr); uint16_t plen=(uint16_t)(len-sizeof(EthHdr));
         if(type==ETH_ARP) HandleArp(p,plen); else if(type==ETH_IPV4) HandleIpv4(p,plen);
     }
@@ -380,7 +388,8 @@ static bool DhcpParse(const uint8_t *p,uint16_t len,uint32_t xid,
 
 static void HandleUdp(const IpHdr *ip,const uint8_t *p,uint16_t len)
 {
-    if(len<sizeof(UdpHdr)) return;
+    if(len < sizeof(UdpHdr)) return;
+    (void)ip;
     const UdpHdr *u=(const UdpHdr*)p;
     uint16_t src=Be16(u->src);
     uint16_t dst=Be16(u->dst);
@@ -472,7 +481,13 @@ static bool TcpPacket(uint32_t dst,uint16_t sport,uint16_t dport,uint32_t seq,ui
 
 bool NetTcpConnect(uint32_t ip,uint16_t port)
 {
-    if(g_Tcp.active)return false;g_Tcp.active=true;g_Tcp.connected=false;g_Tcp.remote_ip=ip;g_Tcp.remote_port=port;g_Tcp.local_port=++g_UdpSrcPort;g_Tcp.snd_nxt=++g_Rng;
+    if(g_Tcp.active) return false;
+    g_Tcp.active=true;
+    g_Tcp.connected=false;
+    g_Tcp.remote_ip=ip;
+    g_Tcp.remote_port=port;
+    g_Tcp.local_port=++g_UdpSrcPort;
+    g_Tcp.snd_nxt=++g_Rng;
     if(!TcpPacket(ip,g_Tcp.local_port,port,g_Tcp.snd_nxt,0,TCP_SYN,0,0)){g_Tcp.active=false;return false;}g_Tcp.snd_nxt++;
     for(uint32_t i=0;i<500000&&!g_Tcp.connected;i++){NetPoll();__asm__ volatile("pause");}
     return g_Tcp.connected;
@@ -480,7 +495,12 @@ bool NetTcpConnect(uint32_t ip,uint16_t port)
 
 bool NetTcpSend(const void*data,uint16_t len)
 {
-    if(!g_Tcp.connected||len>TCP_MSS)return false;if(!TcpPacket(g_Tcp.remote_ip,g_Tcp.local_port,g_Tcp.remote_port,g_Tcp.snd_nxt,g_Tcp.rcv_nxt,TCP_ACK|TCP_PSH,data,len))return false;g_Tcp.snd_nxt+=len;return true;
+    if(!g_Tcp.connected || len>TCP_MSS) return false;
+    if(!TcpPacket(g_Tcp.remote_ip,g_Tcp.local_port,g_Tcp.remote_port,
+                  g_Tcp.snd_nxt,g_Tcp.rcv_nxt,TCP_ACK|TCP_PSH,data,len))
+        return false;
+    g_Tcp.snd_nxt+=len;
+    return true;
 }
 
 bool NetTcpConnected(void){return g_Tcp.connected;}
@@ -489,8 +509,13 @@ void NetTcpClose(void){if(g_Tcp.active)TcpPacket(g_Tcp.remote_ip,g_Tcp.local_por
 bool NetDnsResolve(const char *name,uint32_t *address)
 {
     /* DNS packet construction is intentionally kept bounded: one QNAME, A/IN query. */
-    if(!name||!address||!g_Dns)return false;uint8_t q[512];Z(q,sizeof(q));uint16_t id=++g_IpId; q[0]=(uint8_t)(id>>8);q[1]=(uint8_t)id;q[2]=1;q[5]=1;uint16_t pos=12;
-    const char*s=name;while(*s){const char*dot=s;while(*dot&&*dot!='.')dot++;uint8_t n=(uint8_t)(dot-s);if(n>63||pos+n+1>=sizeof(q)-5)return false;q[pos++]=n;for(uint8_t i=0;i<n;i++)q[pos++]=(uint8_t)s[i];s=*dot?dot+1:dot;}q[pos++]=0;q[pos++]=0;q[pos++]=1;q[pos++]=0;q[pos++]=1;
+    if(!name || !address || !g_Dns) return false;
+    uint8_t q[512];
+    Z(q,sizeof(q));
+    uint16_t id=++g_IpId;
+    q[0]=(uint8_t)(id>>8); q[1]=(uint8_t)id; q[2]=1; q[5]=1;
+    uint16_t pos=12;
+    const char*s=name;while(*s){const char*dot=s;while(*dot&&*dot!='.')dot++;uint8_t n=(uint8_t)(dot-s);if(n>63||(uint32_t)pos+n+1U >= (uint32_t)sizeof(q)-5U)return false;q[pos++]=n;for(uint8_t i=0;i<n;i++)q[pos++]=(uint8_t)s[i];s=*dot?dot+1:dot;}q[pos++]=0;q[pos++]=0;q[pos++]=1;q[pos++]=0;q[pos++]=1;
     uint16_t src=++g_UdpSrcPort;if(!UdpBuild(g_Dns,src,DNS_PORT,q,pos))return false;
     /* DNS reply reception is handled by the normal polling path; this compact API returns false until a matching reply is observed. */
     for(uint32_t t=0;t<200000;t++){uint8_t f[ETH_MTU];uint16_t l=0;NetPoll();if(E1000ReceiveFrame(f,sizeof(f),&l)&&l>42){EthHdr*e=(EthHdr*)f;if(Be16(e->type)==ETH_IPV4){IpHdr*ip=(IpHdr*)(f+14);if(ip->proto==IP_PROTO_UDP){UdpHdr*u=(UdpHdr*)((uint8_t*)ip+20);uint16_t ul=Be16(u->len);if(Be16(u->src)==53&&ul>=8+12){uint8_t*r=(uint8_t*)u+8;if(((uint16_t)r[0]<<8|r[1])==id&&r[3]&0x80){uint16_t an=(uint16_t)r[6]<<8|r[7];uint16_t x=12;while(x<ul-8&&r[x])x+=(uint8_t)r[x]+1;x+=5;for(uint16_t a=0;a<an&&x+12<ul-8;a++){while(x<ul-8&&r[x])x+=(uint8_t)r[x]+1;x+=1;if(x+10>ul-8)break;uint16_t typ=Rd16(r+x);uint16_t rd=Rd16(r+x+8);x+=10;if(typ==1&&rd==4&&x+4<=ul-8){*address=Rd32(r+x);return true;}x+=rd;}}}}}}__asm__ volatile("pause");}return false;
