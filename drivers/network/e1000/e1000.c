@@ -461,5 +461,3 @@ static void E1000DriverInit(void)
 {
     (void)E1000Initialize();
 }
-
-DRIVER_INIT(E1000DriverInit);
