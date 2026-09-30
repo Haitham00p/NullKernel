@@ -4,6 +4,7 @@
 #include "include/drivers.h"
 #include "kernel/debug/debug.h"
 #include "mm/pmm.h"
+#include "mm/vmm.h"
 
 #define E1000_VENDOR_ID       0x8086U
 #define E1000_DEVICE_ID       0x100EU
@@ -311,7 +312,21 @@ bool E1000Initialize(void)
      * existing NVMe driver. If the VMM later gets a dedicated MMIO map,
      * only this BAR mapping needs to move behind that API.
      */
-    g_Bar = (volatile uint8_t *)(uintptr_t)Bar;
+    /*
+     * PCI BARs are device MMIO, not RAM. The kernel page tables are not
+     * guaranteed to identity-map the E1000 BAR, so touching it directly can
+     * raise a page fault and leave the boot screen black. Map the register
+     * window at its physical address before the first MMIO access.
+     */
+    const uint64_t BarPage = Bar & ~0xFFFULL;
+    const uint64_t BarOffset = Bar & 0xFFFULL;
+    const uint64_t BarWindow = 0x20000ULL;
+    for (uint64_t Offset = 0; Offset < BarWindow; Offset += 0x1000ULL)
+    {
+        if (!VmmMapPage(BarPage + Offset, BarPage + Offset, VMM_W | VMM_NX))
+            return false;
+    }
+    g_Bar = (volatile uint8_t *)(uintptr_t)(BarPage + BarOffset);
 
     if (!ResetDevice())
         return false;
