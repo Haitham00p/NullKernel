@@ -172,7 +172,7 @@ $(BUILD_DIR)/arch/x86_64/program/run_asm.o: arch/x86_64/program/run.asm
 
 $(BUILD_DIR)/arch/x86_64/bootasm.o: arch/x86_64/bootasm.asm
 	@mkdir -p $(@D)
-	nasm -f elf64 $< -o $@
+	$(NASM) -f elf64 $< -o $@
 
 $(BUILD_DIR)/arch/x86_64/cpu/ring3.o: arch/x86_64/cpu/ring3.asm
 	@mkdir -p $(@D)
