@@ -52,6 +52,7 @@ C_SOURCES := \
 	drivers/storage/block/block.c \
 	drivers/video_font/font.c \
 	drivers/video_framebuffer/framebuffer.c \
+	drivers/network/e1000/e1000.c \
  	fs/fat32/directory/directory.c \
 	fs/fat32/file/file.c \
 	fs/fat32/fat/fat.c \
@@ -171,7 +172,7 @@ $(BUILD_DIR)/arch/x86_64/program/run_asm.o: arch/x86_64/program/run.asm
 
 $(BUILD_DIR)/arch/x86_64/bootasm.o: arch/x86_64/bootasm.asm
 	@mkdir -p $(@D)
-	$(NASM) -f elf64 $< -o $@
+	nasm -f elf64 $< -o $@
 
 $(BUILD_DIR)/arch/x86_64/cpu/ring3.o: arch/x86_64/cpu/ring3.asm
 	@mkdir -p $(@D)
@@ -202,10 +203,10 @@ install: $(KERNEL) $(NULLL_STAGE1) $(NULLL_STAGE2)
 
 boot: install
 	@if [ -f /tmp/nullos-qemu.pid ]; then kill -9 "$$(cat /tmp/nullos-qemu.pid)" 2>/dev/null || true; rm -f /tmp/nullos-qemu.pid; fi
-	qemu-system-x86_64 -m 3 -boot order=c -drive "file=$(DISK),format=raw,if=ide,index=0" -serial stdio -display gtk
+	qemu-system-x86_64 -m 3 -boot order=c -drive "file=$(DISK),format=raw,if=ide,index=0" -netdev user,id=n1 -device e1000,netdev=n1 -serial stdio -display gtk
 
 run: install
-	qemu-system-x86_64 -m 3 -boot order=c -drive "file=$(DISK),format=raw,if=ide,index=0" -serial stdio -display gtk
+	qemu-system-x86_64 -m 3 -boot order=c -drive "file=$(DISK),format=raw,if=ide,index=0" -netdev user,id=n1 -device e1000,netdev=n1 -serial stdio -display gtk
 
 clean:
 	rm -rf $(BUILD_DIR) .vault-stamp
