@@ -442,4 +442,9 @@ bool E1000ReceiveFrame(void *Buffer, uint16_t BufferSize, uint16_t *Length)
 }
 
 /* Polling is deliberate: IRQ support is a separate layer after TX/RX works. */
-DRIVER_INIT(E1000Initialize);
+static void E1000DriverInit(void)
+{
+    (void)E1000Initialize();
+}
+
+DRIVER_INIT(E1000DriverInit);
