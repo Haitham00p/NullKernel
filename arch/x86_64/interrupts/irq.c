@@ -74,6 +74,11 @@ void IRQInitialize(void)
     IDTSetGate(46, (uint64_t)IRQ14, 0x08, 0x8E);
     IDTSetGate(47, (uint64_t)IRQ15, 0x08, 0x8E);
 
-    PICUnmaskIRQ(IRQ_TIMER);
+    /*
+     * Keep PIT IRQ0 masked until kernel_main has finished synchronous
+     * storage/registry/shell initialization.  STI alone must not start
+     * preemption while the scheduler's consumers are still coming online.
+     */
+    PICMaskIRQ(IRQ_TIMER);
     PICUnmaskIRQ(IRQ_KEYBOARD);
 }
