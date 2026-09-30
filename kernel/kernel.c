@@ -243,6 +243,16 @@ void kernel_main(NullBootInfo *BootInfo)
     DbgInfo("Reached post-STI checkpoint", (uintptr_t)kernel_main);
 
     /*
+     * PIT is masked during this diagnostic, so the normal IRQ0-driven
+     * framebuffer present never runs. Present the terminal explicitly.
+     * If the screen appears after this call, the "black screen" was only
+     * a missing framebuffer flush, not a kernel crash.
+     */
+    DbgSerialWrite("[DIAG] before explicit framebuffer present\\n");
+    FbPresent32();
+    DbgSerialWrite("[DIAG] after explicit framebuffer present\\n");
+
+    /*
      * Do not touch the FAT32 filesystem from this diagnostic path.
      * The prompt is already rendered by ShellInitialize(); the boot-log
      * flush can only obscure whether execution actually reaches ShellUpdate.
