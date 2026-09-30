@@ -8,6 +8,7 @@
 
 void NetInitialize(void);
 void NetPoll(void);
+bool NetDhcpRequest(void);
 
 bool NetIsUp(void);
 uint32_t NetGetIp(void);
