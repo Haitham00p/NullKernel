@@ -31,6 +31,7 @@
 #include "kernel/syscall/syscall.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/registry/registry.h"
+#include "drivers/network/net.h"
 
 volatile NullBootInfo *NullBoot = NULL;
 
@@ -216,6 +217,11 @@ void kernel_main(NullBootInfo *BootInfo)
     DbgInfo("Initializing shell", (uintptr_t)ShellInitialize);
     ShellInitialize();
     DbgInfo("Shell initialized; enabling interrupts", (uintptr_t)ShellInitialize);
+
+    /* Bring up the network stack only after the core storage/shell state is ready. */
+    DbgInfo("Initializing network", (uintptr_t)NetInitialize);
+    NetInitialize();
+    DbgInfo("Network initialization complete", (uintptr_t)NetInitialize);
 
     /*
      * Network initialization is deliberately disabled during boot.
