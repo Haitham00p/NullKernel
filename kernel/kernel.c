@@ -221,9 +221,15 @@ void kernel_main(NullBootInfo *BootInfo)
      * Network initialization is deliberately disabled during boot.
      * Enable interrupts only after all synchronous boot/shell state is ready.
      */
-    PICUnmaskIRQ(IRQ_TIMER);
+    /*
+     * Diagnostic isolation: leave PIT IRQ0 masked while enabling keyboard
+     * interrupts. If the shell now appears, the fault is definitively in
+     * the timer/preemption/render path rather than filesystem/network boot.
+     */
+    PICMaskIRQ(IRQ_TIMER);
     __asm__ volatile("sti");
-    TerminalPrintLine32("InterruptSys online", 0xFFFFFFFF);
+    TerminalPrintLine32("InterruptSys online (PIT masked)", 0xFFFFFFFF);
+    DbgInfo("Reached post-STI checkpoint", (uintptr_t)kernel_main);
 
     DbgBootLogFlush();
 
