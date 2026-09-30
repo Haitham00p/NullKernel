@@ -36,8 +36,6 @@ static uint32_t g_Dns;
 static uint16_t g_IpId;
 static uint32_t g_Rng = 0x4E554C4C;
 
-static void HandleUdp(const IpHdr *ip,const uint8_t *p,uint16_t len);
-
 static uint8_t g_ArpMac[6];
 static uint32_t g_ArpIp;
 static bool g_ArpValid;
@@ -68,6 +66,8 @@ typedef struct __attribute__((packed)) {
     uint8_t vhl; uint8_t tos; uint16_t len; uint16_t id; uint16_t frag;
     uint8_t ttl; uint8_t proto; uint16_t sum; uint32_t src; uint32_t dst;
 } IpHdr;
+
+static void HandleUdp(const IpHdr *ip,const uint8_t *p,uint16_t len);
 
 typedef struct __attribute__((packed)) {
     uint8_t type; uint8_t code; uint16_t sum; uint16_t id; uint16_t seq;
