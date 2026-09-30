@@ -173,13 +173,21 @@ void kernel_main(NullBootInfo *BootInfo)
      * In particular, PIT IRQ0 can arrive immediately after STI and enter the
      * scheduler before the storage/driver layer and boot path are ready.
      */
+    DbgInfo("Entering driver registry", (uintptr_t)DriversInitAll);
     DriversInitAll();
+    DbgInfo("Driver registry complete", (uintptr_t)DriversInitAll);
 
-    __asm__ volatile("sti");
-    TerminalPrintLine32("InterruptSys online", 0xFFFFFFFF);
-
+    /*
+     * Do not enable IRQ0 while the storage, boot-monitor, registry and shell
+     * bring-up code is still running.  PITTick() immediately feeds the
+     * scheduler, and IRQHandler() can call TaskScheduleFromInterrupt().
+     * Until the first shell loop is ready, that is an asynchronous entry
+     * point into partially initialized state.
+     */
     TerminalClear32(BackSpaceColor);
+    DbgInfo("Mounting filesystem", (uintptr_t)DiskFsMount);
     DiskFsMount();
+    DbgInfo("Filesystem mount complete", (uintptr_t)DiskFsMount);
 
     /*
      * reboot-c stores a one-shot BM1 request on the installed FAT32 disk.
@@ -197,14 +205,25 @@ void kernel_main(NullBootInfo *BootInfo)
     if (BootMonitorShouldEnter())
         BootMonitorRun();
 
+    DbgInfo("Initializing registry", (uintptr_t)RegistryInitialize);
     RegistryInitialize();
+    DbgInfo("Registry initialized", (uintptr_t)RegistryInitialize);
     { uint64_t q = 0; if (RegistryReadU64("/REG/SCHED/QUANTUM.V", &q) && q != 0) SchedulerSetQuantum(q); }
     ShellApplyRegistry();
     ShellBootRunROB();
     ShellApplyDefDir();
-    ShellInitialize();
 
-    /* Network initialization is deliberately disabled during boot. */
+    DbgInfo("Initializing shell", (uintptr_t)ShellInitialize);
+    ShellInitialize();
+    DbgInfo("Shell initialized; enabling interrupts", (uintptr_t)ShellInitialize);
+
+    /*
+     * Network initialization is deliberately disabled during boot.
+     * Enable interrupts only after all synchronous boot/shell state is ready.
+     */
+    __asm__ volatile("sti");
+    TerminalPrintLine32("InterruptSys online", 0xFFFFFFFF);
+
     DbgBootLogFlush();
 
     while (1)
