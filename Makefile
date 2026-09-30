@@ -73,8 +73,8 @@ $(NULLL_STAGE2): nulll/stage2.asm
 install: $(KERNEL) $(NULLL_STAGE1) $(NULLL_STAGE2)
 	./run-install.sh $(DISK)
 boot: install
-	qemu-system-x86_64 -m 3 -boot order=c -drive "file=$(DISK),format=raw,if=ide,index=0" -netdev user,id=n1 -device e1000,netdev=n1 -serial stdio -display gtk
+	qemu-system-x86_64 -m 512 -boot order=c -drive "file=$(DISK),format=raw,if=ide,index=0" -netdev user,id=n1 -device e1000,netdev=n1 -serial stdio -display gtk
 run: install
-	qemu-system-x86_64 -m 3 -boot order=c -drive "file=$(DISK),format=raw,if=ide,index=0" -netdev user,id=n1 -device e1000,netdev=n1 -serial stdio -display gtk
+	qemu-system-x86_64 -m 512 -boot order=c -drive "file=$(DISK),format=raw,if=ide,index=0" -netdev user,id=n1 -device e1000,netdev=n1 -serial stdio -display gtk
 clean:
 	rm -rf $(BUILD_DIR) .vault-stamp
