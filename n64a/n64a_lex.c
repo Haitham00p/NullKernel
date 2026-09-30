@@ -51,6 +51,21 @@ static bool IsDigit(char c)
     return c >= '0' && c <= '9';
 }
 
+static bool IsOctDigit(char c)
+{
+    return c >= '0' && c <= '7';
+}
+
+static bool IsBinDigit(char c)
+{
+    return c == '0' || c == '1';
+}
+
+static bool IsHexDigit(char c)
+{
+    return IsDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
 static uint64_t HexVal(char c)
 {
     if (c >= '0' && c <= '9') return (uint64_t)(c - '0');
@@ -105,6 +120,7 @@ static void ScanOne(N64Lex *lx, N64Tok *t)
     t->Str = NULL;
     t->StrLen = 0;
     t->Line = lx->Line;
+    t->Start = lx->Pos;
 
     if (lx->Pos >= lx->Len)
     {
@@ -141,57 +157,175 @@ static void ScanOne(N64Lex *lx, N64Tok *t)
     {
         uint64_t v = 0;
         uint64_t start = lx->Pos;
+        uint64_t p;
+        uint64_t run_end;
+        bool first_is_zero = (c == '0');
+
+        /* 0x / 0X hex */
         if (c == '0' && lx->Pos + 1U < lx->Len &&
             (s[lx->Pos + 1U] == 'x' || s[lx->Pos + 1U] == 'X'))
         {
             lx->Pos += 2;
-            while (lx->Pos < lx->Len &&
-                   ((s[lx->Pos] >= '0' && s[lx->Pos] <= '9') ||
-                    (s[lx->Pos] >= 'a' && s[lx->Pos] <= 'f') ||
-                    (s[lx->Pos] >= 'A' && s[lx->Pos] <= 'F')))
+            while (lx->Pos < lx->Len)
             {
+                if (s[lx->Pos] == '_')
+                {
+                    lx->Pos++;
+                    continue;
+                }
+                if (!IsHexDigit(s[lx->Pos]))
+                {
+                    break;
+                }
                 v = v * 16ULL + HexVal(s[lx->Pos]);
                 lx->Pos++;
             }
+            if (lx->Pos < lx->Len && IsIdentChar(s[lx->Pos]))
+            {
+                LexError(lx, "invalid number", NULL);
+                lx->Pos++;
+            }
+            t->Num = v;
+            t->Kind = N64_T_NUMBER;
+            return;
         }
-        else if (c == '0' && lx->Pos + 1U < lx->Len &&
-                 (s[lx->Pos + 1U] == 'b' || s[lx->Pos + 1U] == 'B') &&
-                 !(lx->Pos + 2U < lx->Len && IsIdentChar(s[lx->Pos + 2U])))
+
+        /* 0b / 0B binary */
+        if (c == '0' && lx->Pos + 1U < lx->Len &&
+            (s[lx->Pos + 1U] == 'b' || s[lx->Pos + 1U] == 'B'))
         {
             lx->Pos += 2;
-            while (lx->Pos < lx->Len &&
-                   (s[lx->Pos] == '0' || s[lx->Pos] == '1'))
+            while (lx->Pos < lx->Len)
             {
+                if (s[lx->Pos] == '_')
+                {
+                    lx->Pos++;
+                    continue;
+                }
+                if (!IsBinDigit(s[lx->Pos]))
+                {
+                    break;
+                }
                 v = v * 2ULL + (uint64_t)(s[lx->Pos] - '0');
                 lx->Pos++;
             }
+            if (lx->Pos < lx->Len && IsIdentChar(s[lx->Pos]))
+            {
+                LexError(lx, "invalid number", NULL);
+                lx->Pos++;
+            }
+            t->Num = v;
+            t->Kind = N64_T_NUMBER;
+            return;
+        }
+
+        /* 0o / 0q octal */
+        if (c == '0' && lx->Pos + 1U < lx->Len &&
+            (s[lx->Pos + 1U] == 'o' || s[lx->Pos + 1U] == 'O' ||
+             s[lx->Pos + 1U] == 'q' || s[lx->Pos + 1U] == 'Q'))
+        {
+            lx->Pos += 2;
+            while (lx->Pos < lx->Len)
+            {
+                if (s[lx->Pos] == '_')
+                {
+                    lx->Pos++;
+                    continue;
+                }
+                if (!IsOctDigit(s[lx->Pos]))
+                {
+                    break;
+                }
+                v = v * 8ULL + (uint64_t)(s[lx->Pos] - '0');
+                lx->Pos++;
+            }
+            if (lx->Pos < lx->Len && IsIdentChar(s[lx->Pos]))
+            {
+                LexError(lx, "invalid number", NULL);
+                lx->Pos++;
+            }
+            t->Num = v;
+            t->Kind = N64_T_NUMBER;
+            return;
+        }
+
+        /* decimal / trailing-h hex / leading-0 octal: scan the full run
+         * of digits, hex letters and underscores first, then decide.   */
+        run_end = lx->Pos;
+        while (run_end < lx->Len &&
+               (IsDigit(s[run_end]) || IsHexDigit(s[run_end]) ||
+                s[run_end] == '_'))
+        {
+            run_end++;
+        }
+
+        if (run_end < lx->Len &&
+            (s[run_end] == 'h' || s[run_end] == 'H') &&
+            !(run_end + 1U < lx->Len && IsIdentChar(s[run_end + 1U])))
+        {
+            /* trailing-h hex: 1234h / 0FFh */
+            for (p = start; p < run_end; p++)
+            {
+                if (s[p] == '_')
+                {
+                    continue;
+                }
+                v = v * 16ULL + HexVal(s[p]);
+            }
+            lx->Pos = run_end + 1; /* consume the 'h' */
         }
         else
         {
-            while (lx->Pos < lx->Len && IsDigit(s[lx->Pos]))
+            bool valid = true;
+            for (p = start; p < run_end; p++)
             {
-                lx->Pos++;
-            }
-            /* NASM-style trailing h: 1234h / 0FFh */
-            if (lx->Pos < lx->Len &&
-                (s[lx->Pos] == 'h' || s[lx->Pos] == 'H') &&
-                !(lx->Pos + 1U < lx->Len &&
-                  IsIdentChar(s[lx->Pos + 1U])))
-            {
-                uint64_t p;
-                for (p = start; p < lx->Pos; p++)
+                if (s[p] == '_')
                 {
-                    v = v * 16ULL + HexVal(s[p]);
+                    continue;
                 }
-                lx->Pos++; /* consume the 'h' */
+                if (!IsDigit(s[p]))
+                {
+                    valid = false; /* hex letter without trailing h */
+                    break;
+                }
+            }
+            if (!valid)
+            {
+                LexError(lx, "invalid number", NULL);
+            }
+            else if (first_is_zero && run_end - start > 1U)
+            {
+                /* leading-zero octal: 0777 */
+                for (p = start + 1U; p < run_end; p++)
+                {
+                    if (s[p] == '_')
+                    {
+                        continue;
+                    }
+                    if (s[p] == '8' || s[p] == '9')
+                    {
+                        LexError(lx, "invalid octal number", NULL);
+                        break;
+                    }
+                    v = v * 8ULL + (uint64_t)(s[p] - '0');
+                }
             }
             else
             {
-                uint64_t p;
-                for (p = start; p < lx->Pos; p++)
+                for (p = start; p < run_end; p++)
                 {
+                    if (s[p] == '_')
+                    {
+                        continue;
+                    }
                     v = v * 10ULL + (uint64_t)(s[p] - '0');
                 }
+            }
+            lx->Pos = run_end;
+            if (run_end < lx->Len && IsIdentChar(s[run_end]))
+            {
+                LexError(lx, "invalid number", NULL);
+                lx->Pos++;
             }
         }
         t->Num = v;
@@ -201,15 +335,24 @@ static void ScanOne(N64Lex *lx, N64Tok *t)
 
     switch (c)
     {
-        case ',': lx->Pos++; t->Kind = N64_T_COMMA;  return;
-        case ':': lx->Pos++; t->Kind = N64_T_COLON;  return;
-        case '[': lx->Pos++; t->Kind = N64_T_LBRACK; return;
-        case ']': lx->Pos++; t->Kind = N64_T_RBRACK; return;
-        case '+': lx->Pos++; t->Kind = N64_T_PLUS;   return;
-        case '-': lx->Pos++; t->Kind = N64_T_MINUS;  return;
-        case '*': lx->Pos++; t->Kind = N64_T_STAR;   return;
-        case '(': lx->Pos++; t->Kind = N64_T_LPAREN; return;
-        case ')': lx->Pos++; t->Kind = N64_T_RPAREN; return;
+        case ',': lx->Pos++; t->Kind = N64_T_COMMA;   return;
+        case ':': lx->Pos++; t->Kind = N64_T_COLON;   return;
+        case '[': lx->Pos++; t->Kind = N64_T_LBRACK;  return;
+        case ']': lx->Pos++; t->Kind = N64_T_RBRACK;  return;
+        case '+': lx->Pos++; t->Kind = N64_T_PLUS;    return;
+        case '-': lx->Pos++; t->Kind = N64_T_MINUS;   return;
+        case '*': lx->Pos++; t->Kind = N64_T_STAR;    return;
+        case '/': lx->Pos++; t->Kind = N64_T_SLASH;   return;
+        case '%': lx->Pos++; t->Kind = N64_T_PERCENT; return;
+        case '(': lx->Pos++; t->Kind = N64_T_LPAREN;  return;
+        case ')': lx->Pos++; t->Kind = N64_T_RPAREN;  return;
+        case '~': lx->Pos++; t->Kind = N64_T_TILDE;   return;
+        case '!': lx->Pos++; t->Kind = N64_T_BANG;    return;
+        case '<': lx->Pos++; t->Kind = N64_T_LT;      return;
+        case '>': lx->Pos++; t->Kind = N64_T_GT;      return;
+        case '&': lx->Pos++; t->Kind = N64_T_AMP;     return;
+        case '^': lx->Pos++; t->Kind = N64_T_CARET;   return;
+        case '|': lx->Pos++; t->Kind = N64_T_PIPE;    return;
         default:
             break;
     }
@@ -246,18 +389,40 @@ static void ScanOne(N64Lex *lx, N64Tok *t)
             e = s[lx->Pos];
             switch (e)
             {
-                case 'n':  t->Num = '\n'; break;
-                case 't':  t->Num = '\t'; break;
-                case 'r':  t->Num = '\r'; break;
-                case '0':  t->Num = '\0'; break;
-                case '\\': t->Num = '\\'; break;
-                case '\'': t->Num = '\''; break;
+                case 'n':  t->Num = '\n'; lx->Pos++; break;
+                case 't':  t->Num = '\t'; lx->Pos++; break;
+                case 'r':  t->Num = '\r'; lx->Pos++; break;
+                case 'a':  t->Num = '\a'; lx->Pos++; break;
+                case 'b':  t->Num = '\b'; lx->Pos++; break;
+                case 'f':  t->Num = '\f'; lx->Pos++; break;
+                case 'v':  t->Num = '\v'; lx->Pos++; break;
+                case '0':  t->Num = '\0'; lx->Pos++; break;
+                case '\\': t->Num = '\\'; lx->Pos++; break;
+                case '\'': t->Num = '\''; lx->Pos++; break;
+                case '"':  t->Num = '"';  lx->Pos++; break;
+                case 'x':
+                {
+                    unsigned int n = 0;
+                    lx->Pos++;
+                    while (lx->Pos < lx->Len && n < 2 &&
+                           IsHexDigit(s[lx->Pos]))
+                    {
+                        t->Num = (t->Num << 4) | HexVal(s[lx->Pos]);
+                        lx->Pos++;
+                        n++;
+                    }
+                    if (n == 0)
+                    {
+                        LexError(lx, "\\x needs hex digits in char literal", NULL);
+                    }
+                    break;
+                }
                 default:
                     t->Num = (unsigned char)e;
+                    lx->Pos++;
                     LexError(lx, "unknown escape in char literal", NULL);
                     break;
             }
-            lx->Pos++;
         }
         else if (lx->Pos < lx->Len && s[lx->Pos] != '\'')
         {

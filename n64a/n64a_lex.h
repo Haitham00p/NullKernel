@@ -18,8 +18,17 @@ typedef enum
     N64_T_PLUS,
     N64_T_MINUS,
     N64_T_STAR,
+    N64_T_SLASH,
+    N64_T_PERCENT,
     N64_T_LPAREN,
-    N64_T_RPAREN
+    N64_T_RPAREN,
+    N64_T_TILDE,
+    N64_T_BANG,
+    N64_T_LT,
+    N64_T_GT,
+    N64_T_AMP,
+    N64_T_CARET,
+    N64_T_PIPE
 } N64TokKind;
 
 typedef struct
@@ -30,6 +39,7 @@ typedef struct
     const char     *Str;      /* N64_T_STRING: pointer into line buffer */
     uint32_t        StrLen;
     uint32_t        Line;
+    uint64_t        Start;    /* source offset where the token begins   */
 } N64Tok;
 
 typedef struct

@@ -138,7 +138,10 @@ bool N64CondFind(const char *CcName, uint8_t *Out)
     {
         if (N64aStrCmp(N64CondTable[i].Name, CcName) == 0)
         {
-            *Out = N64CondTable[i].Cc;
+            if (Out != NULL)
+            {
+                *Out = N64CondTable[i].Cc;
+            }
             return true;
         }
     }
@@ -299,6 +302,15 @@ static unsigned RegRexB(const N64Reg *r)
     return r->Index >= 8 ? N64_REX_B : 0U;
 }
 
+/* 16-bit operand size override prefix. */
+static void N64EncOpSize16(N64Buf *b, unsigned size)
+{
+    if (size == N64_SZ16)
+    {
+        N64BufByte(b, 0x66);
+    }
+}
+
 static void EmitImm(N64Buf *b, uint64_t imm, unsigned size)
 {
     if (size == N64_SZ8)
@@ -332,6 +344,7 @@ bool N64EncArithRegMem(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
     unsigned rex;
     unsigned size;
     bool force;
+    uint8_t op;
 
     if (dst->Kind == N64_OP_REG && src->Kind == N64_OP_REG)
     {
@@ -340,7 +353,9 @@ bool N64EncArithRegMem(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
               RegRexR(&src->Reg) | RegRexB(&dst->Reg);
         force = size == N64_SZ8 && (dst->Reg.NeedsRex || src->Reg.NeedsRex);
         N64EncRex(b, rex, force);
-        N64BufByte(b, op_base); /* r/m <- r */
+        N64EncOpSize16(b, size);
+        op = (uint8_t)(size == N64_SZ8 ? op_base : (op_base + 1U));
+        N64BufByte(b, op); /* r/m <- r */
         N64EncModRmRegReg(b, (uint8_t)(src->Reg.Index & 7U), &dst->Reg);
         return true;
     }
@@ -355,7 +370,9 @@ bool N64EncArithRegMem(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
         force = size == N64_SZ8 && (r->NeedsRex || m->BaseIdx >= 8 ||
                                     m->IndexIdx >= 8);
         N64EncRex(b, rex, force);
-        N64BufByte(b, op_base);
+        N64EncOpSize16(b, size);
+        op = (uint8_t)(size == N64_SZ8 ? op_base : (op_base + 1U));
+        N64BufByte(b, op);
         N64EncModRmMem(b, sink, reloc_base, m, (uint8_t)(r->Index & 7U));
         return true;
     }
@@ -370,7 +387,9 @@ bool N64EncArithRegMem(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
         force = size == N64_SZ8 && (r->NeedsRex || m->BaseIdx >= 8 ||
                                     m->IndexIdx >= 8);
         N64EncRex(b, rex, force);
-        N64BufByte(b, (uint8_t)(op_base + 2U)); /* reversed direction */
+        N64EncOpSize16(b, size);
+        op = (uint8_t)(size == N64_SZ8 ? (op_base + 2U) : (op_base + 3U));
+        N64BufByte(b, op); /* reversed direction */
         N64EncModRmMem(b, sink, reloc_base, m, (uint8_t)(r->Index & 7U));
         return true;
     }
@@ -403,6 +422,7 @@ bool N64EncArithImm(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
             }
             if (size == N64_SZ16)
             {
+                N64EncOpSize16(b, size);
                 N64BufByte(b, (uint8_t)((ext_index << 3) | 0x05U));
                 EmitImm(b, imm, N64_SZ16);
                 return true;
@@ -418,6 +438,7 @@ bool N64EncArithImm(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
         if (size != N64_SZ8 &&
             (int64_t)imm >= -128 && (int64_t)imm <= 127)
         {
+            N64EncOpSize16(b, size);
             N64EncRex(b, rex, false);
             N64BufByte(b, 0x83);
             N64EncModRmRegReg(b, ext_index, r);
@@ -440,6 +461,7 @@ bool N64EncArithImm(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
 
         if (size == N64_SZ16)
         {
+            N64EncOpSize16(b, size);
             N64EncRex(b, rex, false);
             N64BufByte(b, 0x81);
             N64EncModRmRegReg(b, ext_index, r);
@@ -464,6 +486,7 @@ bool N64EncArithImm(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
         if (size != N64_SZ8 &&
             (int64_t)imm >= -128 && (int64_t)imm <= 127)
         {
+            N64EncOpSize16(b, size);
             N64EncRex(b, rex, false);
             N64BufByte(b, 0x83);
             N64EncModRmMem(b, sink, reloc_base, m, ext_index);
@@ -480,6 +503,7 @@ bool N64EncArithImm(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
         }
         if (size == N64_SZ16)
         {
+            N64EncOpSize16(b, size);
             N64EncRex(b, rex, false);
             N64BufByte(b, 0x81);
             N64EncModRmMem(b, sink, reloc_base, m, ext_index);
@@ -515,6 +539,7 @@ bool N64EncMov(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
         force = size == N64_SZ8 &&
                 (dst->Reg.NeedsRex || src->Reg.NeedsRex);
         N64EncRex(b, rex, force);
+        N64EncOpSize16(b, size);
         N64BufByte(b, 0x89); /* mov r/m, r */
         N64EncModRmRegReg(b, (uint8_t)(src->Reg.Index & 7U), &dst->Reg);
         return true;
@@ -530,6 +555,7 @@ bool N64EncMov(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
         force = size == N64_SZ8 &&
                 (r->NeedsRex || m->BaseIdx >= 8 || m->IndexIdx >= 8);
         N64EncRex(b, rex, force);
+        N64EncOpSize16(b, size);
         N64BufByte(b, 0x89);
         N64EncModRmMem(b, sink, reloc_base, m, (uint8_t)(r->Index & 7U));
         return true;
@@ -545,6 +571,7 @@ bool N64EncMov(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
         force = size == N64_SZ8 &&
                 (r->NeedsRex || m->BaseIdx >= 8 || m->IndexIdx >= 8);
         N64EncRex(b, rex, force);
+        N64EncOpSize16(b, size);
         N64BufByte(b, 0x8B); /* mov r, r/m */
         N64EncModRmMem(b, sink, reloc_base, m, (uint8_t)(r->Index & 7U));
         return true;
@@ -595,6 +622,7 @@ bool N64EncMov(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
         {
             return false;
         }
+        N64EncOpSize16(b, size);
         N64EncRex(b, rex, false);
         N64BufByte(b, (uint8_t)(0xB8U + (r->Index & 7U)));
         EmitImm(b, imm, size);
@@ -608,13 +636,25 @@ bool N64EncMov(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
         size = dst->SizeHint != 0U ? dst->SizeHint : N64_SZ32;
         rex = N64EncMemRexBits(m, size == N64_SZ64 ? N64_REX_W : 0U);
 
-        if (size != N64_SZ8 && (int64_t)imm >= -128 &&
-            (int64_t)imm <= 127)
+        if (size == N64_SZ8)
         {
+            if ((int64_t)imm < -128 || (int64_t)imm > 255)
+            {
+                return false;
+            }
+            N64EncRex(b, rex, false);
+            N64BufByte(b, 0xC6);
+            N64EncModRmMem(b, sink, reloc_base, m, 0);
+            N64BufByte(b, (uint8_t)imm);
+            return true;
+        }
+        if (size == N64_SZ16)
+        {
+            N64EncOpSize16(b, size);
             N64EncRex(b, rex, false);
             N64BufByte(b, 0xC7);
             N64EncModRmMem(b, sink, reloc_base, m, 0);
-            N64BufByte(b, (uint8_t)(int8_t)imm);
+            N64BufU16(b, (uint16_t)imm);
             return true;
         }
         N64EncRex(b, rex, false);
@@ -667,6 +707,7 @@ bool N64EncTest(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
         force = size == N64_SZ8 &&
                 (dst->Reg.NeedsRex || src->Reg.NeedsRex);
         N64EncRex(b, rex, force);
+        N64EncOpSize16(b, size);
         N64BufByte(b, 0x85);
         N64EncModRmRegReg(b, (uint8_t)(src->Reg.Index & 7U), &dst->Reg);
         return true;
@@ -678,6 +719,7 @@ bool N64EncTest(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
               RegRexR(&dst->Reg) |
               N64EncMemRexBits(&src->Mem, 0U);
         N64EncRex(b, rex, false);
+        N64EncOpSize16(b, size);
         N64BufByte(b, 0x85);
         N64EncModRmMem(b, sink, reloc_base, &src->Mem,
                        (uint8_t)(dst->Reg.Index & 7U));
@@ -692,6 +734,9 @@ bool N64EncTestImm(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
     unsigned size;
     unsigned rex;
     bool force;
+
+    (void)sink;
+    (void)reloc_base;
 
     if (dst->Kind != N64_OP_REG)
     {
@@ -709,12 +754,14 @@ bool N64EncTestImm(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
             N64BufByte(b, (uint8_t)imm);
             return true;
         }
+        N64EncOpSize16(b, size);
         N64EncRex(b, size == N64_SZ64 ? N64_REX_W : 0U, false);
         N64BufByte(b, 0xA9);
         EmitImm(b, imm, size == N64_SZ16 ? N64_SZ16 : N64_SZ32);
         return true;
     }
 
+    N64EncOpSize16(b, size);
     N64EncRex(b, rex, force);
     if (size == N64_SZ8)
     {
@@ -735,107 +782,178 @@ bool N64EncTestImm(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
 /* NOT=/2 NEG=/3 MUL=/4 IMUL=/5 DIV=/6 IDIV=/7                         */
 /* ------------------------------------------------------------------ */
 
-bool N64EncUnaryGroup(N64Buf *b, uint8_t ext_index, const N64Operand *op)
+bool N64EncUnaryGroup(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
+                      uint8_t ext_index, const N64Operand *op)
 {
     unsigned size;
     unsigned rex;
     bool force;
 
-    if (op->Kind != N64_OP_REG)
+    if (op->Kind == N64_OP_REG)
     {
-        return false;
+        size = op->Reg.Size;
+        rex = (size == N64_SZ64 ? N64_REX_W : 0U) | RegRexB(&op->Reg);
+        force = size == N64_SZ8 && op->Reg.NeedsRex;
+        N64EncRex(b, rex, force);
+        N64EncOpSize16(b, size);
+        N64BufByte(b, size == N64_SZ8 ? 0xF6 : 0xF7);
+        N64EncModRmRegReg(b, ext_index, &op->Reg);
+        return true;
     }
-    size = op->Reg.Size;
-    rex = (size == N64_SZ64 ? N64_REX_W : 0U) | RegRexB(&op->Reg);
-    force = size == N64_SZ8 && op->Reg.NeedsRex;
-    N64EncRex(b, rex, force);
-    N64BufByte(b, size == N64_SZ8 ? 0xF6 : 0xF7);
-    N64EncModRmRegReg(b, ext_index, &op->Reg);
-    return true;
+    if (op->Kind == N64_OP_MEM)
+    {
+        size = op->SizeHint != 0U ? op->SizeHint : N64_SZ32;
+        rex = (size == N64_SZ64 ? N64_REX_W : 0U) |
+              N64EncMemRexBits(&op->Mem, 0U);
+        N64EncRex(b, rex, false);
+        N64EncOpSize16(b, size);
+        N64BufByte(b, size == N64_SZ8 ? 0xF6 : 0xF7);
+        N64EncModRmMem(b, sink, reloc_base, &op->Mem, ext_index);
+        return true;
+    }
+    return false;
 }
 
 /* ------------------------------------------------------------------ */
 /* INC / DEC (FF /0, FF /1; FE for byte)                               */
 /* ------------------------------------------------------------------ */
 
-bool N64EncIncDec(N64Buf *b, const N64Operand *op, bool is_inc)
+bool N64EncIncDec(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
+                  const N64Operand *op, bool is_inc)
 {
     unsigned size;
     unsigned rex;
     bool force;
 
-    if (op->Kind != N64_OP_REG)
+    if (op->Kind == N64_OP_REG)
     {
-        return false;
+        size = op->Reg.Size;
+        rex = (size == N64_SZ64 ? N64_REX_W : 0U) | RegRexB(&op->Reg);
+        force = size == N64_SZ8 && op->Reg.NeedsRex;
+        N64EncRex(b, rex, force);
+        N64EncOpSize16(b, size);
+        N64BufByte(b, size == N64_SZ8 ? 0xFE : 0xFF);
+        N64EncModRmRegReg(b, is_inc ? 0 : 1, &op->Reg);
+        return true;
     }
-    size = op->Reg.Size;
-    rex = (size == N64_SZ64 ? N64_REX_W : 0U) | RegRexB(&op->Reg);
-    force = size == N64_SZ8 && op->Reg.NeedsRex;
-    N64EncRex(b, rex, force);
-    N64BufByte(b, size == N64_SZ8 ? 0xFE : 0xFF);
-    N64EncModRmRegReg(b, is_inc ? 0 : 1, &op->Reg);
-    return true;
+    if (op->Kind == N64_OP_MEM)
+    {
+        size = op->SizeHint != 0U ? op->SizeHint : N64_SZ32;
+        rex = (size == N64_SZ64 ? N64_REX_W : 0U) |
+              N64EncMemRexBits(&op->Mem, 0U);
+        N64EncRex(b, rex, false);
+        N64EncOpSize16(b, size);
+        N64BufByte(b, size == N64_SZ8 ? 0xFE : 0xFF);
+        N64EncModRmMem(b, sink, reloc_base, &op->Mem, is_inc ? 0 : 1);
+        return true;
+    }
+    return false;
 }
 
 /* ------------------------------------------------------------------ */
-/* shifts: SHL=/4 SHR=/5 SAR=/7                                        */
+/* shifts/rotates: SHL/ROL=/0 SHR=/1 RCL=/2 RCR=/3 ROL=/4 RCR...       */
+/* SHL=/4 SHR=/5 SAR=/7 (ROL=0 ROR=1 RCL=2 RCR=3)                      */
 /* ------------------------------------------------------------------ */
 
-bool N64EncShiftImm(N64Buf *b, uint8_t ext_index, const N64Operand *op,
+bool N64EncShiftImm(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
+                    uint8_t ext_index, const N64Operand *op,
                     uint64_t count)
 {
     unsigned size;
     unsigned rex;
     bool force;
 
-    if (op->Kind != N64_OP_REG)
+    if (op->Kind == N64_OP_REG)
     {
-        return false;
-    }
-    size = op->Reg.Size;
-    rex = (size == N64_SZ64 ? N64_REX_W : 0U) | RegRexB(&op->Reg);
-    force = size == N64_SZ8 && op->Reg.NeedsRex;
+        size = op->Reg.Size;
+        rex = (size == N64_SZ64 ? N64_REX_W : 0U) | RegRexB(&op->Reg);
+        force = size == N64_SZ8 && op->Reg.NeedsRex;
 
-    if (count == 1)
-    {
+        if (count == 1)
+        {
+            N64EncRex(b, rex, force);
+            N64EncOpSize16(b, size);
+            N64BufByte(b, size == N64_SZ8 ? 0xD0 : 0xD1);
+            N64EncModRmRegReg(b, ext_index, &op->Reg);
+            return true;
+        }
+        if (count > 63)
+        {
+            return false;
+        }
         N64EncRex(b, rex, force);
-        N64BufByte(b, size == N64_SZ8 ? 0xD0 : 0xD1);
+        N64EncOpSize16(b, size);
+        N64BufByte(b, size == N64_SZ8 ? 0xC0 : 0xC1);
         N64EncModRmRegReg(b, ext_index, &op->Reg);
+        N64BufByte(b, (uint8_t)count);
         return true;
     }
-    if (count > 63)
+
+    if (op->Kind == N64_OP_MEM)
     {
-        return false;
+        size = op->SizeHint != 0U ? op->SizeHint : N64_SZ32;
+        rex = (size == N64_SZ64 ? N64_REX_W : 0U) |
+              N64EncMemRexBits(&op->Mem, 0U);
+        force = false;
+        if (count == 1)
+        {
+            N64EncRex(b, rex, force);
+            N64EncOpSize16(b, size);
+            N64BufByte(b, size == N64_SZ8 ? 0xD0 : 0xD1);
+            N64EncModRmMem(b, sink, reloc_base, &op->Mem, ext_index);
+            return true;
+        }
+        if (count > 63)
+        {
+            return false;
+        }
+        N64EncRex(b, rex, force);
+        N64EncOpSize16(b, size);
+        N64BufByte(b, size == N64_SZ8 ? 0xC0 : 0xC1);
+        N64EncModRmMem(b, sink, reloc_base, &op->Mem, ext_index);
+        N64BufByte(b, (uint8_t)count);
+        return true;
     }
-    N64EncRex(b, rex, force);
-    N64BufByte(b, size == N64_SZ8 ? 0xC0 : 0xC1);
-    N64EncModRmRegReg(b, ext_index, &op->Reg);
-    N64BufByte(b, (uint8_t)count);
-    return true;
+
+    return false;
 }
 
-bool N64EncShiftCl(N64Buf *b, uint8_t ext_index, const N64Operand *op)
+bool N64EncShiftCl(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
+                   uint8_t ext_index, const N64Operand *op)
 {
     unsigned size;
     unsigned rex;
     bool force;
 
-    if (op->Kind != N64_OP_REG)
+    if (op->Kind == N64_OP_REG)
     {
-        return false;
+        size = op->Reg.Size;
+        rex = (size == N64_SZ64 ? N64_REX_W : 0U) | RegRexB(&op->Reg);
+        force = size == N64_SZ8 && op->Reg.NeedsRex;
+        N64EncRex(b, rex, force);
+        N64EncOpSize16(b, size);
+        N64BufByte(b, size == N64_SZ8 ? 0xD2 : 0xD3);
+        N64EncModRmRegReg(b, ext_index, &op->Reg);
+        return true;
     }
-    size = op->Reg.Size;
-    rex = (size == N64_SZ64 ? N64_REX_W : 0U) | RegRexB(&op->Reg);
-    force = size == N64_SZ8 && op->Reg.NeedsRex;
-    N64EncRex(b, rex, force);
-    N64BufByte(b, size == N64_SZ8 ? 0xD2 : 0xD3);
-    N64EncModRmRegReg(b, ext_index, &op->Reg);
-    return true;
+    if (op->Kind == N64_OP_MEM)
+    {
+        size = op->SizeHint != 0U ? op->SizeHint : N64_SZ32;
+        rex = (size == N64_SZ64 ? N64_REX_W : 0U) |
+              N64EncMemRexBits(&op->Mem, 0U);
+        N64EncRex(b, rex, false);
+        N64EncOpSize16(b, size);
+        N64BufByte(b, size == N64_SZ8 ? 0xD2 : 0xD3);
+        N64EncModRmMem(b, sink, reloc_base, &op->Mem, ext_index);
+        return true;
+    }
+    return false;
 }
 
-bool N64EncShift1(N64Buf *b, uint8_t ext_index, const N64Operand *op)
+bool N64EncShift1(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
+                  uint8_t ext_index, const N64Operand *op)
 {
-    return N64EncShiftImm(b, ext_index, op, 1);
+    return N64EncShiftImm(b, sink, reloc_base, ext_index, op, 1);
 }
 
 /* ------------------------------------------------------------------ */
@@ -910,6 +1028,272 @@ bool N64EncPopMem(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
     N64BufByte(b, 0x8F);
     N64EncModRmMem(b, sink, reloc_base, m, 0);
     return true;
+}
+
+bool N64EncPushMem(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
+                   const N64MemOp *m)
+{
+    N64EncRex(b, N64_REX_W | N64EncMemRexBits(m, 0U), false);
+    N64BufByte(b, 0xFF);
+    N64EncModRmMem(b, sink, reloc_base, m, 6); /* FF /6 */
+    return true;
+}
+
+/* ------------------------------------------------------------------ */
+/* XCHG: 86 (8-bit r/m,r) / 87 (16/32/64 r/m,r)                        */
+/* ------------------------------------------------------------------ */
+
+bool N64EncXchg(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
+                const N64Operand *op0, const N64Operand *op1)
+{
+    const N64MemOp *mem;
+    const N64Reg *r;
+    bool rev = false;
+    unsigned size;
+    unsigned rex;
+    bool force;
+
+    if (op0->Kind == N64_OP_REG && op1->Kind == N64_OP_REG)
+    {
+        size = op0->Reg.Size;
+        if (op1->Reg.Size != size)
+        {
+            return false;
+        }
+        rex = (size == N64_SZ64 ? N64_REX_W : 0U) |
+              RegRexB(&op0->Reg) | RegRexR(&op1->Reg);
+        force = size == N64_SZ8 &&
+                (op0->Reg.NeedsRex || op1->Reg.NeedsRex);
+        N64EncRex(b, rex, force);
+        N64EncOpSize16(b, size);
+        N64BufByte(b, size == N64_SZ8 ? 0x86 : 0x87);
+        N64EncModRmRegReg(b, (uint8_t)(op1->Reg.Index & 7U), &op0->Reg);
+        return true;
+    }
+    if (op0->Kind == N64_OP_REG && op1->Kind == N64_OP_MEM)
+    {
+        r = &op0->Reg;
+        mem = &op1->Mem;
+    }
+    else if (op0->Kind == N64_OP_MEM && op1->Kind == N64_OP_REG)
+    {
+        r = &op1->Reg;
+        mem = &op0->Mem;
+        rev = true;
+    }
+    else
+    {
+        return false;
+    }
+    size = r->Size;
+    if (size == N64_SZ64)
+    {
+        rex = N64_REX_W | RegRexR(r) | N64EncMemRexBits(mem, 0U);
+    }
+    else
+    {
+        rex = RegRexR(r) | N64EncMemRexBits(mem, size == N64_SZ8 ? 0U : 0U);
+    }
+    force = size == N64_SZ8 &&
+            (r->NeedsRex || mem->BaseIdx >= 8 || mem->IndexIdx >= 8);
+    N64EncRex(b, rex, force);
+    N64EncOpSize16(b, size);
+    N64BufByte(b, size == N64_SZ8 ? 0x86 : 0x87);
+    N64EncModRmMem(b, sink, reloc_base, mem, (uint8_t)(r->Index & 7U));
+    (void)rev; /* xchg is symmetric */
+    return true;
+}
+
+/* ------------------------------------------------------------------ */
+/* CMOVcc r, r/m: 0F 40+cc  (16/32/64)                                 */
+/* ------------------------------------------------------------------ */
+
+bool N64EncCmovcc(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
+                  uint8_t cc, const N64Operand *dst, const N64Operand *src)
+{
+    unsigned size;
+    unsigned rex;
+    bool force;
+    const N64Reg *r;
+
+    if (dst->Kind != N64_OP_REG || dst->Reg.Size == N64_SZ8)
+    {
+        return false;
+    }
+    r = &dst->Reg;
+    size = r->Size;
+
+    if (src->Kind == N64_OP_REG)
+    {
+        if (src->Reg.Size != size)
+        {
+            return false;
+        }
+        rex = (size == N64_SZ64 ? N64_REX_W : 0U) |
+              RegRexB(r) | RegRexR(&src->Reg);
+        force = false;
+        N64EncRex(b, rex, force);
+        N64EncOpSize16(b, size);
+        N64BufByte(b, 0x0F);
+        N64BufByte(b, (uint8_t)(0x40U + cc));
+        N64EncModRmRegReg(b, (uint8_t)(src->Reg.Index & 7U), r);
+        return true;
+    }
+    if (src->Kind == N64_OP_MEM)
+    {
+        rex = (size == N64_SZ64 ? N64_REX_W : 0U) |
+              RegRexB(r) | N64EncMemRexBits(&src->Mem, 0U);
+        N64EncRex(b, rex, false);
+        N64EncOpSize16(b, size);
+        N64BufByte(b, 0x0F);
+        N64BufByte(b, (uint8_t)(0x40U + cc));
+        N64EncModRmMem(b, sink, reloc_base, &src->Mem,
+                       (uint8_t)(r->Index & 7U));
+        return true;
+    }
+    return false;
+}
+
+/* ------------------------------------------------------------------ */
+/* BSF r, r/m (0F BC) / BSR r, r/m (0F BD)                             */
+/* ------------------------------------------------------------------ */
+
+bool N64EncBsfBsr(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
+                  bool is_bsf, const N64Operand *dst, const N64Operand *src)
+{
+    unsigned size;
+    unsigned rex;
+    const N64Reg *r;
+
+    if (dst->Kind != N64_OP_REG || dst->Reg.Size == N64_SZ8)
+    {
+        return false;
+    }
+    r = &dst->Reg;
+    size = r->Size;
+
+    if (src->Kind == N64_OP_REG)
+    {
+        if (src->Reg.Size != size)
+        {
+            return false;
+        }
+        rex = (size == N64_SZ64 ? N64_REX_W : 0U) |
+              RegRexB(r) | RegRexR(&src->Reg);
+        N64EncRex(b, rex, false);
+        N64EncOpSize16(b, size);
+        N64BufByte(b, 0x0F);
+        N64BufByte(b, is_bsf ? 0xBC : 0xBD);
+        N64EncModRmRegReg(b, (uint8_t)(src->Reg.Index & 7U), r);
+        return true;
+    }
+    if (src->Kind == N64_OP_MEM)
+    {
+        rex = (size == N64_SZ64 ? N64_REX_W : 0U) |
+              RegRexB(r) | N64EncMemRexBits(&src->Mem, 0U);
+        N64EncRex(b, rex, false);
+        N64EncOpSize16(b, size);
+        N64BufByte(b, 0x0F);
+        N64BufByte(b, is_bsf ? 0xBC : 0xBD);
+        N64EncModRmMem(b, sink, reloc_base, &src->Mem,
+                       (uint8_t)(r->Index & 7U));
+        return true;
+    }
+    return false;
+}
+
+/* ------------------------------------------------------------------ */
+/* BT family: BT=/0 BTS=/1 BTR=/2 BTC=/3                               */
+/*   r/m,r    : 0F A3/AB/B3/BB                                          */
+/*   r/m,imm8 : 0F BA /4..7 ib                                         */
+/* ------------------------------------------------------------------ */
+
+static const uint8_t N64BtRmOpcode[] = { 0xA3, 0xAB, 0xB3, 0xBB };
+
+bool N64EncBt(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
+              uint8_t ext_index, const N64Operand *dst, const N64Operand *src)
+{
+    unsigned size;
+    unsigned rex;
+    bool mem_dst;
+    const N64MemOp *m;
+    const N64Reg *r;
+
+    if (ext_index > 3)
+    {
+        return false;
+    }
+    if ((dst->Kind != N64_OP_REG && dst->Kind != N64_OP_MEM) ||
+        (dst->Kind == N64_OP_REG && dst->Reg.Size == N64_SZ8))
+    {
+        return false;
+    }
+    size = dst->Kind == N64_OP_REG ? dst->Reg.Size :
+           (dst->SizeHint != 0U ? dst->SizeHint : N64_SZ32);
+    mem_dst = (dst->Kind == N64_OP_MEM);
+    m = mem_dst ? &dst->Mem : NULL;
+    r = mem_dst ? NULL : &dst->Reg;
+
+    if (src->Kind == N64_OP_REG)
+    {
+        if (src->Reg.Size != size)
+        {
+            return false;
+        }
+        if (mem_dst)
+        {
+            rex = (size == N64_SZ64 ? N64_REX_W : 0U) |
+                  RegRexR(&src->Reg) | N64EncMemRexBits(m, 0U);
+            N64EncRex(b, rex, false);
+            N64EncOpSize16(b, size);
+            N64BufByte(b, 0x0F);
+            N64BufByte(b, N64BtRmOpcode[ext_index]);
+            N64EncModRmMem(b, sink, reloc_base, m,
+                           (uint8_t)(src->Reg.Index & 7U));
+        }
+        else
+        {
+            rex = (size == N64_SZ64 ? N64_REX_W : 0U) |
+                  RegRexB(r) | RegRexR(&src->Reg);
+            N64EncRex(b, rex, false);
+            N64EncOpSize16(b, size);
+            N64BufByte(b, 0x0F);
+            N64BufByte(b, N64BtRmOpcode[ext_index]);
+            N64EncModRmRegReg(b, (uint8_t)(src->Reg.Index & 7U), r);
+        }
+        return true;
+    }
+    if (src->Kind == N64_OP_IMM && src->Sym[0] == '\0')
+    {
+        uint64_t imm = src->Imm;
+        if (imm > 255)
+        {
+            return false;
+        }
+        if (mem_dst)
+        {
+            rex = (size == N64_SZ64 ? N64_REX_W : 0U) |
+                  N64EncMemRexBits(m, 0U);
+            N64EncRex(b, rex, false);
+            N64EncOpSize16(b, size);
+            N64BufByte(b, 0x0F);
+            N64BufByte(b, 0xBA);
+            N64EncModRmMem(b, sink, reloc_base, m, (uint8_t)(4U + ext_index));
+            N64BufByte(b, (uint8_t)imm);
+        }
+        else
+        {
+            rex = (size == N64_SZ64 ? N64_REX_W : 0U) | RegRexB(r);
+            N64EncRex(b, rex, false);
+            N64EncOpSize16(b, size);
+            N64BufByte(b, 0x0F);
+            N64BufByte(b, 0xBA);
+            N64EncModRmRegReg(b, (uint8_t)(4U + ext_index), r);
+            N64BufByte(b, (uint8_t)imm);
+        }
+        return true;
+    }
+    return false;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1025,22 +1409,36 @@ bool N64EncJcc(N64Buf *b, N64RelocSink *sink, uint32_t rel_base,
 /* SETcc                                                               */
 /* ------------------------------------------------------------------ */
 
-bool N64EncSetcc(N64Buf *b, uint8_t cc, const N64Operand *op)
+bool N64EncSetcc(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
+                 uint8_t cc, const N64Operand *op)
 {
     unsigned rex;
     bool force;
 
-    if (op->Kind != N64_OP_REG || op->Reg.Size != N64_SZ8)
+    if (op->Kind == N64_OP_REG)
     {
-        return false;
+        if (op->Reg.Size != N64_SZ8)
+        {
+            return false;
+        }
+        rex = RegRexB(&op->Reg);
+        force = op->Reg.NeedsRex;
+        N64EncRex(b, rex, force);
+        N64BufByte(b, 0x0F);
+        N64BufByte(b, (uint8_t)(0x90U + cc));
+        N64EncModRmRegReg(b, 0, &op->Reg);
+        return true;
     }
-    rex = RegRexB(&op->Reg);
-    force = op->Reg.NeedsRex;
-    N64EncRex(b, rex, force);
-    N64BufByte(b, 0x0F);
-    N64BufByte(b, (uint8_t)(0x90U + cc));
-    N64EncModRmRegReg(b, 0, &op->Reg);
-    return true;
+    if (op->Kind == N64_OP_MEM)
+    {
+        rex = N64EncMemRexBits(&op->Mem, 0U);
+        N64EncRex(b, rex, false);
+        N64BufByte(b, 0x0F);
+        N64BufByte(b, (uint8_t)(0x90U + cc));
+        N64EncModRmMem(b, sink, reloc_base, &op->Mem, 0);
+        return true;
+    }
+    return false;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1093,17 +1491,21 @@ bool N64EncMovx(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
 
     if (src->Kind == N64_OP_MEM)
     {
+        unsigned sw;
+        bool is16;
+        sw = src->SizeHint != 0U ? src->SizeHint : N64_SZ8;
+        is16 = (sw == N64_SZ16);
         rex |= N64EncMemRexBits(&src->Mem, 0U);
         N64EncRex(b, rex, dst->NeedsRex);
         if (is_signed)
         {
             N64BufByte(b, 0x0F);
-            N64BufByte(b, 0xBE);
+            N64BufByte(b, is16 ? 0xBF : 0xBE);
         }
         else
         {
             N64BufByte(b, 0x0F);
-            N64BufByte(b, 0xB6);
+            N64BufByte(b, is16 ? 0xB7 : 0xB6);
         }
         N64EncModRmMem(b, sink, reloc_base, &src->Mem,
                        (uint8_t)(dst->Index & 7U));
@@ -1127,6 +1529,7 @@ bool N64EncImulRR(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
         rex = (dst->Size == N64_SZ64 ? N64_REX_W : 0U) |
               RegRexR(dst) | RegRexB(&src->Reg);
         N64EncRex(b, rex, false);
+        N64EncOpSize16(b, dst->Size);
         N64BufByte(b, 0x0F);
         N64BufByte(b, 0xAF);
         N64EncModRmRegReg(b, (uint8_t)(dst->Index & 7U), &src->Reg);
@@ -1137,6 +1540,7 @@ bool N64EncImulRR(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
         rex = (dst->Size == N64_SZ64 ? N64_REX_W : 0U) |
               RegRexR(dst) | N64EncMemRexBits(&src->Mem, 0U);
         N64EncRex(b, rex, false);
+        N64EncOpSize16(b, dst->Size);
         N64BufByte(b, 0x0F);
         N64BufByte(b, 0xAF);
         N64EncModRmMem(b, sink, reloc_base, &src->Mem,
@@ -1160,6 +1564,7 @@ bool N64EncImulRRI(N64Buf *b, const N64Reg *dst, const N64Reg *src,
     if ((int64_t)imm >= -128 && (int64_t)imm <= 127)
     {
         N64EncRex(b, rex, false);
+        N64EncOpSize16(b, dst->Size);
         N64BufByte(b, 0x6B);
         N64EncModRmRegReg(b, (uint8_t)(src->Index & 7U), dst);
         N64BufByte(b, (uint8_t)(int8_t)imm);
@@ -1170,6 +1575,7 @@ bool N64EncImulRRI(N64Buf *b, const N64Reg *dst, const N64Reg *src,
         return false;
     }
     N64EncRex(b, rex, false);
+    N64EncOpSize16(b, dst->Size);
     N64BufByte(b, 0x69);
     N64EncModRmRegReg(b, (uint8_t)(src->Index & 7U), dst);
     N64BufU32(b, (uint32_t)imm);

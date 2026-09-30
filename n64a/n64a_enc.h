@@ -142,16 +142,40 @@ bool N64EncTestImm(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
                    const N64Operand *dst, uint64_t imm);
 
 /* unary group F6/F7: NOT(/2) NEG(/3) MUL(/4) IMUL(/5) DIV(/6) IDIV(/7) */
-bool N64EncUnaryGroup(N64Buf *b, uint8_t ext_index, const N64Operand *op);
+bool N64EncUnaryGroup(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
+                      uint8_t ext_index, const N64Operand *op);
 
 /* INC/DEC (FF /0, FF /1; FE for 8-bit)                                */
-bool N64EncIncDec(N64Buf *b, const N64Operand *op, bool is_inc);
+bool N64EncIncDec(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
+                  const N64Operand *op, bool is_inc);
 
-/* shifts: SHL(/4) SHR(/5) SAR(/7) by imm8 / by cl / by 1              */
-bool N64EncShiftImm(N64Buf *b, uint8_t ext_index, const N64Operand *op,
+/* shifts/rotates: SHL=/4 SHR=/5 SAR=/7 (also ROL=0 ROR=1 RCL=2 RCR=3) */
+bool N64EncShiftImm(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
+                    uint8_t ext_index, const N64Operand *op,
                     uint64_t count);
-bool N64EncShiftCl(N64Buf *b, uint8_t ext_index, const N64Operand *op);
-bool N64EncShift1(N64Buf *b, uint8_t ext_index, const N64Operand *op);
+bool N64EncShiftCl(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
+                   uint8_t ext_index, const N64Operand *op);
+bool N64EncShift1(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
+                  uint8_t ext_index, const N64Operand *op);
+
+/* XCHG r/m, r (86/87)                                                 */
+bool N64EncXchg(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
+                const N64Operand *op0, const N64Operand *op1);
+
+/* CMOVcc r, r/m (0F 40+cc)                                            */
+bool N64EncCmovcc(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
+                  uint8_t cc, const N64Operand *dst,
+                  const N64Operand *src);
+
+/* BSF/BSR r, r/m (0F BC / 0F BD)                                      */
+bool N64EncBsfBsr(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
+                  bool is_bsf, const N64Operand *dst,
+                  const N64Operand *src);
+
+/* BT family: BT=/0 BTS=/1 BTR=/2 BTC=/3  (r/m,r and r/m,imm8)         */
+bool N64EncBt(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
+              uint8_t ext_index, const N64Operand *dst,
+              const N64Operand *src);
 
 /* LEA r64, m                                                          */
 bool N64EncLea(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
@@ -161,6 +185,8 @@ bool N64EncLea(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
 bool N64EncPushReg(N64Buf *b, const N64Reg *r);
 bool N64EncPopReg(N64Buf *b, const N64Reg *r);
 bool N64EncPushImm(N64Buf *b, uint64_t imm);
+bool N64EncPushMem(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
+                   const N64MemOp *m);
 bool N64EncPopMem(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
                   const N64MemOp *m);
 
@@ -184,7 +210,8 @@ bool N64EncJcc(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
                uint64_t abs_target, bool has_abs);
 
 /* SETcc r/m8                                                          */
-bool N64EncSetcc(N64Buf *b, uint8_t cc, const N64Operand *op);
+bool N64EncSetcc(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,
+                 uint8_t cc, const N64Operand *op);
 
 /* MOVZX / MOVSX (dest register, src reg-or-mem)                        */
 bool N64EncMovx(N64Buf *b, N64RelocSink *sink, uint32_t reloc_base,

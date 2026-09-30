@@ -103,6 +103,42 @@ bool N64aAsmAddExtern(N64aAsm *a, const char *name)
     return true;
 }
 
+N64Const *N64aAsmFindConst(N64aAsm *a, const char *name)
+{
+    uint32_t i;
+    for (i = 0; i < a->ConstCount; i++)
+    {
+        if (N64aStrCmp(a->Consts[i].Name, name) == 0)
+        {
+            return &a->Consts[i];
+        }
+    }
+    return NULL;
+}
+
+bool N64aAsmDefineConst(N64aAsm *a, const char *name, uint64_t value)
+{
+    N64Const *c = N64aAsmFindConst(a, name);
+    if (c != NULL)
+    {
+        if (c->Value == value)
+        {
+            return true;
+        }
+        N64aDiagAt(a->Diag, 0xFFFFFFFFU, "duplicate constant", name);
+        return false;
+    }
+    if (a->ConstCount >= N64_MAX_CONSTS)
+    {
+        N64aDiagAt(a->Diag, 0xFFFFFFFFU, "too many constants", name);
+        return false;
+    }
+    c = &a->Consts[a->ConstCount++];
+    N64aStrNCpy(c->Name, name, sizeof(c->Name));
+    c->Value = value;
+    return true;
+}
+
 void N64aAsmAddFixup(N64aAsm *a, uint32_t offset, uint32_t type,
                      const char *name, int64_t addend, uint32_t section)
 {

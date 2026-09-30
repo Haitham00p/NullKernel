@@ -1164,16 +1164,9 @@ static void NccLexNumber(NccTok *t)
     g_lex_p = p;
     t->kind = TK_NUM;
     t->ival = v;
-    t->sval[0] = '\0';
-    if (is_unsigned)
-    {
-        t->sval[0] = 'u';
-    }
-    if (is_long)
-    {
-        t->sval[0] = 'l';
-    }
-    t->sval[1] = '\0';
+    t->sval[0] = is_unsigned ? 'u' : '\0';
+    t->sval[1] = is_long ? 'l' : '\0';
+    t->sval[2] = '\0';
 }
 
 static int NccCharEscape(const char **pp)
@@ -1236,6 +1229,35 @@ static void NccLexString(uint32_t *out_len)
     }
     g_lex_p = p;
     *out_len = n;
+}
+
+/* Concatenate a run of adjacent string literals.  The current token
+ * must be TK_STR (its bytes already in g_strbuf).  Consumes every
+ * following TK_STR token and leaves g_tok at the first token after
+ * the last string.  Returns the total byte length.                    */
+static void NccAdvance(void);
+static uint32_t NccGatherStrings(uint8_t *out, uint32_t cap)
+{
+    uint32_t total = 0;
+    for (;;)
+    {
+        uint32_t n = g_tok.str_len;
+        if (total + n > cap)
+        {
+            n = cap - total;
+        }
+        if (n > 0U)
+        {
+            memcpy(out + total, g_strbuf, n);
+        }
+        total += g_tok.str_len;
+        NccAdvance();
+        if (g_tok.kind != TK_STR)
+        {
+            break;
+        }
+    }
+    return total;
 }
 
 static void NccLexNext(NccTok *t)
@@ -1877,7 +1899,7 @@ static void NccEmitTrunc(NccType *t)
     }
 }
 
-static void NccEmitBinop(int op, bool w64)
+static void NccEmitBinop(int op, bool w64, bool is_signed)
 {
     if (w64)
     {
@@ -1905,7 +1927,8 @@ static void NccEmitBinop(int op, bool w64)
             {
                 NccTextByte(0x48);
             }
-            NccTextByte(0xD3); NccTextByte(0xE8);
+            NccTextByte(0xD3);
+            NccTextByte(is_signed ? 0xF8 : 0xE8);
             break;
         default:
             break;
@@ -3024,8 +3047,9 @@ static uint64_t NccConstPrimary(void)
         }
         case TK_STR:
         {
-            uint64_t v = NccMakeString(g_strbuf, g_tok.str_len);
-            NccAdvance();
+            uint8_t sbuf[NCC_MAX_STR];
+            uint32_t slen = NccGatherStrings(sbuf, NCC_MAX_STR);
+            uint64_t v = NccMakeString(sbuf, slen);
             return v;
         }
         case TK_IDENT:
@@ -3163,17 +3187,19 @@ static void NccParseGlobalDecl(NccDeclSpec *ds, const char *name, NccType *t)
         {
             if (g_tok.kind == TK_STR)
             {
-                uint32_t n = g_tok.str_len + 1U;
+                uint8_t sbuf[NCC_MAX_STR];
+                uint32_t slen = NccGatherStrings(sbuf, NCC_MAX_STR);
+                uint32_t n = slen + 1U; /* str + trailing NUL */
                 if (t->arr_len <= 0)
                 {
                     v->type = NccArrType(t->elem, (int)n);
                 }
-                else if ((uint32_t)t->arr_len < n)
+                uint32_t w = n;
+                if (t->arr_len > 0 && (uint32_t)t->arr_len < n)
                 {
-                    n = (uint32_t)t->arr_len;
+                    w = (uint32_t)t->arr_len;   /* exact-fit array */
                 }
-                NccDataWrite(v->addr, g_strbuf, n - 1U);
-                NccAdvance();
+                NccDataWrite(v->addr, sbuf, w);
             }
             else
             {
@@ -3333,7 +3359,7 @@ static void NccParsePostfix(void)
                 {
                     NccEmitMovRcxImm64(1);
                 }
-                NccEmitBinop(inc ? TK_PLUS : TK_MINUS, NccTypeIs64(t));
+                NccEmitBinop(inc ? TK_PLUS : TK_MINUS, NccTypeIs64(t), false);
                 NccEmitPop(1);
                 NccEmitStoreRaxToRcxPtr(t);
                 NccEmitPop(1);
@@ -3359,7 +3385,7 @@ static void NccParsePrimary(void)
     {
         case TK_NUM:
         {
-            bool is_long = g_tok.sval[0] == 'l' || g_tok.ival > 0xFFFFFFFFULL;
+            bool is_long = g_tok.sval[1] == 'l' || g_tok.ival > 0xFFFFFFFFULL;
             bool is_unsigned = g_tok.sval[0] == 'u';
             NccEmitMovRaxImm(g_tok.ival, is_long);
             if (is_long)
@@ -3383,13 +3409,16 @@ static void NccParsePrimary(void)
             NccAdvance();
             return;
         case TK_STR:
-            NccMakeString(g_strbuf, g_tok.str_len);
+        {
+            uint8_t sbuf[NCC_MAX_STR];
+            uint32_t slen = NccGatherStrings(sbuf, NCC_MAX_STR);
+            NccMakeString(sbuf, slen);
             NccRefAbs(g_str_name);
             g_last_type = NccPtrType(&g_ty_char);
             g_last_expr_is_addr = false;
             g_last_is_func = false;
-            NccAdvance();
             return;
+        }
         case TK_IDENT:
         {
             const char *name = g_tok.sval;
@@ -3634,7 +3663,7 @@ static void NccParseUnary(int mode)
             {
                 NccEmitMovRcxImm64(1);
             }
-            NccEmitBinop(inc ? TK_PLUS : TK_MINUS, NccTypeIs64(t));
+            NccEmitBinop(inc ? TK_PLUS : TK_MINUS, NccTypeIs64(t), false);
             NccEmitPop(1);
             NccEmitStoreRaxToRcxPtr(t);
             g_last_expr_is_addr = false;
@@ -3731,7 +3760,7 @@ static void NccParseMul(int mode)
         }
         if (op == TK_STAR)
         {
-            NccEmitBinop(TK_STAR, w64);
+            NccEmitBinop(TK_STAR, w64, false);
         }
         else
         {
@@ -3784,7 +3813,7 @@ static void NccParseAdd(int mode)
             }
             NccEmitImulRaxImm32((uint32_t)t2->elem->size);
         }
-        NccEmitBinop(op, w64);
+        NccEmitBinop(op, w64, false);
         g_last_type = ptr1 ? t1 : (ptr2 ? t2 : t1);
         g_last_expr_is_addr = false;
     }
@@ -3809,7 +3838,7 @@ static void NccParseShift(int mode)
         bool w64 = NccTypeIs64(t1) || NccTypeIs64(t2);
         NccEmitMovRaxToRcx();
         NccEmitPop(0);
-        NccEmitBinop(op, w64);
+        NccEmitBinop(op, w64, NccTypeIsUnsigned(t1) == false);
         g_last_type = t1;
         g_last_expr_is_addr = false;
     }
@@ -3881,7 +3910,7 @@ static void NccParseBitAnd(int mode)
         NccType *t2 = g_last_type;
         NccEmitMovRaxToRcx();
         NccEmitPop(0);
-        NccEmitBinop(TK_AMP, NccTypeIs64(t1) || NccTypeIs64(t2));
+        NccEmitBinop(TK_AMP, NccTypeIs64(t1) || NccTypeIs64(t2), false);
         g_last_type = t1;
         g_last_expr_is_addr = false;
     }
@@ -3904,7 +3933,7 @@ static void NccParseBitXor(int mode)
         NccType *t2 = g_last_type;
         NccEmitMovRaxToRcx();
         NccEmitPop(0);
-        NccEmitBinop(TK_CARET, NccTypeIs64(t1) || NccTypeIs64(t2));
+        NccEmitBinop(TK_CARET, NccTypeIs64(t1) || NccTypeIs64(t2), false);
         g_last_type = t1;
         g_last_expr_is_addr = false;
     }
@@ -3927,7 +3956,7 @@ static void NccParseBitOr(int mode)
         NccType *t2 = g_last_type;
         NccEmitMovRaxToRcx();
         NccEmitPop(0);
-        NccEmitBinop(TK_PIPE, NccTypeIs64(t1) || NccTypeIs64(t2));
+        NccEmitBinop(TK_PIPE, NccTypeIs64(t1) || NccTypeIs64(t2), false);
         g_last_type = t1;
         g_last_expr_is_addr = false;
     }
@@ -4082,7 +4111,7 @@ static void NccParseAssign(int mode)
         {
             NccEmitImulRcxImm32((uint32_t)t->elem->size);
         }
-        NccEmitBinop(NccBinopOfAssignOp(op), NccTypeIs64(t));
+        NccEmitBinop(NccBinopOfAssignOp(op), NccTypeIs64(t), NccTypeIsUnsigned(t) == false);
         NccEmitPop(1);
         NccEmitStoreRaxToRcxPtr(t);
     }
@@ -4134,7 +4163,8 @@ static void NccParseLocalDecl(bool expect_semi)
             {
                 if (g_tok.kind == TK_STR)
                 {
-                    uint32_t len = g_tok.str_len;
+                    uint8_t sbuf[NCC_MAX_STR];
+                    uint32_t len = NccGatherStrings(sbuf, NCC_MAX_STR);
                     if (t->arr_len <= 0)
                     {
                         NccType *nt = NccArrType(t->elem, (int)len + 1);
@@ -4144,7 +4174,7 @@ static void NccParseLocalDecl(bool expect_semi)
                         }
                         t = nt;
                     }
-                    NccMakeString(g_strbuf, len);
+                    NccMakeString(sbuf, len);
                     NccRefAbsToReg(6, g_str_name);
                     NccEmitLeaToReg(7, v != NULL ? v->offset : 0);
                     uint32_t copy_len = len + 1U;
@@ -4155,7 +4185,6 @@ static void NccParseLocalDecl(bool expect_semi)
                     NccTextByte(0x48); NccTextByte(0xC7); NccTextByte(0xC1);
                     NccTextU32(copy_len);
                     NccTextByte(0xF3); NccTextByte(0xA4);
-                    NccAdvance();
                     g_last_expr_is_addr = false;
                 }
                 else

@@ -61,11 +61,334 @@ typedef struct
 } N64Expr;
 
 /* forward decl for parenthesised numeric subexpressions */
-static bool ParseExpr(N64Lex *lx, N64Expr *e);
+static bool ParseExpr(N64Lex *lx, N64aAsm *a, N64Expr *e);
+
+/* 'equ' constants, plus the special pseudo-symbols '$' (current offset)
+ * and '$$' (section start, always 0 here).  Returns false when Name is
+ * neither a constant nor one of the pseudo-symbols.                     */
+static bool ConstLookup(N64aAsm *a, const char *name, uint64_t *out)
+{
+    N64Const *c;
+    if (N64aStrCmp(name, "$") == 0)
+    {
+        *out = a->Section == N64_SEC_TEXT ? a->Text.Size : a->Data.Size;
+        return true;
+    }
+    if (N64aStrCmp(name, "$$") == 0)
+    {
+        *out = 0;
+        return true;
+    }
+    c = N64aAsmFindConst(a, name);
+    if (c != NULL)
+    {
+        *out = c->Value;
+        return true;
+    }
+    return false;
+}
+
+/* Constant-only subexpressions for 'equ'/'times'/'align'/'resX'.
+ *
+ *   expr    := bitor
+ *   bitor   := bitxor { '|' bitxor }
+ *   bitxor  := bitand { '^' bitand }
+ *   bitand  := shift  { '&' shift }
+ *   shift   := add    { ('<<' | '>>') add }
+ *   add     := mul    { ('+' | '-') mul }
+ *   mul     := unary  { ('*' | '/' | '%') unary }
+ *   unary   := ('+' | '-' | '~' | '!') unary | primary
+ *   primary := NUMBER | CHAR | IDENT(const/'$'/'$$') | '(' expr ')'
+ *
+ * Symbols are NOT allowed (i.e. no forward references to labels).  */
+static bool ParseConstExpr(N64Lex *lx, N64aAsm *a, uint64_t *out);
+
+static bool ParseConstPrimary(N64Lex *lx, N64aAsm *a, uint64_t *out)
+{
+    if (lx->Cur.Kind == N64_T_NUMBER || lx->Cur.Kind == N64_T_CHAR)
+    {
+        *out = lx->Cur.Num;
+        N64LexAdvance(lx);
+        return true;
+    }
+    if (lx->Cur.Kind == N64_T_IDENT)
+    {
+        if (ConstLookup(a, lx->Cur.Text, out))
+        {
+            N64LexAdvance(lx);
+            return true;
+        }
+        ParseError(lx, &lx->Cur,
+                   "expression is not constant (no forward references)",
+                   lx->Cur.Text);
+        return false;
+    }
+    if (lx->Cur.Kind == N64_T_LPAREN)
+    {
+        N64LexAdvance(lx);
+        if (!ParseConstExpr(lx, a, out))
+        {
+            return false;
+        }
+        if (lx->Cur.Kind != N64_T_RPAREN)
+        {
+            ParseError(lx, &lx->Cur, "expected ')'", NULL);
+            return false;
+        }
+        N64LexAdvance(lx);
+        return true;
+    }
+    ParseError(lx, &lx->Cur, "expected constant term", NULL);
+    return false;
+}
+
+static bool ParseConstUnary(N64Lex *lx, N64aAsm *a, uint64_t *out)
+{
+    if (lx->Cur.Kind == N64_T_MINUS)
+    {
+        N64LexAdvance(lx);
+        if (!ParseConstUnary(lx, a, out))
+        {
+            return false;
+        }
+        *out = (uint64_t)(-(int64_t)*out);
+        return true;
+    }
+    if (lx->Cur.Kind == N64_T_PLUS)
+    {
+        N64LexAdvance(lx);
+        return ParseConstUnary(lx, a, out);
+    }
+    if (lx->Cur.Kind == N64_T_TILDE)
+    {
+        N64LexAdvance(lx);
+        if (!ParseConstUnary(lx, a, out))
+        {
+            return false;
+        }
+        *out = ~(*out);
+        return true;
+    }
+    if (lx->Cur.Kind == N64_T_BANG)
+    {
+        N64LexAdvance(lx);
+        if (!ParseConstUnary(lx, a, out))
+        {
+            return false;
+        }
+        *out = (*out == 0U) ? 1U : 0U;
+        return true;
+    }
+    return ParseConstPrimary(lx, a, out);
+}
+
+static bool ParseConstMul(N64Lex *lx, N64aAsm *a, uint64_t *out)
+{
+    uint64_t lhs;
+    if (!ParseConstUnary(lx, a, &lhs))
+    {
+        return false;
+    }
+    for (;;)
+    {
+        if (lx->Cur.Kind == N64_T_STAR)
+        {
+            uint64_t rhs;
+            N64LexAdvance(lx);
+            if (!ParseConstUnary(lx, a, &rhs))
+            {
+                return false;
+            }
+            lhs *= rhs;
+        }
+        else if (lx->Cur.Kind == N64_T_SLASH)
+        {
+            uint64_t rhs;
+            N64LexAdvance(lx);
+            if (!ParseConstUnary(lx, a, &rhs))
+            {
+                return false;
+            }
+            if (rhs == 0U)
+            {
+                ParseError(lx, &lx->Cur, "division by zero", NULL);
+                return false;
+            }
+            lhs /= rhs;
+        }
+        else if (lx->Cur.Kind == N64_T_PERCENT)
+        {
+            uint64_t rhs;
+            N64LexAdvance(lx);
+            if (!ParseConstUnary(lx, a, &rhs))
+            {
+                return false;
+            }
+            if (rhs == 0U)
+            {
+                ParseError(lx, &lx->Cur, "division by zero", NULL);
+                return false;
+            }
+            lhs %= rhs;
+        }
+        else
+        {
+            break;
+        }
+    }
+    *out = lhs;
+    return true;
+}
+
+static bool ParseConstAdd(N64Lex *lx, N64aAsm *a, uint64_t *out)
+{
+    uint64_t lhs;
+    if (!ParseConstMul(lx, a, &lhs))
+    {
+        return false;
+    }
+    for (;;)
+    {
+        if (lx->Cur.Kind == N64_T_PLUS)
+        {
+            uint64_t rhs;
+            N64LexAdvance(lx);
+            if (!ParseConstMul(lx, a, &rhs))
+            {
+                return false;
+            }
+            lhs += rhs;
+        }
+        else if (lx->Cur.Kind == N64_T_MINUS)
+        {
+            uint64_t rhs;
+            N64LexAdvance(lx);
+            if (!ParseConstMul(lx, a, &rhs))
+            {
+                return false;
+            }
+            lhs -= rhs;
+        }
+        else
+        {
+            break;
+        }
+    }
+    *out = lhs;
+    return true;
+}
+
+static bool ParseConstShift(N64Lex *lx, N64aAsm *a, uint64_t *out)
+{
+    uint64_t lhs;
+    if (!ParseConstAdd(lx, a, &lhs))
+    {
+        return false;
+    }
+    for (;;)
+    {
+        if (lx->Cur.Kind == N64_T_LT && N64LexPeekIs(lx, N64_T_LT))
+        {
+            uint64_t rhs;
+            N64LexAdvance(lx);
+            N64LexAdvance(lx);
+            if (!ParseConstAdd(lx, a, &rhs))
+            {
+                return false;
+            }
+            lhs <<= (rhs & 63U);
+        }
+        else if (lx->Cur.Kind == N64_T_GT && N64LexPeekIs(lx, N64_T_GT))
+        {
+            uint64_t rhs;
+            N64LexAdvance(lx);
+            N64LexAdvance(lx);
+            if (!ParseConstAdd(lx, a, &rhs))
+            {
+                return false;
+            }
+            lhs >>= (rhs & 63U);
+        }
+        else
+        {
+            break;
+        }
+    }
+    *out = lhs;
+    return true;
+}
+
+static bool ParseConstBitAnd(N64Lex *lx, N64aAsm *a, uint64_t *out)
+{
+    uint64_t lhs;
+    if (!ParseConstShift(lx, a, &lhs))
+    {
+        return false;
+    }
+    while (lx->Cur.Kind == N64_T_AMP)
+    {
+        uint64_t rhs;
+        N64LexAdvance(lx);
+        if (!ParseConstShift(lx, a, &rhs))
+        {
+            return false;
+        }
+        lhs &= rhs;
+    }
+    *out = lhs;
+    return true;
+}
+
+static bool ParseConstBitXor(N64Lex *lx, N64aAsm *a, uint64_t *out)
+{
+    uint64_t lhs;
+    if (!ParseConstBitAnd(lx, a, &lhs))
+    {
+        return false;
+    }
+    while (lx->Cur.Kind == N64_T_CARET)
+    {
+        uint64_t rhs;
+        N64LexAdvance(lx);
+        if (!ParseConstBitAnd(lx, a, &rhs))
+        {
+            return false;
+        }
+        lhs ^= rhs;
+    }
+    *out = lhs;
+    return true;
+}
+
+static bool ParseConstBitOr(N64Lex *lx, N64aAsm *a, uint64_t *out)
+{
+    uint64_t lhs;
+    if (!ParseConstBitXor(lx, a, &lhs))
+    {
+        return false;
+    }
+    while (lx->Cur.Kind == N64_T_PIPE)
+    {
+        uint64_t rhs;
+        N64LexAdvance(lx);
+        if (!ParseConstBitXor(lx, a, &rhs))
+        {
+            return false;
+        }
+        lhs |= rhs;
+    }
+    *out = lhs;
+    return true;
+}
+
+static bool ParseConstExpr(N64Lex *lx, N64aAsm *a, uint64_t *out)
+{
+    return ParseConstBitOr(lx, a, out);
+}
 
 /* Parses one primary term with optional leading sign already applied by
  * the caller.  After the term, folds any trailing +/- NUMBER chains.   */
-static bool ParseTermInto(N64Lex *lx, int64_t sign, N64Expr *e)
+static bool ParseTermInto(N64Lex *lx, N64aAsm *a, int64_t sign, N64Expr *e)
 {
     e->HasSym = false;
     e->Sym[0] = '\0';
@@ -79,24 +402,33 @@ static bool ParseTermInto(N64Lex *lx, int64_t sign, N64Expr *e)
     }
     else if (lx->Cur.Kind == N64_T_IDENT)
     {
+        uint64_t k;
         N64Reg reg;
-        if (N64RegFind(lx->Cur.Text, &reg))
+        if (ConstLookup(a, lx->Cur.Text, &k))
+        {
+            e->Value = k;
+            N64LexAdvance(lx);
+        }
+        else if (N64RegFind(lx->Cur.Text, &reg))
         {
             ParseError(lx, &lx->Cur,
                        "register not allowed in this expression",
                        lx->Cur.Text);
             return false;
         }
-        e->HasSym = true;
-        N64aStrNCpy(e->Sym, lx->Cur.Text, sizeof(e->Sym));
-        e->Addend = 0;
-        N64LexAdvance(lx);
+        else
+        {
+            e->HasSym = true;
+            N64aStrNCpy(e->Sym, lx->Cur.Text, sizeof(e->Sym));
+            e->Addend = 0;
+            N64LexAdvance(lx);
+        }
     }
     else if (lx->Cur.Kind == N64_T_LPAREN)
     {
         N64Expr inner;
         N64LexAdvance(lx);
-        if (!ParseExpr(lx, &inner))
+        if (!ParseExpr(lx, a, &inner))
         {
             return false;
         }
@@ -151,7 +483,7 @@ static bool ParseTermInto(N64Lex *lx, int64_t sign, N64Expr *e)
     return true;
 }
 
-static bool ParseExpr(N64Lex *lx, N64Expr *e)
+static bool ParseExpr(N64Lex *lx, N64aAsm *a, N64Expr *e)
 {
     int64_t sign = 1;
 
@@ -164,7 +496,7 @@ static bool ParseExpr(N64Lex *lx, N64Expr *e)
     {
         N64LexAdvance(lx);
     }
-    return ParseTermInto(lx, sign, e);
+    return ParseTermInto(lx, a, sign, e);
 }
 
 /* ------------------------------------------------------------------ */
@@ -178,7 +510,7 @@ static void OperandInit(N64Operand *o)
     o->SizeHint = 0;
 }
 
-static bool ParseMemOp(N64Lex *lx, N64Operand *o)
+static bool ParseMemOp(N64Lex *lx, N64aAsm *a, N64Operand *o)
 {
     N64MemOp *m = &o->Mem;
     int64_t sign = 1;
@@ -262,6 +594,18 @@ static bool ParseMemOp(N64Lex *lx, N64Operand *o)
                 continue;
             }
 
+            /* constant ('$'/'$$'/equ) component of the address */
+            {
+                uint64_t kv;
+                if (ConstLookup(a, lx->Cur.Text, &kv))
+                {
+                    m->Disp += (int64_t)kv * sign;
+                    N64LexAdvance(lx);
+                    sign = 1;
+                    continue;
+                }
+            }
+
             /* symbol component of the address */
             if (m->Sym[0] != '\0')
             {
@@ -316,7 +660,7 @@ static bool ParseMemOp(N64Lex *lx, N64Operand *o)
     return true;
 }
 
-static bool ParseOperand(N64Lex *lx, N64Operand *o)
+static bool ParseOperand(N64Lex *lx, N64aAsm *a, N64Operand *o)
 {
     unsigned hint = 0;
 
@@ -343,7 +687,7 @@ static bool ParseOperand(N64Lex *lx, N64Operand *o)
     if (lx->Cur.Kind == N64_T_LBRACK)
     {
         o->SizeHint = hint;
-        return ParseMemOp(lx, o);
+        return ParseMemOp(lx, a, o);
     }
 
     if (hint != 0U)
@@ -355,7 +699,15 @@ static bool ParseOperand(N64Lex *lx, N64Operand *o)
 
     if (lx->Cur.Kind == N64_T_IDENT)
     {
+        uint64_t kv;
         N64Reg reg;
+        if (ConstLookup(a, lx->Cur.Text, &kv))
+        {
+            o->Kind = N64_OP_IMM;
+            o->Imm = kv;
+            N64LexAdvance(lx);
+            return true;
+        }
         if (N64RegFind(lx->Cur.Text, &reg))
         {
             o->Kind = N64_OP_REG;
@@ -394,8 +746,8 @@ static bool ParseOperand(N64Lex *lx, N64Operand *o)
     return false;
 }
 
-static bool ParseOperands(N64Lex *lx, N64Operand *ops, unsigned max,
-                          unsigned *count)
+static bool ParseOperands(N64Lex *lx, N64aAsm *a, N64Operand *ops,
+                          unsigned max, unsigned *count)
 {
     *count = 0;
     if (AtEol(lx))
@@ -409,7 +761,7 @@ static bool ParseOperands(N64Lex *lx, N64Operand *ops, unsigned max,
             ParseError(lx, &lx->Cur, "too many operands", NULL);
             return false;
         }
-        if (!ParseOperand(lx, &ops[*count]))
+        if (!ParseOperand(lx, a, &ops[*count]))
         {
             return false;
         }
@@ -482,11 +834,12 @@ static bool AluLookup(const char *name, uint8_t *ext)
 typedef struct
 {
     const char *Name;
-    uint8_t     Ext;   /* SHL=4 SHR=5 SAR=7 (SAL==SHL)                  */
+    uint8_t     Ext;   /* SHL=4 SHR=5 SAR=7 (SAL==SHL), rotates ROL=0 ROR=1 RCL=2 RCR=3 */
 } N64ShiftEntry;
 
 static const N64ShiftEntry N64ShiftTable[] =
 {
+    { "rol", 0 }, { "ror", 1 }, { "rcl", 2 }, { "rcr", 3 },
     { "shl", 4 }, { "sal", 4 }, { "shr", 5 }, { "sar", 7 }
 };
 
@@ -507,6 +860,44 @@ static bool ShiftLookup(const char *name, uint8_t *ext)
     return false;
 }
 
+/* true for mnemonics that begin with a conditional-cc suffix            */
+static bool IsCondccMnemonic(const char *mn)
+{
+    return (mn[0] == 'j' && mn[1] != '\0' && N64CondFind(&mn[1], NULL)) ||
+           (mn[0] == 's' && mn[1] == 'e' && mn[2] == 't' &&
+            mn[3] != '\0' && N64CondFind(&mn[3], NULL)) ||
+           (mn[0] == 'c' && mn[1] == 'm' && mn[2] == 'o' &&
+            mn[3] == 'v' && N64CondFind(&mn[4], NULL));
+}
+
+/* whole instruction-mnemonic set (used to disambiguate colon-less
+   labels such as 'mov db 5' vs 'mov byte [mem], imm')                  */
+static bool IsInstructionMnemonic(const char *name)
+{
+    static const char *const Mn[] = {
+        "add", "adc", "and", "bsf", "bsr", "bt", "btc", "btr", "bts",
+        "call", "cdq", "cdqe", "cli", "cmp", "cqo", "cwde", "dec", "div",
+        "hlt", "idiv", "imul", "inc", "jmp", "lea", "leave", "mov",
+        "movabs", "movsx", "movzx", "mul", "neg", "nop", "not", "or",
+        "pop", "push", "ret", "rol", "ror", "rcl", "rcr", "sal", "sar",
+        "sbb", "shl", "shr", "sti", "sub", "syscall", "test", "xchg",
+        "xor"
+    };
+    unsigned i;
+    if (IsCondccMnemonic(name))
+    {
+        return true;
+    }
+    for (i = 0; i < (unsigned)(sizeof(Mn) / sizeof(Mn[0])); i++)
+    {
+        if (N64aStrCmp(Mn[i], name) == 0)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 /* ------------------------------------------------------------------ */
 /* instruction emitters (parser level)                                 */
 /* ------------------------------------------------------------------ */
@@ -519,7 +910,7 @@ static bool EmitArith(N64aAsm *a, N64Lex *lx, uint8_t ext, uint32_t line)
     unsigned n;
     uint8_t op_base = (uint8_t)(ext << 3); /* 00/08/10/... group base */
 
-    if (!ParseOperands(lx, ops, 2, &n) || n != 2)
+    if (!ParseOperands(lx, a, ops, 2, &n) || n != 2)
     {
         ParseError(lx, &lx->Cur, "arithmetic needs two operands", NULL);
         return false;
@@ -567,7 +958,7 @@ static bool EmitMov(N64aAsm *a, N64Lex *lx, uint32_t line)
     N64Operand ops[2];
     unsigned n;
 
-    if (!ParseOperands(lx, ops, 2, &n) || n != 2)
+    if (!ParseOperands(lx, a, ops, 2, &n) || n != 2)
     {
         N64aDiagAt(a->Diag, line, "mov needs two operands", NULL);
         return false;
@@ -629,7 +1020,7 @@ static bool EmitMovabs(N64aAsm *a, N64Lex *lx, uint32_t line)
     N64Operand ops[2];
     unsigned n;
 
-    if (!ParseOperands(lx, ops, 2, &n) || n != 2 ||
+    if (!ParseOperands(lx, a, ops, 2, &n) || n != 2 ||
         ops[0].Kind != N64_OP_REG || ops[0].Reg.Size != N64_SZ64)
     {
         N64aDiagAt(a->Diag, line,
@@ -652,7 +1043,7 @@ static bool EmitTest(N64aAsm *a, N64Lex *lx, uint32_t line)
     N64Operand ops[2];
     unsigned n;
 
-    if (!ParseOperands(lx, ops, 2, &n) || n != 2)
+    if (!ParseOperands(lx, a, ops, 2, &n) || n != 2)
     {
         N64aDiagAt(a->Diag, line, "test needs two operands", NULL);
         return false;
@@ -679,7 +1070,7 @@ static bool EmitLea(N64aAsm *a, N64Lex *lx, uint32_t line)
     N64Operand ops[2];
     unsigned n;
 
-    if (!ParseOperands(lx, ops, 2, &n) || n != 2 ||
+    if (!ParseOperands(lx, a, ops, 2, &n) || n != 2 ||
         ops[0].Kind != N64_OP_REG ||
         (ops[0].Reg.Size != N64_SZ64 &&
          ops[0].Reg.Size != N64_SZ32) ||
@@ -695,10 +1086,12 @@ static bool EmitLea(N64aAsm *a, N64Lex *lx, uint32_t line)
 static bool EmitUnaryOp(N64aAsm *a, const N64Operand *op, uint8_t ext,
                         uint32_t line)
 {
-    if (!N64EncUnaryGroup(&a->Text, ext, op))
+    N64RelocSink sink;
+    SinkInit(&sink, a);
+    if (!N64EncUnaryGroup(&a->Text, &sink, 0, ext, op))
     {
         N64aDiagAt(a->Diag, line, "unary instruction",
-                   "requires a register operand");
+                   "requires a register or memory operand");
         return false;
     }
     return true;
@@ -710,7 +1103,7 @@ static bool EmitUnary(N64aAsm *a, N64Lex *lx, uint8_t ext, const char *mn,
     N64Operand ops[1];
     unsigned n;
 
-    if (!ParseOperands(lx, ops, 1, &n) || n != 1)
+    if (!ParseOperands(lx, a, ops, 1, &n) || n != 1)
     {
         N64aDiagAt(a->Diag, line, mn, "requires one operand");
         return false;
@@ -722,13 +1115,15 @@ static bool EmitIncDec(N64aAsm *a, N64Lex *lx, bool is_inc, uint32_t line)
 {
     N64Operand ops[1];
     unsigned n;
+    N64RelocSink sink;
+    SinkInit(&sink, a);
 
-    if (!ParseOperands(lx, ops, 1, &n) || n != 1 ||
-        !N64EncIncDec(&a->Text, &ops[0], is_inc))
+    if (!ParseOperands(lx, a, ops, 1, &n) || n != 1 ||
+        !N64EncIncDec(&a->Text, &sink, 0, &ops[0], is_inc))
     {
         N64aDiagAt(a->Diag, line,
                    is_inc ? "inc" : "dec",
-                   "requires a register operand");
+                   "requires a register or memory operand");
         return false;
     }
     return true;
@@ -738,22 +1133,24 @@ static bool EmitShift(N64aAsm *a, N64Lex *lx, uint8_t ext, uint32_t line)
 {
     N64Operand ops[2];
     unsigned n;
+    N64RelocSink sink;
+    SinkInit(&sink, a);
 
-    if (!ParseOperands(lx, ops, 2, &n) || n != 2 ||
-        ops[0].Kind != N64_OP_REG)
+    if (!ParseOperands(lx, a, ops, 2, &n) || n != 2 ||
+        (ops[0].Kind != N64_OP_REG && ops[0].Kind != N64_OP_MEM))
     {
-        N64aDiagAt(a->Diag, line, "shift requires register destination",
-                   NULL);
+        N64aDiagAt(a->Diag, line,
+                   "shift requires register or memory destination", NULL);
         return false;
     }
     if (ops[1].Kind == N64_OP_REG && ops[1].Reg.Index == 1 &&
         ops[1].Reg.Size == N64_SZ8)
     {
-        return N64EncShiftCl(&a->Text, ext, &ops[0]);
+        return N64EncShiftCl(&a->Text, &sink, 0, ext, &ops[0]);
     }
     if (ops[1].Kind == N64_OP_IMM && ops[1].Sym[0] == '\0')
     {
-        if (N64EncShiftImm(&a->Text, ext, &ops[0], ops[1].Imm))
+        if (N64EncShiftImm(&a->Text, &sink, 0, ext, &ops[0], ops[1].Imm))
         {
             return true;
         }
@@ -767,10 +1164,12 @@ static bool EmitShift(N64aAsm *a, N64Lex *lx, uint8_t ext, uint32_t line)
 
 static bool EmitPush(N64aAsm *a, N64Lex *lx, uint32_t line)
 {
+    N64RelocSink sink;
+    SinkInit(&sink, a);
     N64Operand ops[1];
     unsigned n;
 
-    if (!ParseOperands(lx, ops, 1, &n) || n != 1)
+    if (!ParseOperands(lx, a, ops, 1, &n) || n != 1)
     {
         N64aDiagAt(a->Diag, line, "push needs an operand", NULL);
         return false;
@@ -793,6 +1192,15 @@ static bool EmitPush(N64aAsm *a, N64Lex *lx, uint32_t line)
         N64aDiagAt(a->Diag, line, "push immediate too large", NULL);
         return false;
     }
+    if (ops[0].Kind == N64_OP_MEM)
+    {
+        if (N64EncPushMem(&a->Text, &sink, 0, &ops[0].Mem))
+        {
+            return true;
+        }
+        N64aDiagAt(a->Diag, line, "push memory unsupported", NULL);
+        return false;
+    }
     N64aDiagAt(a->Diag, line,
                "unsupported push operand (use movabs + push reg)", NULL);
     return false;
@@ -805,7 +1213,7 @@ static bool EmitPop(N64aAsm *a, N64Lex *lx, uint32_t line)
     N64Operand ops[1];
     unsigned n;
 
-    if (!ParseOperands(lx, ops, 1, &n) || n != 1)
+    if (!ParseOperands(lx, a, ops, 1, &n) || n != 1)
     {
         N64aDiagAt(a->Diag, line, "pop needs an operand", NULL);
         return false;
@@ -920,7 +1328,7 @@ static bool EmitCall(N64aAsm *a, N64Lex *lx, uint32_t line)
     N64Operand ops[1];
     unsigned n;
 
-    if (!ParseOperands(lx, ops, 1, &n) || n != 1)
+    if (!ParseOperands(lx, a, ops, 1, &n) || n != 1)
     {
         N64aDiagAt(a->Diag, line, "call needs an operand", NULL);
         return false;
@@ -960,7 +1368,7 @@ static bool EmitJmp(N64aAsm *a, N64Lex *lx, uint32_t line)
     N64Operand ops[1];
     unsigned n;
 
-    if (!ParseOperands(lx, ops, 1, &n) || n != 1)
+    if (!ParseOperands(lx, a, ops, 1, &n) || n != 1)
     {
         N64aDiagAt(a->Diag, line, "jmp needs an operand", NULL);
         return false;
@@ -998,7 +1406,7 @@ static bool EmitJcc(N64aAsm *a, N64Lex *lx, uint8_t cc, uint32_t line)
     N64Operand ops[1];
     unsigned n;
 
-    if (!ParseOperands(lx, ops, 1, &n) || n != 1 ||
+    if (!ParseOperands(lx, a, ops, 1, &n) || n != 1 ||
         ops[0].Kind != N64_OP_IMM)
     {
         N64aDiagAt(a->Diag, line,
@@ -1013,18 +1421,21 @@ static bool EmitSetcc(N64aAsm *a, N64Lex *lx, uint8_t cc, uint32_t line)
 {
     N64Operand ops[1];
     unsigned n;
+    N64RelocSink sink;
+    SinkInit(&sink, a);
 
-    if (!ParseOperands(lx, ops, 1, &n) || n != 1)
+    if (!ParseOperands(lx, a, ops, 1, &n) || n != 1)
     {
         N64aDiagAt(a->Diag, line, "setcc needs an operand", NULL);
         return false;
     }
-    if (N64EncSetcc(&a->Text, cc, &ops[0]))
+    if (N64EncSetcc(&a->Text, &sink, 0, cc, &ops[0]))
     {
         return true;
     }
     N64aDiagAt(a->Diag, line,
-               "setcc requires an 8-bit register destination", NULL);
+               "setcc requires an 8-bit register or memory destination",
+               NULL);
     return false;
 }
 
@@ -1035,7 +1446,7 @@ static bool EmitMovx(N64aAsm *a, N64Lex *lx, bool is_signed, uint32_t line)
     N64Operand ops[2];
     unsigned n;
 
-    if (!ParseOperands(lx, ops, 2, &n) || n != 2 ||
+    if (!ParseOperands(lx, a, ops, 2, &n) || n != 2 ||
         ops[0].Kind != N64_OP_REG)
     {
         N64aDiagAt(a->Diag, line, is_signed ? "movsx" : "movzx",
@@ -1075,9 +1486,50 @@ static bool EmitDataExpr(N64aAsm *a, N64Lex *lx, unsigned size,
                     case 'n': c = '\n'; break;
                     case 't': c = '\t'; break;
                     case 'r': c = '\r'; break;
+                    case 'a': c = '\a'; break;
+                    case 'b': c = '\b'; break;
+                    case 'f': c = '\f'; break;
+                    case 'v': c = '\v'; break;
                     case '0': c = '\0'; break;
                     case '\\': c = '\\'; break;
                     case '"': c = '"'; break;
+                    case '\'': c = '\''; break;
+                    case 'x':
+                    {
+                        unsigned int hv = 0;
+                        unsigned int n = 0;
+                        while (i + 1U < lx->Cur.StrLen && n < 2)
+                        {
+                            char h = p[i + 1U];
+                            uint64_t v;
+                            if (h >= '0' && h <= '9') v = (uint64_t)(h - '0');
+                            else if (h >= 'a' && h <= 'f')
+                                v = (uint64_t)(h - 'a' + 10);
+                            else if (h >= 'A' && h <= 'F')
+                                v = (uint64_t)(h - 'A' + 10);
+                            else break;
+                            hv = (hv << 4) | (unsigned int)v;
+                            i++;
+                            n++;
+                        }
+                        c = (char)hv;
+                        break;
+                    }
+                    case 'o':
+                    {
+                        unsigned int ov = 0;
+                        unsigned int n = 0;
+                        while (i + 1U < lx->Cur.StrLen && n < 3)
+                        {
+                            char h = p[i + 1U];
+                            if (h < '0' || h > '7') break;
+                            ov = (ov << 3) | (unsigned int)(h - '0');
+                            i++;
+                            n++;
+                        }
+                        c = (char)ov;
+                        break;
+                    }
                     default: c = e; break;
                 }
             }
@@ -1087,9 +1539,14 @@ static bool EmitDataExpr(N64aAsm *a, N64Lex *lx, unsigned size,
         return true;
     }
 
+    /* numeric / expression item: if it is a bare symbol (not an equ), use
+     * the symbolic path so that 'dd label' emits a relocation.  Anything
+     * else goes through the full constant-expression grammar.            */
+    if (lx->Cur.Kind == N64_T_IDENT && lx->Cur.Text[0] != '$' &&
+        N64aAsmFindConst(a, lx->Cur.Text) == NULL)
     {
         N64Expr e;
-        if (!ParseExpr(lx, &e))
+        if (!ParseExpr(lx, a, &e))
         {
             return false;
         }
@@ -1118,6 +1575,21 @@ static bool EmitDataExpr(N64aAsm *a, N64Lex *lx, unsigned size,
             case N64_SZ16: N64BufU16(&a->Data, (uint16_t)e.Value);  break;
             case N64_SZ32: N64BufU32(&a->Data, (uint32_t)e.Value);  break;
             default:       N64BufU64(&a->Data, e.Value);            break;
+        }
+        return true;
+    }
+    {
+        uint64_t v;
+        if (!ParseConstExpr(lx, a, &v))
+        {
+            return false;
+        }
+        switch (size)
+        {
+            case N64_SZ8:  N64BufByte(&a->Data, (uint8_t)v);  break;
+            case N64_SZ16: N64BufU16(&a->Data, (uint16_t)v);  break;
+            case N64_SZ32: N64BufU32(&a->Data, (uint32_t)v);  break;
+            default:       N64BufU64(&a->Data, v);            break;
         }
     }
     return true;
@@ -1159,13 +1631,15 @@ static bool EmitRes(N64aAsm *a, N64Lex *lx, unsigned size,
     uint64_t count;
     uint64_t i;
 
-    if (AtEol(lx) || lx->Cur.Kind != N64_T_NUMBER)
+    if (AtEol(lx))
     {
         N64aDiagAt(a->Diag, line, "resX requires a count", NULL);
         return false;
     }
-    count = lx->Cur.Num;
-    N64LexAdvance(lx);
+    if (!ParseConstExpr(lx, a, &count))
+    {
+        return false;
+    }
     for (i = 0; i < count; i++)
     {
         switch (size)
@@ -1320,7 +1794,7 @@ static bool EmitInstruction(N64aAsm *a, N64Lex *lx, const char *raw_mn,
     {
         N64Operand ops[3];
         unsigned n;
-        if (!ParseOperands(lx, ops, 3, &n))
+        if (!ParseOperands(lx, a, ops, 3, &n))
         {
             return false;
         }
@@ -1328,7 +1802,7 @@ static bool EmitInstruction(N64aAsm *a, N64Lex *lx, const char *raw_mn,
         {
             return EmitUnaryOp(a, &ops[0], 5, line);   /* F7 /5 */
         }
-        if (n == 2)
+        if (n == 2 && ops[0].Kind == N64_OP_REG)
         {
             if (N64EncImulRR(&a->Text, &sink, 0, &ops[0].Reg, &ops[1]))
             {
@@ -1358,13 +1832,77 @@ static bool EmitInstruction(N64aAsm *a, N64Lex *lx, const char *raw_mn,
     if (N64aStrCmp(mn, "movzx") == 0)  return EmitMovx(a, lx, false, line);
     if (N64aStrCmp(mn, "movsx") == 0)  return EmitMovx(a, lx, true, line);
 
+    if (N64aStrCmp(mn, "xchg") == 0)
+    {
+        N64Operand ops[2];
+        unsigned n;
+        if (!ParseOperands(lx, a, ops, 2, &n) || n != 2 ||
+            !N64EncXchg(&a->Text, &sink, 0, &ops[0], &ops[1]))
+        {
+            N64aDiagAt(a->Diag, line,
+                       "xchg requires two same-sized operands "
+                       "(reg/reg or reg/mem)", NULL);
+            return false;
+        }
+        return true;
+    }
+
+    if (N64aStrCmp(mn, "bsf") == 0 || N64aStrCmp(mn, "bsr") == 0)
+    {
+        N64Operand ops[2];
+        unsigned n;
+        if (!ParseOperands(lx, a, ops, 2, &n) || n != 2 ||
+            !N64EncBsfBsr(&a->Text, &sink, 0, mn[2] == 'f',
+                          &ops[0], &ops[1]))
+        {
+            N64aDiagAt(a->Diag, line, mn,
+                       "requires 'dst reg, src reg/mem' of equal size");
+            return false;
+        }
+        return true;
+    }
+
+    if (N64aStrCmp(mn, "bt") == 0 || N64aStrCmp(mn, "bts") == 0 ||
+        N64aStrCmp(mn, "btr") == 0 || N64aStrCmp(mn, "btc") == 0)
+    {
+        N64Operand ops[2];
+        unsigned n;
+        uint8_t x = mn[2] == 't' ? 0U :
+                    mn[2] == 's' ? 1U :
+                    mn[2] == 'r' ? 2U : 3U;
+        if (!ParseOperands(lx, a, ops, 2, &n) || n != 2 ||
+            !N64EncBt(&a->Text, &sink, 0, x, &ops[0], &ops[1]))
+        {
+            N64aDiagAt(a->Diag, line, mn,
+                       "requires 'r/m, r' or 'r/m, imm' (bit index)");
+            return false;
+        }
+        return true;
+    }
+
+    /* cmov<cc> dst reg, src r/m */
+    if (mn[0] == 'c' && mn[1] == 'm' && mn[2] == 'o' && mn[3] == 'v' &&
+        N64CondFind(&mn[4], &cc))
+    {
+        N64Operand ops[2];
+        unsigned n;
+        if (!ParseOperands(lx, a, ops, 2, &n) || n != 2 ||
+            !N64EncCmovcc(&a->Text, &sink, 0, cc, &ops[0], &ops[1]))
+        {
+            N64aDiagAt(a->Diag, line, mn,
+                       "requires 'dst reg, src reg/mem' (not 8-bit)");
+            return false;
+        }
+        return true;
+    }
+
     if (N64aStrCmp(mn, "ret") == 0)
     {
         N64Operand ops[1];
         unsigned n = 0;
         if (!AtEol(lx))
         {
-            if (!ParseOperands(lx, ops, 1, &n))
+            if (!ParseOperands(lx, a, ops, 1, &n))
             {
                 return false;
             }
@@ -1413,20 +1951,192 @@ static bool EmitInstruction(N64aAsm *a, N64Lex *lx, const char *raw_mn,
 /* statement / line loop                                               */
 /* ------------------------------------------------------------------ */
 
+static bool ParseStatement(N64Lex *lx, N64aAsm *a);
+
+/* true for keywords that may legally follow a colon-less label         */
+static bool IsDataMnemonic(const char *name)
+{
+    char l[16];
+    LowerCopy(l, name);
+    return N64aStrCmp(l, "db") == 0 || N64aStrCmp(l, "byte") == 0 ||
+           N64aStrCmp(l, "dw") == 0 || N64aStrCmp(l, "word") == 0 ||
+           N64aStrCmp(l, "dd") == 0 || N64aStrCmp(l, "dq") == 0 ||
+           N64aStrCmp(l, "resb") == 0 || N64aStrCmp(l, "resw") == 0 ||
+           N64aStrCmp(l, "resd") == 0 || N64aStrCmp(l, "resq") == 0 ||
+           N64aStrCmp(l, "times") == 0 || N64aStrCmp(l, "equ") == 0 ||
+           N64aStrCmp(l, "align") == 0 || N64aStrCmp(l, "alignb") == 0;
+}
+
+/* 'times <count> <statement>' — replays the remainder of the line by
+ * rewinding the lexer and re-parsing the statement <count> times.       */
+static bool EmitTimes(N64Lex *lx, N64aAsm *a, uint32_t line)
+{
+    uint64_t stmt_pos;
+    uint32_t stmt_line;
+    uint64_t count;
+    uint64_t i;
+
+    N64LexAdvance(lx); /* consume 'times' */
+    if (!ParseConstExpr(lx, a, &count))
+    {
+        return false;
+    }
+    if (AtEol(lx))
+    {
+        N64aDiagAt(a->Diag, line, "'times' needs a statement to repeat",
+                   NULL);
+        return false;
+    }
+    if (count > 100000000U)
+    {
+        N64aDiagAt(a->Diag, line, "times count too large", NULL);
+        return false;
+    }
+    stmt_pos = lx->Cur.Start; /* start of the first statement token    */
+    stmt_line = lx->Cur.Line;
+
+    for (i = 0; i < count; i++)
+    {
+        lx->Pos = stmt_pos;
+        lx->Line = stmt_line;
+        lx->CurValid = false;
+        lx->PeekValid = false;
+        if (!N64LexAdvance(lx))            /* Cur = first stmt token */
+        {
+            return false;
+        }
+        if (!ParseStatement(lx, a))        /* Cur = EOL on success */
+        {
+            return false;
+        }
+        if (!AtEol(lx))
+        {
+            lx->CurValid = false;
+            lx->PeekValid = false;
+        }
+    }
+    if (count == 0U)
+    {
+        while (!AtEol(lx))
+        {
+            N64LexAdvance(lx);
+        }
+    }
+    return !a->Diag->Failed;
+}
+
+/* 'align N [, db fill]' — pads the current section to a multiple of N. */
+static bool EmitAlign(N64Lex *lx, N64aAsm *a, uint32_t line)
+{
+    uint64_t n;
+    uint64_t fill;
+    uint64_t off;
+    uint64_t pad;
+    uint64_t i;
+    N64Buf *buf;
+
+    N64LexAdvance(lx); /* consume 'align' */
+    if (!ParseConstExpr(lx, a, &n) || n == 0U || (n & (n - 1U)) != 0U)
+    {
+        N64aDiagAt(a->Diag, line, "align needs a nonzero power of two",
+                   NULL);
+        return false;
+    }
+    fill = a->Section == N64_SEC_TEXT ? 0x90U : 0x00U;
+    if (lx->Cur.Kind == N64_T_COMMA)
+    {
+        N64LexAdvance(lx);
+        if (lx->Cur.Kind == N64_T_IDENT &&
+            (N64aStrCmp(lx->Cur.Text, "db") == 0 ||
+             N64aStrCmp(lx->Cur.Text, "byte") == 0))
+        {
+            N64LexAdvance(lx);
+        }
+        if (lx->Cur.Kind != N64_T_NUMBER && lx->Cur.Kind != N64_T_CHAR)
+        {
+            ParseError(lx, &lx->Cur, "align fill expects a byte value",
+                       NULL);
+            return false;
+        }
+        fill = lx->Cur.Num & 0xFFU;
+        N64LexAdvance(lx);
+    }
+    if (!AtEol(lx))
+    {
+        ParseError(lx, &lx->Cur, "unexpected token after align", NULL);
+        return false;
+    }
+    buf = a->Section == N64_SEC_TEXT ? &a->Text : &a->Data;
+    off = buf->Size;
+    pad = (n - (off % n)) % n;
+    for (i = 0; i < pad; i++)
+    {
+        N64BufByte(buf, (uint8_t)fill);
+    }
+    return true;
+}
+
 static bool ParseStatement(N64Lex *lx, N64aAsm *a)
 {
     uint32_t line = lx->Cur.Line;
 
     if (lx->Cur.Kind == N64_T_IDENT)
     {
-        /* label definition? */
-        if (N64LexPeekIs(lx, N64_T_COLON))
+        /* 'name equ <const-expr>' — detected by peeking the next token */
+        if (N64LexPeekIs(lx, N64_T_IDENT))
+        {
+            char peek_lower[16];
+            LowerCopy(peek_lower, lx->Peek.Text);
+            if (N64aStrCmp(peek_lower, "equ") == 0)
+            {
+            char name[64];
+            uint64_t val;
+            N64aStrNCpy(name, lx->Cur.Text, sizeof(name));
+            N64LexAdvance(lx); /* name */
+            N64LexAdvance(lx); /* equ */
+            if (!ParseConstExpr(lx, a, &val))
+            {
+                return false;
+            }
+            if (!AtEol(lx))
+            {
+                ParseError(lx, &lx->Cur, "unexpected token after equ",
+                           NULL);
+                return false;
+            }
+            {
+                N64Sym *cs = N64aAsmFindSym(a, name);
+                if (cs != NULL && (cs->Kind != 0U || cs->IsGlobal))
+                {
+                    N64aDiagAt(a->Diag, line,
+                               "constant name collides with a symbol",
+                               name);
+                    return false;
+                }
+            }
+            return N64aAsmDefineConst(a, name, val);
+            }
+        }
+
+        /* label definition: 'name:' or NASM-style 'name db ...'
+           (skip when the token is itself an instruction mnemonic so
+           that 'mov byte [mem], imm' is not read as label 'mov')     */
+        if (N64LexPeekIs(lx, N64_T_COLON) ||
+            (N64LexPeekIs(lx, N64_T_IDENT) &&
+             IsDataMnemonic(lx->Peek.Text) &&
+             !IsInstructionMnemonic(lx->Cur.Text)))
         {
             uint32_t kind;
             uint32_t section = a->Section == N64_SEC_TEXT ?
                                N64_SEC_TEXT : N64_SEC_DATA;
             kind = a->Section == N64_SEC_TEXT ? N64O_SYM_FUNC :
                                                 N64O_SYM_DATA;
+            if (N64aAsmFindConst(a, lx->Cur.Text) != NULL)
+            {
+                N64aDiagAt(a->Diag, line,
+                           "label collides with a constant", lx->Cur.Text);
+                return false;
+            }
             if (!N64aAsmDefineSym(a, lx->Cur.Text, kind, section,
                                   a->Section == N64_SEC_TEXT ?
                                   a->Text.Size : a->Data.Size))
@@ -1434,7 +2144,10 @@ static bool ParseStatement(N64Lex *lx, N64aAsm *a)
                 return false;
             }
             N64LexAdvance(lx); /* ident */
-            N64LexAdvance(lx); /* colon */
+            if (lx->Cur.Kind == N64_T_COLON)
+            {
+                N64LexAdvance(lx); /* colon */
+            }
             if (AtEol(lx))
             {
                 return !a->Diag->Failed;
@@ -1451,6 +2164,17 @@ static bool ParseStatement(N64Lex *lx, N64aAsm *a)
     {
         char lower[40];
         LowerCopy(lower, lx->Cur.Text);
+
+        if (N64aStrCmp(lower, "times") == 0)
+        {
+            return EmitTimes(lx, a, line);
+        }
+
+        if (N64aStrCmp(lower, "align") == 0 ||
+            N64aStrCmp(lower, "alignb") == 0)
+        {
+            return EmitAlign(lx, a, line);
+        }
 
         if (N64aStrCmp(lower, "bits") == 0)
         {
@@ -1534,7 +2258,8 @@ static bool ParseStatement(N64Lex *lx, N64aAsm *a)
         if (N64aStrCmp(lower, "equ") == 0)
         {
             N64aDiagAt(a->Diag, line,
-                       "'equ' is not supported yet", NULL);
+                       "'equ' must be written as 'name equ expression'",
+                       NULL);
             return false;
         }
 

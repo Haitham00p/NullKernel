@@ -64,6 +64,13 @@ void DispatcherDispatch(const PARSED_COMMAND *Command){
         
         CmdEdit(Command->Args[0]); return;
     }
+    if (strcmp(Command->Command, "n64a") == 0) { CmdN64a(Command); return; }
+    if (strcmp(Command->Command, "ncc") == 0) { CmdNcc(Command); return; }
+    if (strcmp(Command->Command, "nld") == 0) { CmdNld(Command); return; }
+    if (strcmp(Command->Command, "cp") == 0) {
+        if (Command->ArgCount != 2U) { TerminalPrintLine32("Usage: cp <source> <dest>", 0x00FF0000); return; }
+        CmdCp(Command->Args[0], Command->Args[1]); return;
+    }
     if (strcmp(Command->Command, "about") == 0){
         CmdAbout();
         return;
