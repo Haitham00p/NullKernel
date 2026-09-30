@@ -221,6 +221,7 @@ void kernel_main(NullBootInfo *BootInfo)
      * Network initialization is deliberately disabled during boot.
      * Enable interrupts only after all synchronous boot/shell state is ready.
      */
+    PICUnmaskIRQ(IRQ_TIMER);
     __asm__ volatile("sti");
     TerminalPrintLine32("InterruptSys online", 0xFFFFFFFF);
 
