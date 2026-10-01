@@ -1,170 +1,235 @@
 # NullOS Custom License v1.0
 
-Copyright (c) 2026 Haitham Sailm
+**Copyright © 2026 Haitham Sailm**
 
-This license applies to NullOS, NullKernel, and code distributed as part of the NullOS project that is identified as being covered by this license.
+This license applies to **NullOS**, **NullKernel**, and code distributed as part of the NullOS project that is identified as being covered by this license.
 
-## 1. Permission
+---
 
-You may use, study, modify, and develop the covered code.
+## 1. Permissions
 
-Private modifications that are not published or distributed do not require publication of their source code or attribution under this license.
+You may:
 
-You are free to take ideas, concepts, designs, or general techniques from NullOS without becoming subject to this license solely because you used an idea.
+- use, study, modify, and develop the covered code;
+- create private modifications without publishing their source;
+- use ideas, concepts, designs, algorithms, and general techniques from NullOS independently.
+
+Private modifications that are not published or distributed do not require source publication or attribution under this license.
+
+---
 
 ## 2. Derived Versions
 
-A derived version is a work that incorporates a substantial amount of code from NullOS or NullKernel.
+A **Derived Version** is a work that incorporates a substantial amount of code from NullOS or NullKernel.
 
-If you publish or distribute a derived version:
+If you publish or distribute a Derived Version:
 
-1. You must provide the complete corresponding source code for the version you distribute.
-2. Source code must be made available in a clear and reasonably accessible way, such as a public repository or source archive.
-3. All code included in the published derived version must have its source available.
-4. You must preserve the original copyright and attribution notices applicable to the NullOS code.
-5. You must clearly state that the work is derived from NullOS/NullKernel. The following statement is sufficient:
+1. You must provide the complete corresponding source code for the version being distributed.
+2. The source must be available in a clear and reasonably accessible manner, such as a public repository or source archive.
+3. All code included in the published Derived Version must have its source available.
+4. Original NullOS/NullKernel copyright and attribution notices must be preserved.
+5. The Derived Version must clearly state that it is derived from NullOS/NullKernel.
 
-   Based From NullKernel Repo
+The following statement is sufficient:
 
-6. A modified original file may additionally identify the person who modified it, for example:
+> **Based From NullKernel Repo**
 
-   Modified by [person]
-   Derived from NullOS by Haitham
+### Modified Original Files
 
-7. A new file genuinely written from scratch may carry the contributor's own copyright and attribution.
-8. Deleting an original NullOS file and reproducing substantially the same code in a new file does not remove the attribution or source obligations. The obligations follow the origin of the code, not the filename.
-9. Retaining the original Git history is optional.
-10. You are not required to publish a changelog or describe every change you made.
+A modified original NullOS file may identify its modifier, for example:
 
-A derived project may be developed, organized, branded, and presented as its own project, provided that it does not falsely claim to be the official NullOS project.
+> Modified by [person]  
+> Derived from NullOS by Haitham
 
-## 3. Official Status
+### New Files
 
-A derived version must not be represented as the official version of NullOS or as an officially affiliated project.
+A genuinely new file written from scratch may carry the contributor's own copyright and attribution.
 
-The name and logo of NullOS may be used when identifying or describing a derived version, provided that the derived version is not presented as the official NullOS project.
+Deleting an original NullOS file and recreating substantially the same code under another filename does **not** remove the source or attribution requirements. These requirements follow the **origin of the code**, not its filename.
+
+Preserving the original Git history is optional.
+
+You are not required to publish a changelog or describe every change made to the Derived Version.
+
+---
+
+## 3. Independent Development and Official Status
+
+A Derived Version may be developed, organized, branded, and presented as its own project.
+
+However, it must not falsely claim to be:
+
+- the official NullOS project; or
+- officially affiliated with the original NullOS project.
+
+The name and logo of NullOS may be used to identify or describe a Derived Version, provided it is not presented as the official project.
+
+If all NullOS-covered code is genuinely replaced with independently written code, the resulting project becomes independent of NullOS and no longer needs to retain NullOS attribution solely because it originated from NullOS.
+
+The license follows **covered code**, not the historical identity of a project.
+
+---
 
 ## 4. No Sale of NullOS or Derived Software
 
-NullOS and derived versions may not be sold as software.
+**NullOS and Derived Versions may not be sold as software.**
 
-You may not charge a separate, direct, indirect, hidden, bundled, subscription-based, or otherwise disguised software price for NullOS or a derived version.
+You may not charge a separate, direct, indirect, hidden, bundled, subscription-based, or otherwise disguised software price for NullOS or a Derived Version.
+
+---
 
 ## 5. Hardware Distribution
 
-A physical device containing NullOS may be sold when the payment is for the physical hardware rather than for the software.
+A physical device containing NullOS may be sold **only when the payment is for the physical hardware and not for the software**.
 
-The stated price of the device must correspond to the actual hardware value. A difference of up to 10% above or below the hardware purchase price is permitted.
+The stated price must correspond to the actual hardware value. A difference of up to **10% above or below the hardware purchase price** is permitted.
 
-The software must not be separately priced or represented as a paid component of the device.
+The software must not:
 
-If NullOS is modified to operate with the hardware, those modifications are covered by this license and must be provided as source code when the device and modified software are distributed.
+- be separately priced;
+- be listed as a paid component;
+- be assigned a hidden software value; or
+- be used to artificially increase the hardware price.
 
-A minor or hidden compatibility modification is still a modification; it may not be represented as though no modification was made.
+### Hardware Compatibility Modifications
 
-If the software is distributed without any NullOS modification, there is no new modified NullOS source to publish under this section.
+If NullOS is modified to operate with specific hardware, those modifications are covered by this license and must be provided as source code when the modified software is distributed with the device.
+
+A small or hidden compatibility modification is still a modification and may not be represented as though no modification was made.
+
+If NullOS is distributed without modification, there is no new modified NullOS source to publish under this section.
+
+---
 
 ## 6. No Advertisements
 
-Advertisements are strictly prohibited in NullOS and in every derived version.
+**Advertisements are strictly prohibited.**
 
-This prohibition includes, without limitation:
+This prohibition applies to NullOS and every Derived Version, regardless of the amount or significance of modifications.
+
+Prohibited advertising includes, without limitation:
 
 - advertisements during boot;
 - advertisements in the desktop or user interface;
 - advertisements in the shell or terminal;
-- pop-ups or banners;
-- sponsored applications or sponsored content;
+- pop-ups;
+- banners;
+- sponsored applications;
+- sponsored content;
 - forced advertisements;
 - hidden advertisements; and
 - advertisements presented through any other part of the operating system.
 
-This prohibition applies regardless of the amount or significance of modifications made to the derived version.
+---
 
 ## 7. Donations
 
-Donations are not a sale of NullOS.
+Donations are **not considered a sale of NullOS**.
 
-A distributor of an unchanged NullOS version or a version containing only minor or trivial modifications may not solicit donations as compensation for that distribution.
+A distributor may not solicit donations as compensation for distributing:
 
-Donations may be requested when the distributor has made genuinely substantial development work, such as a new subsystem, major architectural work, or similarly significant improvements.
+- an unchanged NullOS version; or
+- a version containing only minor or trivial modifications.
 
-Donations must always be:
+Donations may be requested when the distributor has performed **genuinely substantial development work**, such as:
+
+- creating a new subsystem;
+- performing major architectural work;
+- making major improvements; or
+- performing similarly significant development.
+
+All donations must be:
 
 - voluntary;
 - optional;
-- not required to obtain or use the software;
+- unrelated to access or permission to use the software;
 - not presented as a purchase price; and
-- requested without coercion, guilt, harassment, repeated pressure, or manipulative solicitation.
+- requested without coercion, guilt, harassment, repeated pressure, or manipulation.
 
-The intended donation range is approximately US$5 to US$60.
+The intended donation range is approximately **US$5–US$60**.
+
+---
 
 ## 8. Support
 
 The original NullOS project may provide a support contact, including an email address in the repository.
 
-A distributor of a derived version may not turn distribution of the derived NullOS software into a paid support or service charge.
-
-## 9. Additional Restrictions
-
-A distributor of a derived version may not add additional restrictions or contractual conditions that limit the rights granted to users under this license.
-
-A derived version may be developed as an independent project, but it remains subject to the conditions of this license for any NullOS code that remains in it.
-
-## 10. Ideas and Complete Replacement
-
-Ideas, concepts, algorithms, designs, and general techniques learned from NullOS may be independently implemented without this license applying to the independently written implementation.
-
-If all NullOS code has been genuinely replaced with independently written code, the resulting project is independent of NullOS and no longer needs to retain the NullOS attribution solely because it originated as a NullOS-derived project.
-
-The license follows covered code, not the historical identity of a project.
-
-## 11. Harmful Use
-
-Use or distribution of a derived version for harmful or unlawful purposes is prohibited.
-
-If a distributed derived version is being used or distributed in a harmful manner in violation of this license, the distributor must remove or correct the harmful derived version.
-
-Continued distribution or promotion of a harmful derived version after notice may constitute a license violation subject to the enforcement provisions below.
-
-## 12. Compliance Period
-
-If a distributor violates this license, the copyright holder may provide notice of the violation.
-
-The distributor has three (3) calendar days from receiving notice to correct the violation.
-
-If the violation is corrected within the three-day period, the license remains in effect and the distributor may continue using, developing, and distributing the version in compliance with this license.
-
-If the violation is not corrected within the three-day period, the permission granted by this license to the violating distributor terminates.
-
-After termination, the distributor must remove the violating distributed version and cease further distribution of NullOS-covered code.
-
-If the distributor refuses to remove the violating version and continues distributing it, the copyright holder may pursue available legal remedies.
-
-## 13. No Obligation to Continue Development
-
-A distributor of a derived version has no obligation to continue developing, maintaining, or supporting that version after publication.
-
-## 14. Copyright
-
-Copyright in original NullOS and NullKernel code remains with its respective copyright holder.
-
-Copyright in genuinely new code written by contributors remains with its respective author, subject to the requirements of this license when that code is distributed as part of a derived version.
-
-## 15. No Warranty
-
-THE SOFTWARE IS PROVIDED WITHOUT WARRANTY OF ANY KIND, TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW.
-
-THE COPYRIGHT HOLDER IS NOT RESPONSIBLE FOR DAMAGES ARISING FROM THE USE, MODIFICATION, DISTRIBUTION, OR OPERATION OF THE SOFTWARE, EXCEPT WHERE SUCH LIABILITY CANNOT LAWFULLY BE EXCLUDED.
-
-## 16. Acceptance
-
-By distributing NullOS-covered code or a derived version subject to this license, the distributor agrees to comply with the conditions of this license.
-
-If any provision of this license is found unenforceable under applicable law, the remaining provisions shall remain in effect to the extent permitted by law.
+A distributor of a Derived Version may **not charge users for support or services relating to that Derived Version** as a way of monetizing the distributed NullOS software.
 
 ---
 
-NullOS / NullKernel
+## 9. Additional Restrictions
 
-Based From NullKernel Repo
+A distributor of a Derived Version may not impose additional restrictions or contractual conditions that limit the rights granted to users under this license.
+
+A Derived Version may be developed as an independent project, but any NullOS-covered code remaining in it remains subject to this license.
+
+---
+
+## 10. Harmful or Unlawful Use
+
+Use or distribution of a Derived Version for **harmful or unlawful purposes is prohibited**.
+
+If a distributed Derived Version is being used or distributed in a harmful manner in violation of this license, the distributor must remove or correct the harmful Derived Version.
+
+Continued distribution or promotion of a harmful Derived Version after notice may constitute a license violation subject to the enforcement provisions below.
+
+---
+
+## 11. Compliance and Enforcement
+
+If a distributor violates this license, the copyright holder may provide notice of the violation.
+
+The distributor has **three (3) calendar days** from receiving notice to correct the violation.
+
+### If the violation is corrected
+
+If the violation is fully corrected within the three-day period:
+
+- the license remains in effect; and
+- the distributor may continue using, developing, and distributing the Derived Version in compliance with this license.
+
+### If the violation is not corrected
+
+If the violation is not corrected within three days:
+
+1. the permission granted by this license to the violating distributor terminates;
+2. the distributor must remove the violating distributed version;
+3. the distributor must cease further distribution of NullOS-covered code; and
+4. if the distributor refuses to comply and continues distribution, the copyright holder may pursue available legal remedies.
+
+---
+
+## 12. No Obligation to Continue Development
+
+A distributor of a Derived Version has **no obligation to continue developing, maintaining, or supporting** that version after publication.
+
+---
+
+## 13. Copyright
+
+Copyright in original NullOS and NullKernel code remains with its respective copyright holder.
+
+Copyright in genuinely new code written by contributors remains with its respective author, subject to this license when that code is distributed as part of a Derived Version.
+
+---
+
+## 14. No Warranty
+
+**THE SOFTWARE IS PROVIDED WITHOUT WARRANTY OF ANY KIND, TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW.**
+
+**THE COPYRIGHT HOLDER IS NOT RESPONSIBLE FOR DAMAGES ARISING FROM THE USE, MODIFICATION, DISTRIBUTION, OR OPERATION OF THE SOFTWARE, EXCEPT WHERE SUCH LIABILITY CANNOT LAWFULLY BE EXCLUDED.**
+
+---
+
+## 15. Acceptance and Severability
+
+By distributing NullOS-covered code or a Derived Version subject to this license, the distributor agrees to comply with the conditions of this license.
+
+If any provision of this license is found unenforceable under applicable law, the remaining provisions shall remain in effect to the extent permitted by applicable law.
+
+---
+
+## NullOS / NullKernel
+
+**Based From NullKernel Repo**
