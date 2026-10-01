@@ -1,8 +1,29 @@
-# NullOS Custom License v1.0
+# NullOS Custom License
 
-**Copyright © 2026 Haitham Al-Nasser**
+**Version 1.0 — Copyright © 2026 Haitham Al-Nasser**
 
-This license applies to **NullOS**, **NullKernel**, and code distributed as part of the NullOS project that is identified as being covered by this license.
+> [!IMPORTANT]
+> This license applies to **NullOS**, **NullKernel**, and covered code distributed as part of the NullOS project.
+
+---
+
+## Table of Contents
+
+- [1. Permissions](#1-permissions)
+- [2. Derived Versions](#2-derived-versions)
+- [3. Independent Projects and Official Status](#3-independent-projects-and-official-status)
+- [4. No Sale of NullOS or Derived Software](#4-no-sale-of-nullos-or-derived-software)
+- [5. Hardware Distribution](#5-hardware-distribution)
+- [6. No Advertisements](#6-no-advertisements)
+- [7. Donations](#7-donations)
+- [8. Support](#8-support)
+- [9. Additional Restrictions](#9-additional-restrictions)
+- [10. Harmful or Unlawful Use](#10-harmful-or-unlawful-use)
+- [11. Compliance and Enforcement](#11-compliance-and-enforcement)
+- [12. No Obligation to Continue Development](#12-no-obligation-to-continue-development)
+- [13. Copyright](#13-copyright)
+- [14. No Warranty](#14-no-warranty)
+- [15. Acceptance and Severability](#15-acceptance-and-severability)
 
 ---
 
@@ -22,24 +43,30 @@ Private modifications that are not published or distributed do not require sourc
 
 A **Derived Version** is a work that incorporates a substantial amount of code from NullOS or NullKernel.
 
-If you publish or distribute a Derived Version:
+If you publish or distribute a Derived Version, you **must**:
 
-1. You must provide the complete corresponding source code for the version being distributed.
-2. The source must be available in a clear and reasonably accessible manner, such as a public repository or source archive.
-3. All code included in the published Derived Version must have its source available.
-4. Original NullOS/NullKernel copyright and attribution notices must be preserved.
-5. The Derived Version must clearly state that it is derived from NullOS/NullKernel.
+1. Provide the complete corresponding source code for the version being distributed.
+2. Make the source available in a clear and reasonably accessible manner, such as a public repository or source archive.
+3. Make the source of all code included in the published Derived Version available.
+4. Preserve original NullOS/NullKernel copyright and attribution notices.
+5. Clearly state that the Derived Version is derived from NullOS/NullKernel.
+
+### Required Attribution
 
 The following statement is sufficient:
 
-> **Based From NullKernel Repo**
+```text
+Based From NullKernel Repo
+```
 
 ### Modified Original Files
 
 A modified original NullOS file may identify its modifier, for example:
 
-> Modified by [person]  
-> Derived from NullOS by Haitham Al-Nasser
+```text
+Modified by [person]
+Derived from NullOS by Haitham Al-Nasser
+```
 
 ### New Files
 
@@ -53,9 +80,14 @@ You are not required to publish a changelog or describe every change made to the
 
 ---
 
-## 3. Independent Development and Official Status
+## 3. Independent Projects and Official Status
 
-A Derived Version may be developed, organized, branded, and presented as its own project.
+A Derived Version may:
+
+- have its own name;
+- have its own branding;
+- have its own development direction; and
+- be developed and presented as its own project.
 
 However, it must not falsely claim to be:
 
@@ -72,7 +104,8 @@ The license follows **covered code**, not the historical identity of a project.
 
 ## 4. No Sale of NullOS or Derived Software
 
-**NullOS and Derived Versions may not be sold as software.**
+> [!WARNING]
+> **NullOS and Derived Versions may not be sold as software.**
 
 You may not charge a separate, direct, indirect, hidden, bundled, subscription-based, or otherwise disguised software price for NullOS or a Derived Version.
 
@@ -95,7 +128,8 @@ The software must not:
 
 If NullOS is modified to operate with specific hardware, those modifications are covered by this license and must be provided as source code when the modified software is distributed with the device.
 
-A small or hidden compatibility modification is still a modification and may not be represented as though no modification was made.
+> [!WARNING]
+> A small or hidden compatibility modification is still a modification and may not be represented as though no modification was made.
 
 If NullOS is distributed without modification, there is no new modified NullOS source to publish under this section.
 
@@ -103,7 +137,8 @@ If NullOS is distributed without modification, there is no new modified NullOS s
 
 ## 6. No Advertisements
 
-**Advertisements are strictly prohibited.**
+> [!CAUTION]
+> **Advertisements are strictly prohibited.**
 
 This prohibition applies to NullOS and every Derived Version, regardless of the amount or significance of modifications.
 
@@ -146,7 +181,7 @@ All donations must be:
 - not presented as a purchase price; and
 - requested without coercion, guilt, harassment, repeated pressure, or manipulation.
 
-The intended donation range is approximately **US$5–US$60**.
+**Intended donation range:** `US$5–US$60`
 
 ---
 
@@ -168,7 +203,8 @@ A Derived Version may be developed as an independent project, but any NullOS-cov
 
 ## 10. Harmful or Unlawful Use
 
-Use or distribution of a Derived Version for **harmful or unlawful purposes is prohibited**.
+> [!WARNING]
+> Use or distribution of a Derived Version for **harmful or unlawful purposes is prohibited**.
 
 If a distributed Derived Version is being used or distributed in a harmful manner in violation of this license, the distributor must remove or correct the harmful Derived Version.
 
@@ -182,14 +218,14 @@ If a distributor violates this license, the copyright holder may provide notice 
 
 The distributor has **three (3) calendar days** from receiving notice to correct the violation.
 
-### If the violation is corrected
+### If the Violation Is Corrected
 
 If the violation is fully corrected within the three-day period:
 
 - the license remains in effect; and
 - the distributor may continue using, developing, and distributing the Derived Version in compliance with this license.
 
-### If the violation is not corrected
+### If the Violation Is Not Corrected
 
 If the violation is not corrected within three days:
 
@@ -197,6 +233,9 @@ If the violation is not corrected within three days:
 2. the distributor must remove the violating distributed version;
 3. the distributor must cease further distribution of NullOS-covered code; and
 4. if the distributor refuses to comply and continues distribution, the copyright holder may pursue available legal remedies.
+
+> [!IMPORTANT]
+> Correcting the violation within the three-day period preserves the license.
 
 ---
 
@@ -210,15 +249,18 @@ A distributor of a Derived Version has **no obligation to continue developing, m
 
 Copyright in original NullOS and NullKernel code remains with its respective copyright holder.
 
+**Copyright © 2026 Haitham Al-Nasser**
+
 Copyright in genuinely new code written by contributors remains with its respective author, subject to this license when that code is distributed as part of a Derived Version.
 
 ---
 
 ## 14. No Warranty
 
-**THE SOFTWARE IS PROVIDED WITHOUT WARRANTY OF ANY KIND, TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW.**
+> [!CAUTION]
+> **THE SOFTWARE IS PROVIDED WITHOUT WARRANTY OF ANY KIND, TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW.**
 
-**THE COPYRIGHT HOLDER IS NOT RESPONSIBLE FOR DAMAGES ARISING FROM THE USE, MODIFICATION, DISTRIBUTION, OR OPERATION OF THE SOFTWARE, EXCEPT WHERE SUCH LIABILITY CANNOT LAWFULLY BE EXCLUDED.**
+The copyright holder is not responsible for damages arising from the use, modification, distribution, or operation of the software, except where such liability cannot lawfully be excluded.
 
 ---
 
@@ -230,6 +272,8 @@ If any provision of this license is found unenforceable under applicable law, th
 
 ---
 
-## NullOS / NullKernel
+# NullOS / NullKernel
+
+**Copyright © 2026 Haitham Al-Nasser**
 
 **Based From NullKernel Repo**
