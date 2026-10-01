@@ -473,8 +473,15 @@ bool E1000ReceiveFrame(void *Buffer, uint16_t BufferSize, uint16_t *Length)
     return true;
 }
 
-/* Polling is deliberate: IRQ support is a separate layer after TX/RX works. */
-static void E1000DriverInit(void)
+/* Polling is deliberate: IRQ support is a separate layer after TX/RX works.
+ * The registry runs these in link order once the heap and VMM are up, which
+ * is the first point where PmmAllocPage() and VmmMapPage() are usable. */
+static void e1000_driver_init(void)
 {
+    if (E1000IsReady())
+        return;
+
     (void)E1000Initialize();
 }
+
+DRIVER_INIT(e1000_driver_init);

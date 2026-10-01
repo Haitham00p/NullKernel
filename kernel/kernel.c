@@ -48,6 +48,7 @@
 #include "kernel/syscall/syscall.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/registry/registry.h"
+#include "drivers/network/net.h"
 
 volatile NullBootInfo *NullBoot = NULL;
 
@@ -234,53 +235,42 @@ void kernel_main(NullBootInfo *BootInfo)
     ShellInitialize();
     DbgInfo("Shell initialized; enabling interrupts", (uintptr_t)ShellInitialize);
 
+    /*
+     * Network bring-up, stage 2. The controller and the protocol stack are
+     * already up from the driver registry; only DHCP needs the wire, and
+     * this point is safe for a bounded blocking exchange because the
+     * prompt is already on screen and nothing else depends on it yet.
+     */
+    if (NetLinkIsUp())
+    {
+        if (NetBringUp())
+            TerminalPrintLine32("Network ready", 0x0000FF00);
+        else
+            TerminalPrintLine32("Network link up, no DHCP lease", 0x00FFBF00);
+    }
 
     /*
-     * Network initialization is deliberately disabled during boot.
-     * Enable interrupts only after all synchronous boot/shell state is ready.
+     * Hand IRQ0 back to the PIT now that storage, the registry and the
+     * shell are initialized: PITTick drives the scheduler and the
+     * framebuffer present, so masking it here leaves the display frozen
+     * and the clock dead. IRQ1 (keyboard) is already unmasked by
+     * IRQInitialize().
      */
-    /*
-     * Diagnostic isolation: leave PIT IRQ0 masked while enabling keyboard
-     * interrupts. If the shell now appears, the fault is definitively in
-     * the timer/preemption/render path rather than filesystem/network boot.
-     */
-    /*
-     * Absolute interrupt-path isolation:
-     * mask BOTH hardware IRQs that are enabled by IRQInitialize().
-     * STI therefore cannot dispatch either PIT or keyboard while we test
-     * the post-shell path. This rules out an immediate IRQ1 fault as well
-     * as the already-isolated IRQ0/PIT path.
-     */
-    PICMaskIRQ(IRQ_TIMER);
-    PICMaskIRQ(IRQ_KEYBOARD);
+    PICUnmaskIRQ(IRQ_TIMER);
 
-    DbgSerialWrite("[DIAG] before sti\n");
     __asm__ volatile("sti");
-    DbgSerialWrite("[DIAG] after sti\n");
-    TerminalPrintLine32("InterruptSys online (HW IRQs masked)", 0xFFFFFFFF);
+    TerminalPrintLine32("InterruptSys online", 0xFFFFFFFF);
     DbgInfo("Reached post-STI checkpoint", (uintptr_t)kernel_main);
-
-    /*
-     * PIT is masked during this diagnostic, so the normal IRQ0-driven
-     * framebuffer present never runs. Present the terminal explicitly.
-     * If the screen appears after this call, the "black screen" was only
-     * a missing framebuffer flush, not a kernel crash.
-     */
-    DbgSerialWrite("[DIAG] before explicit framebuffer present\\n");
-    FbPresent32();
-    DbgSerialWrite("[DIAG] after explicit framebuffer present\\n");
-
-    /*
-     * Do not touch the FAT32 filesystem from this diagnostic path.
-     * The prompt is already rendered by ShellInitialize(); the boot-log
-     * flush can only obscure whether execution actually reaches ShellUpdate.
-     */
-    DbgSerialWrite("[DIAG] entering shell loop\n");
 
     while (1)
     {
-        DbgSerialWrite("[DIAG] shell update\n");
         ShellUpdate();
+        /*
+         * The NIC is polled rather than interrupt driven, so drain its
+         * receive ring from the idle path. hlt parks the CPU until the
+         * next PIT tick, which brings us back here ~1000 times a second.
+         */
+        NetService();
         __asm__ volatile("hlt");
     }
 }

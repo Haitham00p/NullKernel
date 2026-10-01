@@ -10,6 +10,17 @@ void NetInitialize(void);
 void NetPoll(void);
 bool NetDhcpRequest(void);
 
+/* Controller/stack bring-up split. NetInitialize() is registered with the
+ * driver registry and only touches local state; NetBringUp() runs DHCP and
+ * must be called from a context where a blocking exchange is acceptable. */
+bool NetBringUp(void);
+void NetService(void);
+
+/* Link-layer status: TRUE when the controller is present and its rings are
+ * programmed. This is independent of having an IPv4 address. */
+bool NetLinkIsUp(void);
+bool NetGetMac(uint8_t Mac[6]);
+
 bool NetIsUp(void);
 uint32_t NetGetIp(void);
 uint32_t NetGetGateway(void);

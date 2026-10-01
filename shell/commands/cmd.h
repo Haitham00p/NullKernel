@@ -65,6 +65,7 @@ void CmdMatrix(void);
 void CmdCalc(const PARSED_COMMAND *Command);
 void CmdTree(void);
 void CmdUptime(void);
+void CmdNet(const PARSED_COMMAND *Command);
 void CmdTheme(const PARSED_COMMAND *Command);
 void CmdIsoFind(const char *Name);
 void CmdIsoCat(const char *Path);

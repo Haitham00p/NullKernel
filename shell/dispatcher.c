@@ -201,6 +201,10 @@ void DispatcherDispatch(const PARSED_COMMAND *Command){
     if (strcmp(Command->Command, "calc") == 0) { CmdCalc(Command); return; }
     if (strcmp(Command->Command, "tree") == 0) { CmdTree(); return; }
     if (strcmp(Command->Command, "uptime") == 0) { CmdUptime(); return; }
+    if (strcmp(Command->Command, "net") == 0) {
+        if (Command->ArgCount > 1U) { TerminalPrintLine32("Usage: net [dhcp]", 0x00FF0000); return; }
+        CmdNet(Command); return;
+    }
     if (strcmp(Command->Command, "theme") == 0) { CmdTheme(Command); return; }
     if (strcmp(Command->Command, "isofind") == 0) {
         if (Command->ArgCount != 1U) { TerminalPrintLine32("Usage: isofind <name>", 0x00FF0000); return; }

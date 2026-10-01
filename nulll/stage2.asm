@@ -602,6 +602,7 @@ load_kernel:
 
 collect_e820:
     mov dword [E820_ADDR], 0
+    mov dword [0x7000], 0xAA000001   ; TEMP DEBUG: entered
     xor ebx, ebx
     xor bp, bp
 .next:
@@ -620,6 +621,13 @@ collect_e820:
     add di, ax
     pop ax
     int 0x15
+    ; TEMP DEBUG: capture first call result
+    mov [0x7004], eax
+    mov [0x7008], ecx
+    mov [0x700C], ebx
+    pushf
+    pop eax
+    mov [0x7010], eax
     jc .finish
     cmp eax, 0x534D4150
     jne .fail

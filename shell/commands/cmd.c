@@ -40,6 +40,7 @@
 #include "kernel/panic/panic.h"
 #include "../Kernel/drivers/timer/PIT.h"
 #include "../../lib/sound/sndbeep.h"
+#include "drivers/network/net.h"
 
 static bool ParseNumber(const char *str, uint64_t *val)
 {
@@ -1747,6 +1748,71 @@ void CmdUptime(void)
     TerminalWrite32("System Uptime Clock Cycles: ", 0x0057DB92);
     TerminalPrintHex64Compact(tsc);
     TerminalNewLine32(0);
+}
+
+/* Addresses arrive in network byte order (a.b.c.d packed as a|c<<8|...). */
+static void CmdPrintDotted(const char *Label, uint32_t Addr, uint32_t Color)
+{
+    TerminalWrite32(Label, Color);
+    TerminalWriteUInt64((uint64_t)((Addr >> 0) & 0xFFU), 0xFFFFFFFF);
+    TerminalWrite32(".", Color);
+    TerminalWriteUInt64((uint64_t)((Addr >> 8) & 0xFFU), 0xFFFFFFFF);
+    TerminalWrite32(".", Color);
+    TerminalWriteUInt64((uint64_t)((Addr >> 16) & 0xFFU), 0xFFFFFFFF);
+    TerminalWrite32(".", Color);
+    TerminalWriteUInt64((uint64_t)((Addr >> 24) & 0xFFU), 0xFFFFFFFF);
+    TerminalNewLine32(BackSpaceColor);
+}
+
+void CmdNet(const PARSED_COMMAND *Command)
+{
+    uint8_t Mac[6] = {0};
+
+    TerminalPrintLine32("=== Network ===", 0x0057DB92);
+
+    if (!NetLinkIsUp())
+    {
+        TerminalPrintLine32("Link    : down (no e1000 controller found)", 0xFFFF0000);
+        return;
+    }
+
+    TerminalWrite32("Link    : up", 0x0000FF00);
+    TerminalNewLine32(BackSpaceColor);
+
+    if (NetGetMac(Mac))
+    {
+        TerminalWrite32("MAC     : ", 0x00B0B0B0);
+        for (uint8_t I = 0; I < 6U; I++)
+        {
+            TerminalWrite32(Mac[I] < 0x10U ? "0" : "", 0xFFFFFFFF);
+            TerminalWriteUInt64(Mac[I], 0xFFFFFFFF);
+            if (I != 5U)
+                TerminalWrite32(":", 0xFFFFFFFF);
+        }
+        TerminalNewLine32(BackSpaceColor);
+    }
+
+    if (!NetIsUp())
+    {
+        TerminalPrintLine32("IPv4    : not configured", 0x00FFBF00);
+        TerminalPrintLine32("Run 'net dhcp' to request a lease", 0x00B0B0B0);
+        return;
+    }
+
+    CmdPrintDotted("IPv4    : ", NetGetIp(), 0x0000FF00);
+    CmdPrintDotted("Netmask : ", NetGetNetmask(), 0x00B0B0B0);
+    CmdPrintDotted("Gateway : ", NetGetGateway(), 0x00B0B0B0);
+    CmdPrintDotted("DNS     : ", NetGetDns(), 0x00B0B0B0);
+
+    if (Command->ArgCount == 1U &&
+        strcmp(Command->Args[0], "dhcp") == 0)
+    {
+        TerminalPrintLine32("Re-requesting DHCP lease...", 0x0057DB92);
+        if (NetBringUp())
+            TerminalPrintLine32("DHCP    : lease renewed", 0x0000FF00);
+        else
+            TerminalPrintLine32("DHCP    : no offer received", 0xFFFF0000);
+    }
 }
 
 void CmdTheme(const PARSED_COMMAND *Command)
