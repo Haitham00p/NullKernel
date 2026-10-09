@@ -103,8 +103,7 @@ menu:
     call puts
 
 .wait:
-    xor ah, ah
-    int 0x16
+    call keyboard_get_menu_key
     cmp al, '1'
     je .normal
     cmp al, '2'
@@ -116,7 +115,7 @@ menu:
     jmp .wait
 
 .normal:
-    xor al, al
+    mov al, 1
     jmp .select
 .asm:
     mov al, 2
@@ -129,6 +128,73 @@ menu:
     jc fatal_disk
     mov [requested_mode], al
     jmp native_boot
+
+; ---------------------------------------------------------------------------
+; Menu keyboard input
+; ---------------------------------------------------------------------------
+; Prefer the BIOS keyboard API, but fall back to the 8042 controller when
+; firmware does not expose the key through INT 16h. Return ASCII in AL.
+keyboard_get_menu_key:
+.wait:
+    mov ah, 0x01
+    int 0x16
+    jz .controller
+    xor ah, ah
+    int 0x16
+    cmp al, '1'
+    je .key1
+    cmp al, '2'
+    je .key2
+    cmp al, '3'
+    je .key3
+    cmp al, '0'
+    je .key0
+    xor al, al
+    ret
+
+.controller:
+    in al, 0x64
+    test al, 1
+    jz .wait
+    in al, 0x60
+    ; Ignore key releases and multi-byte scan-code prefixes.
+    test al, 0x80
+    jnz .wait
+    cmp al, 0xF0
+    je .wait
+    cmp al, 0xE0
+    je .wait
+    ; Set-1 make codes and common Set-2 make codes.
+    cmp al, 0x02
+    je .key1
+    cmp al, 0x16
+    je .key1
+    cmp al, 0x03
+    je .key2
+    cmp al, 0x1E
+    je .key2
+    cmp al, 0x04
+    je .key3
+    cmp al, 0x26
+    je .key3
+    cmp al, 0x0B
+    je .key0
+    cmp al, 0x45
+    je .key0
+    xor al, al
+    ret
+.key1:
+    mov al, '1'
+    ret
+.key2:
+    mov al, '2'
+    ret
+.key3:
+    mov al, '3'
+    ret
+.key0:
+    mov al, '0'
+    ret
 
 ; ---------------------------------------------------------------------------
 ; BIOS / disk helpers
