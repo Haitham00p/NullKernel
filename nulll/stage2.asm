@@ -76,19 +76,31 @@ stage2_main:
     call serial_puts
 
 native_boot:
+    mov si, serial_loading_kernel
+    call serial_puts
     call load_kernel
     jc fatal_kernel
+    mov si, serial_kernel_loaded
+    call serial_puts
 
     call collect_e820
     jc fatal_memory
+    mov si, serial_e820_ok
+    call serial_puts
 
     call find_rsdp
+    mov si, serial_rsdp_done
+    call serial_puts
 
     call setup_vbe
     ; VBE is optional. The kernel remains usable without a framebuffer.
-    
+    mov si, serial_vbe_done
+    call serial_puts
+
     call build_bootinfo
     call build_page_tables
+    mov si, serial_long_mode
+    call serial_puts
     call enter_long_mode
 
     jmp $
@@ -1025,12 +1037,18 @@ long_mode_entry:
     jmp rax
 
 fatal_disk:
+    mov si, serial_fatal_disk
+    call serial_puts
     mov si, msg_disk
     jmp fatal
 fatal_kernel:
+    mov si, serial_fatal_kernel
+    call serial_puts
     mov si, msg_kernel
     jmp fatal
 fatal_memory:
+    mov si, serial_fatal_memory
+    call serial_puts
     mov si, msg_memory
     jmp fatal
 
@@ -1131,6 +1149,15 @@ serial_key db "NullL: key=",0
 serial_select_1 db "NullL: selected mode 1",13,10,0
 serial_select_2 db "NullL: selected mode 2",13,10,0
 serial_select_3 db "NullL: selected mode 3",13,10,0
+serial_loading_kernel db "NullL: loading kernel manifest/extents",13,10,0
+serial_kernel_loaded db "NullL: ELF segments loaded",13,10,0
+serial_e820_ok db "NullL: E820 memory map collected",13,10,0
+serial_rsdp_done db "NullL: RSDP scan complete",13,10,0
+serial_vbe_done db "NullL: VBE setup complete",13,10,0
+serial_long_mode db "NullL: entering long mode",13,10,0
+serial_fatal_disk db "NullL: fatal disk error",13,10,0
+serial_fatal_kernel db "NullL: fatal kernel load/ELF error",13,10,0
+serial_fatal_memory db "NullL: fatal E820 memory map error",13,10,0
 loading_old db 13,10,"Loading Old Boot Record...",13,10,0
 old_fail db "NullL: Old Boot Record invalid",13,10,0
 msg_disk db "NullL: disk error",13,10,0
