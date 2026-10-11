@@ -82,9 +82,11 @@ grep -q "NullL: selected mode 1" "$LOG" 2>/dev/null ||
 
 for _ in $(seq 1 150); do
     grep -q "NullL native kernel entry" "$LOG" 2>/dev/null && break
-    grep -q "NullL: kernel load/ELF error" "$LOG" 2>/dev/null &&
+    grep -q "NullL: fatal disk error" "$LOG" 2>/dev/null &&
+        fail "Stage 2 reported a BIOS disk error"
+    grep -q "NullL: fatal kernel load/ELF error" "$LOG" 2>/dev/null &&
         fail "Stage 2 could not load/parse the kernel ELF"
-    grep -q "NullL: E820 memory map error" "$LOG" 2>/dev/null &&
+    grep -q "NullL: fatal E820 memory map error" "$LOG" 2>/dev/null &&
         fail "Stage 2 could not collect the E820 memory map"
     sleep 0.1
 done
