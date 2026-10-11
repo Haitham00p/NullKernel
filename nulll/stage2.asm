@@ -642,6 +642,33 @@ load_kernel:
     ret
 
 ; ---------------------------------------------------------------------------
+; Unreal mode: retain flat 4 GiB DS/ES caches while returning to real mode.
+; BIOS disk I/O stays in real mode; after loading the ELF into low memory,
+; these flat segment limits let the loader parse it and copy PT_LOAD segments
+; to physical addresses above 1 MiB without using EDD 3.0 flat-buffer packets.
+; ---------------------------------------------------------------------------
+enable_unreal_mode:
+    cli
+    lgdt [gdt_unreal_descriptor]
+    mov eax, cr0
+    or eax, 1
+    mov cr0, eax
+    jmp 0x08:.pm32
+[BITS 32]
+.pm32:
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov eax, cr0
+    and eax, 0xFFFFFFFE
+    mov cr0, eax
+    jmp 0x0000:.real16
+[BITS 16]
+.real16:
+    sti
+    ret
+
+; ---------------------------------------------------------------------------
 ; E820 + ACPI
 ; ---------------------------------------------------------------------------
 
@@ -1234,4 +1261,14 @@ gdt64_descriptor:
     dw 23
     dd gdt64
 
-times STAGE2_SECTORS*512-($-$$) db 0
+align 8
+gdt_unreal:
+    dq 0
+    dq 0x00CF9A000000FFFF ; 32-bit flat code
+    dq 0x00CF92000000FFFF ; 32-bit flat data
+gdt_unreal_end:
+gdt_unreal_descriptor:
+    dw gdt_unreal_end - gdt_unreal - 1
+    dd gdt_unreal
+
+times STAGE2_SECTORS*512-($-$) db 0
