@@ -775,13 +775,13 @@ find_rsdp:
     mov ax, [0x40E]
     shl eax, 4
     mov [rsdp_scan], eax
-    mov ecx, 1024
+    mov ecx, 64              ; first 1 KiB of the EBDA, in 16-byte steps
     call scan_rsdp
     cmp dword [rsdp_found], 0
     jne .done
 
     mov dword [rsdp_scan], 0x000E0000
-    mov ecx, 0x20000
+    mov ecx, 0x2000           ; 128 KiB BIOS area, in 16-byte steps
     call scan_rsdp
 .done:
     ret
