@@ -36,7 +36,7 @@ C_SOURCES := \
 ASM_OBJECTS := $(BUILD_DIR)/arch/x86_64/interrupts/isr_asm.o $(BUILD_DIR)/arch/x86_64/interrupts/irq_asm.o $(BUILD_DIR)/arch/x86_64/program/run_asm.o $(BUILD_DIR)/arch/x86_64/bootasm.o $(BUILD_DIR)/arch/x86_64/cpu/ring3.o $(BUILD_DIR)/arch/x86_64/cpu/context.o $(BUILD_DIR)/kernel/LTSMT/ltsmt.o $(BUILD_DIR)/drivers/timer/RTC.o
 OBJECTS := $(C_SOURCES:%.c=$(BUILD_DIR)/%.o) $(ASM_OBJECTS)
 -include $(C_SOURCES:%.c=$(BUILD_DIR)/%.d)
-.PHONY: all clean vault run boot install nulll
+.PHONY: all clean vault run boot run-boot install nulll
 .NOTPARALLEL:
 all: vault nulll
 nulll: $(NULLL_STAGE1) $(NULLL_STAGE2)
@@ -76,5 +76,7 @@ boot: install
 	qemu-system-x86_64 -m 512 -boot order=c -drive "file=$(DISK),format=raw,if=ide,index=0" -netdev user,id=n1 -device e1000,netdev=n1 -serial stdio -display gtk
 run: install
 	qemu-system-x86_64 -m 512 -boot order=c -drive "file=$(DISK),format=raw,if=ide,index=0" -netdev user,id=n1 -device e1000,netdev=n1 -serial stdio -display gtk
+run-boot: install
+	$(QEMU) -m 512 -boot order=c -drive "file=$(DISK),format=raw,if=ide,index=0" -netdev user,id=n1 -device e1000,netdev=n1 -serial stdio -display sdl
 clean:
 	rm -rf $(BUILD_DIR) .vault-stamp
