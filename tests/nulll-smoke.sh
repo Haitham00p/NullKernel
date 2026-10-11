@@ -27,6 +27,39 @@ trap cleanup EXIT
 
 fail() {
     echo "FAIL: $*" >&2
+    if [[ -S "$MON" ]]; then
+        echo "--- QEMU CPU state / page tables ---" >&2
+        python3 - "$MON" <<'PY' >&2 || true
+import socket
+import sys
+import time
+
+sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+sock.settimeout(0.25)
+try:
+    sock.connect(sys.argv[1])
+    try:
+        sock.recv(4096)
+    except OSError:
+        pass
+    sock.sendall(b"info registers\\ninfo mem\\n")
+    chunks = []
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        try:
+            data = sock.recv(8192)
+            if not data:
+                break
+            chunks.append(data)
+        except socket.timeout:
+            break
+    print(b"".join(chunks).decode("utf-8", "replace"))
+except OSError as exc:
+    print(f"QEMU monitor unavailable: {exc}")
+finally:
+    sock.close()
+PY
+    fi
     echo "--- NullL serial trace ---" >&2
     cat "$LOG" 2>/dev/null || true
     exit 1
