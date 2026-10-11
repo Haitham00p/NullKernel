@@ -99,7 +99,10 @@ native_boot:
     mov si, serial_rsdp_done
     call serial_puts
 
+    ; VBE firmware may need interrupts; DS/ES are conventional segments here.
+    sti
     call setup_vbe
+    cli
     ; VBE is optional. The kernel remains usable without a framebuffer.
     xor ax, ax
     mov ds, ax
@@ -713,7 +716,8 @@ enable_unreal_mode:
     mov cr0, eax
     jmp 0x0000:.real16
 .real16:
-    sti
+    ; Keep IRQs disabled while using the cached flat DS/ES limits. A BIOS
+    ; IRQ handler could reload a segment register and destroy unreal mode.
     ret
 
 ; ---------------------------------------------------------------------------
