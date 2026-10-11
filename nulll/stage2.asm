@@ -1296,4 +1296,4 @@ gdt_unreal_descriptor:
     dw gdt_unreal_end - gdt_unreal - 1
     dd gdt_unreal
 
-times STAGE2_SECTORS*512-($-$) db 0
+times STAGE2_SECTORS*512-($-$$) db 0
