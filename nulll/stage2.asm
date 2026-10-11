@@ -406,6 +406,8 @@ write_mailbox:
 
 load_kernel:
     ; Read the installer-generated NLLK extent manifest.
+    mov si, serial_manifest_read
+    call serial_puts
     mov eax, [partition_start]
     add eax, MANIFEST_SECTOR
     mov dword [manifest_dap.lba_low], eax
@@ -420,6 +422,8 @@ load_kernel:
     mov ah, 0x42
     int 0x13
     jc .fail
+    mov si, serial_manifest_read_ok
+    call serial_puts
 
     cmp dword [MANIFEST_BUF], 0x4B4C4C4E ; NLLK
     jne .fail
@@ -438,6 +442,8 @@ load_kernel:
     je .fail
     cmp eax, MANIFEST_MAX_EXT
     ja .fail
+    mov si, serial_manifest_valid
+    call serial_puts
 
     ; Load every extent to the contiguous staging area at 32 MiB.
     xor ebx, ebx
@@ -500,11 +506,15 @@ load_kernel:
     mov [kernel_dap.segment], ax
     mov word [kernel_dap.offset], 0
 
+    mov si, serial_chunk_read
+    call serial_puts
     mov si, kernel_dap
     mov dl, [boot_drive]
     mov ah, 0x42
     int 0x13
     jc .fail
+    mov si, serial_chunk_read_ok
+    call serial_puts
 
     ; The BIOS read completed into the low staging buffer.
     mov eax, [chunk_bytes]
@@ -1221,6 +1231,11 @@ serial_select_1 db "NullL: selected mode 1",13,10,0
 serial_select_2 db "NullL: selected mode 2",13,10,0
 serial_select_3 db "NullL: selected mode 3",13,10,0
 serial_loading_kernel db "NullL: loading kernel manifest/extents",13,10,0
+serial_manifest_read db "NullL: reading manifest sector",13,10,0
+serial_manifest_read_ok db "NullL: manifest sector read",13,10,0
+serial_manifest_valid db "NullL: manifest validated",13,10,0
+serial_chunk_read db "NullL: reading kernel extent chunk",13,10,0
+serial_chunk_read_ok db "NullL: kernel extent chunk read",13,10,0
 serial_kernel_loaded db "NullL: ELF segments loaded",13,10,0
 serial_e820_ok db "NullL: E820 memory map collected",13,10,0
 serial_rsdp_done db "NullL: RSDP scan complete",13,10,0
