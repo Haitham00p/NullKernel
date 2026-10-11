@@ -628,7 +628,9 @@ collect_e820:
     ; Compute the entry buffer address first. Do not overwrite EAX=E820
     ; before INT 15h; BIOS uses EAX to select the E820 service.
     mov di, E820_ADDR
-    mov eax, ebp
+    ; BP is the 16-bit loop index; zero-extend it explicitly because
+    ; the upper half of EBP is not guaranteed to be zero in real mode.
+    movzx eax, bp
     imul eax, 24
     add di, ax
     mov eax, 0xE820
