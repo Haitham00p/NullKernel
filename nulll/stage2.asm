@@ -356,8 +356,10 @@ load_kernel:
     mov eax, [kernel_dest]
     mov dword [kernel_dap.flat_low], eax
     mov dword [kernel_dap.flat_high], 0
-    mov word [kernel_dap.offset], 0
-    mov word [kernel_dap.segment], 0
+    ; EDD 3.0 flat-buffer DAP requires FFFF:FFFF in the legacy
+    ; segment:offset fields; the 64-bit linear destination is below.
+    mov word [kernel_dap.offset], 0xFFFF
+    mov word [kernel_dap.segment], 0xFFFF
 
     mov si, kernel_dap
     mov dl, [boot_drive]
@@ -365,12 +367,15 @@ load_kernel:
     int 0x13
     jc .fail
 
+    ; DAP count and extent_remaining are both measured in sectors.
+    ; Convert the completed chunk to bytes only for destination accounting.
     movzx eax, word [kernel_dap.count]
+    mov [chunk_sectors], eax
     shl eax, 9
     add [kernel_dest], eax
     add [loaded_bytes], eax
+    mov eax, [chunk_sectors]
     sub [extent_remaining], eax
-    shr eax, 9
     jmp .read_chunk
 
 .next_extent:
@@ -525,13 +530,15 @@ collect_e820:
 .next:
     cmp bp, E820_MAX
     jae .done
-    mov eax, 0xE820
-    mov edx, 0x534D4150
-    mov ecx, 24
+    ; Compute the entry buffer address first. Do not overwrite EAX=E820
+    ; before INT 15h; BIOS uses EAX to select the E820 service.
     mov di, E820_ADDR
     mov eax, ebp
     imul eax, 24
     add di, ax
+    mov eax, 0xE820
+    mov edx, 0x534D4150
+    mov ecx, 24
     int 0x15
     jc .finish
     cmp eax, 0x534D4150
@@ -981,6 +988,7 @@ requested_mode db 0
 partition_start dd 0
 kernel_size dd 0
 loaded_bytes dd 0
+chunk_sectors dd 0
 extent_count dd 0
 extent_remaining dd 0
 kernel_dest dd 0
@@ -1035,7 +1043,7 @@ mailbox_dap:
 
 align 4, db 0
 manifest_dap:
-    db 0x18, 0
+    db 0x10, 0
 .count dw 0
 .offset dw 0
 .segment dw 0
