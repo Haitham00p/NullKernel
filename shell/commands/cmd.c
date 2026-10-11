@@ -21,7 +21,7 @@
 #include "arch/x86_64/cpu/io.h"
 #include "mm/heap/heap.h"
 #include "kernel/panic/panic.h"
-#include "../Kernel/drivers/timer/PIT.h"
+#include "drivers/timer/PIT.h"
 #include "../../lib/sound/sndbeep.h"
 
 static bool ParseNumber(const char *str, uint64_t *val)
