@@ -47,6 +47,15 @@ with open(img_path, "r+b") as f:
     if bps != 512 or not spc or not fats or not fat_size or root < 2:
         raise SystemExit("invalid FAT32 BPB")
 
+    # NullL Stage 2 occupies partition-relative sectors 7 through 54.
+    # All of those sectors must remain inside FAT32's reserved region.
+    required_reserved = 7 + 48
+    if reserved < required_reserved:
+        raise SystemExit(
+            f"FAT32 reserved area too small for NullL Stage 2: "
+            f"{reserved} sectors; need at least {required_reserved}"
+        )
+
     fat_base = part_off + reserved * bps
     data_lba = PART + reserved + fats * fat_size
     data_off = data_lba * bps
