@@ -42,7 +42,7 @@ try:
         sock.recv(4096)
     except OSError:
         pass
-    sock.sendall(b"info registers\ninfo mem\nxp /4gx 0x11000\nxp /4gx 0x12000\nxp /8gx 0x13000\nxp /1gx 0x12ff8\n")
+    sock.sendall(b"info registers\ninfo mem\nxp /4gx 0x11000\nxp /4gx 0x12000\nxp /8gx 0x13000\nxp /1gx 0x12ff8\nxp /4gx 0x172060\nxp /2gx 0x176240\nxp /2gx 0x176360\nxp /8gx 0x37d7e0\n")
     chunks = []
     deadline = time.monotonic() + 1.0
     while time.monotonic() < deadline:
