@@ -1106,19 +1106,13 @@ long_mode_entry:
     mov fs, ax
     mov gs, ax
 
-    ; Put the initial stack below the EBDA, in memory the PMM reserves.
-    ; The ELF staging buffer is no longer needed after PT_LOAD copies finish.
-    movzx eax, word [abs 0x40E]
-    test eax, eax
-    jz .fallback_stack
-    shl eax, 4
-    sub eax, 0x1000
-    jmp .stack_ready
-.fallback_stack:
-    mov eax, 0x0009D000
-.stack_ready:
-    and eax, 0xFFFFFFF0
-    mov rsp, rax
+    ; The page tables occupy 0x11000..0x14FFF. Never derive the stack
+    ; from the EBDA pointer: on some BIOSes that value can place RSP inside
+    ; the page tables, so the first stack write corrupts paging structures.
+    ; PT_LOAD segments have already been copied, so the staging buffer is
+    ; disposable. Use a fixed conventional-memory stack below its end.
+    mov rsp, 0x0009D000
+    and rsp, -16
     sub rsp, 8
 
     mov rdi, BOOTINFO_ADDR
