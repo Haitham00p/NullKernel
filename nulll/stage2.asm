@@ -1132,9 +1132,17 @@ long_mode_entry:
     mov fs, ax
     mov gs, ax
 
-    ; Keep the first C stack clear of the ELF staging buffer and page tables.
-    mov eax, [abs kernel_phys_end]
-    add eax, 0x00100000
+    ; Put the initial stack below the EBDA, in memory the PMM reserves.
+    ; The ELF staging buffer is no longer needed after PT_LOAD copies finish.
+    movzx eax, word [abs 0x40E]
+    test eax, eax
+    jz .fallback_stack
+    shl eax, 4
+    sub eax, 0x1000
+    jmp .stack_ready
+.fallback_stack:
+    mov eax, 0x0009D000
+.stack_ready:
     and eax, 0xFFFFFFF0
     mov rsp, rax
     sub rsp, 8
