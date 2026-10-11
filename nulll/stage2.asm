@@ -683,7 +683,9 @@ scan_rsdp:
     mov esi, [rsdp_scan]
     test esi, 0x0F
     jnz .next
-    cmp dword [esi], 0x20524453
+    ; ACPI RSDP signature is the eight-byte ASCII string "RSD PTR ".
+    ; Little-endian first dword is 0x20445352, not 0x20524453.
+    cmp dword [esi], 0x20445352
     jne .next
     cmp dword [esi+4], 0x20525450
     jne .next
