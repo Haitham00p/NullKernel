@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # run-boot.sh — boot NullOS installed on a disk image (no CD) with a
-# graphical display so you can SEE and USE the mouse cursor.
+# graphical display using SDL for the graphical display.
 #
 # Usage:
-#   ./run-boot.sh              # boots nullos.img in a GTK window
+#   ./run-boot.sh              # boots nullos.img in an SDL window
 #   ./run-boot.sh mydisk.img   # boot a specific disk
 #   ./run-boot.sh vnc         # expose a VNC server on :1 (connect with a
 #                             #   VNC viewer to localhost:5901) for remote use
 #   ./run-boot.sh vnc mydisk.img
 set -euo pipefail
 
-DISP="-display gtk"
+DISP="-display sdl"
 IMG="nullos.img"
 
 case "${1:-}" in
