@@ -1,6 +1,6 @@
 #include "PIT.h"
 #include "../../arch/x86_64/cpu/io.h"
-#include "../Kernel/kernel/terminal/terminal.h"
+#include "kernel/terminal/terminal.h"
 
 volatile uint64_t PITTicks = 0;
 
