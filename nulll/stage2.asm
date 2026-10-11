@@ -292,6 +292,8 @@ keyboard_get_menu_key:
 ; ---------------------------------------------------------------------------
 
 check_edd:
+    ; BIOS video/serial helpers may change DL; restore the boot drive.
+    mov dl, [boot_drive]
     mov ah, 0x41
     mov bx, 0x55AA
     int 0x13
