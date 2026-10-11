@@ -22,6 +22,7 @@
 #include "mm/heap/heap.h"
 #include "kernel/panic/panic.h"
 #include "drivers/timer/PIT.h"
+#include "drivers/network/net.h"
 #include "../../lib/sound/sndbeep.h"
 
 static bool ParseNumber(const char *str, uint64_t *val)
@@ -2225,3 +2226,48 @@ void CmdCp(const char *Src, const char *Dst)
         TerminalPrintLine32("cp: copied", 0x0057DB92U);
 }
 
+
+
+/* ----------------------------- network ----------------------------- */
+
+void CmdNet(const PARSED_COMMAND *Command)
+{
+    if (Command == NULL)
+    {
+        TerminalPrintLine32("net: invalid command", 0xFFFF0000U);
+        return;
+    }
+
+    if (Command->ArgCount == 1U && strcmp(Command->Args[0], "dhcp") == 0)
+    {
+        if (!NetLinkIsUp())
+        {
+            TerminalPrintLine32("net: network link/controller is down", 0xFFFF0000U);
+            return;
+        }
+
+        TerminalPrintLine32("net: requesting IPv4 configuration via DHCP...", PromColor);
+        if (NetBringUp())
+            TerminalPrintLine32("net: DHCP configuration succeeded", 0x0057DB92U);
+        else
+            TerminalPrintLine32("net: DHCP failed; check the QEMU network device and DHCP server", 0xFFFF0000U);
+        return;
+    }
+
+    if (Command->ArgCount != 0U)
+    {
+        TerminalPrintLine32("Usage: net [dhcp]", 0xFFFF0000U);
+        return;
+    }
+
+    if (!NetLinkIsUp())
+    {
+        TerminalPrintLine32("net: network link/controller is down", 0xFFFF0000U);
+        return;
+    }
+
+    if (NetIsUp())
+        TerminalPrintLine32("net: link is up; IPv4 is configured", 0x0057DB92U);
+    else
+        TerminalPrintLine32("net: link is up, but no IPv4 address; try 'net dhcp'", 0x00FFD700U);
+}
