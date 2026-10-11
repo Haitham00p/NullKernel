@@ -4,9 +4,14 @@ on:
   push:
     branches:
       - dev/null-bootloader
+      - rewrite/nulll
   pull_request:
     branches:
       - main
+
+concurrency:
+  group: nulll-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -14,9 +19,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install -y gcc binutils nasm make
+        run: sudo apt-get update && sudo apt-get install -y gcc binutils nasm make qemu-system-x86 dosfstools mtools fdisk
       - name: Build kernel and NullL
         run: make -j2
+      - name: Inspect kernel entry and exception-stack symbols
+        run: |
+          nm -an build/kernel.elf | grep -E 'ExcStack|ISRCommon|ISR14|g_IsrStubs|IRQ0|kernel_main' || true
+          objdump -s --start-address=0xffffffff80144220 --stop-address=0xffffffff80144320 build/kernel.elf
+          readelf -lW build/kernel.elf
+          readelf -SW build/kernel.elf
+          objdump -d -Mintel build/kernel.elf | grep -A22 -B4 -E 'lea +rsp|ISRCommon' || true
       - name: Validate boot images
         run: |
           test -f build/kernel.elf
@@ -24,3 +36,7 @@ jobs:
           test -f build/nulll/stage2.bin
           test "$(stat -c %s build/nulll/stage1.bin)" -eq 446
           test "$(stat -c %s build/nulll/stage2.bin)" -eq 24576
+      - name: Create a disposable BIOS boot disk
+        run: make install DISK=/tmp/nulll-smoke.img
+      - name: QEMU BIOS menu smoke test
+        run: bash tests/nulll-smoke.sh /tmp/nulll-smoke.img
