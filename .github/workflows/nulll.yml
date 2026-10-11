@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - dev/null-bootloader
+      - rewrite/nulll
   pull_request:
     branches:
       - main
