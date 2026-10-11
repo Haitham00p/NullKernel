@@ -790,6 +790,9 @@ scan_rsdp:
 setup_vbe:
     mov dword [FBINFO_ADDR], 0
     mov dword [FBINFO_ADDR+4], 0
+    ; VBE BIOS calls expect a conventional real-mode ES:DI buffer.
+    xor ax, ax
+    mov es, ax
 
     mov dword [VBE_CTRL_BUF], 0x32454256 ; "VBE2"
     mov ax, 0x4F00
