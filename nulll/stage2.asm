@@ -62,6 +62,7 @@ stage2_main:
     call clear_screen
     call check_edd
     jc fatal_disk
+    call enable_a20
 
     call read_partition_start
     jc fatal_disk
@@ -307,6 +308,17 @@ keyboard_get_menu_key:
     ret
 .key0:
     mov al, '0'
+    ret
+
+; ---------------------------------------------------------------------------
+; A20 gate
+; ---------------------------------------------------------------------------
+enable_a20:
+    ; Fast A20 gate (port 0x92). Preserve the system-reset bit 0.
+    in al, 0x92
+    or al, 0x02
+    and al, 0xFE
+    out 0x92, al
     ret
 
 ; ---------------------------------------------------------------------------
