@@ -89,6 +89,10 @@ native_boot:
     jc fatal_memory
     mov si, serial_e820_ok
     call serial_puts
+    xor ax, ax
+    mov ds, ax
+    mov es, ax
+    call enable_unreal_mode
 
     call find_rsdp
     mov si, serial_rsdp_done
@@ -96,6 +100,10 @@ native_boot:
 
     call setup_vbe
     ; VBE is optional. The kernel remains usable without a framebuffer.
+    xor ax, ax
+    mov ds, ax
+    mov es, ax
+    call enable_unreal_mode
     mov si, serial_vbe_done
     call serial_puts
 
@@ -459,8 +467,18 @@ load_kernel:
     test eax, eax
     jz .next_extent
     cmp eax, 127
-    jbe .chunk_ok
+    jbe .limit_64k
     mov eax, 127
+.limit_64k:
+    ; EDD legacy transfers must not cross a physical 64 KiB boundary.
+    mov edx, [kernel_dest]
+    and edx, 0xFFFF
+    mov ecx, 0x10000
+    sub ecx, edx
+    shr ecx, 9
+    cmp eax, ecx
+    jbe .chunk_ok
+    mov eax, ecx
 .chunk_ok:
     mov word [kernel_dap.count], ax
     ; Preserve the requested count: BIOS may modify the DAP count field.
@@ -673,6 +691,10 @@ enable_unreal_mode:
 ; ---------------------------------------------------------------------------
 
 collect_e820:
+    ; E820 is a BIOS real-mode service; use conventional real-mode segments.
+    xor ax, ax
+    mov ds, ax
+    mov es, ax
     mov dword [E820_ADDR], 0
     xor ebx, ebx
     xor bp, bp
