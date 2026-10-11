@@ -40,6 +40,8 @@ with open(img_path, "r+b") as f:
     spc = bpb[13]
     reserved = struct.unpack_from("<H", bpb, 14)[0]
     fats = bpb[16]
+    fsinfo_sector = struct.unpack_from("<H", bpb, 48)[0]
+    backup_boot_sector = struct.unpack_from("<H", bpb, 50)[0]
     fat_size = struct.unpack_from("<I", bpb, 36)[0]
     root = struct.unpack_from("<I", bpb, 44)[0]
     total = struct.unpack_from("<I", bpb, 32)[0]
@@ -55,6 +57,21 @@ with open(img_path, "r+b") as f:
             f"FAT32 reserved area too small for NullL Stage 2: "
             f"{reserved} sectors; need at least {required_reserved}"
         )
+
+    stage2_first = 7
+    stage2_end = stage2_first + 48  # exclusive; sectors 7..54
+    backup_fsinfo_sector = (
+        backup_boot_sector + fsinfo_sector if backup_boot_sector else 0
+    )
+    for label, sector in (
+        ("FSInfo", fsinfo_sector),
+        ("backup boot sector", backup_boot_sector),
+        ("backup FSInfo", backup_fsinfo_sector),
+    ):
+        if stage2_first <= sector < stage2_end:
+            raise SystemExit(
+                f"FAT32 {label} at reserved sector {sector} overlaps NullL Stage 2"
+            )
 
     fat_base = part_off + reserved * bps
     data_lba = PART + reserved + fats * fat_size
