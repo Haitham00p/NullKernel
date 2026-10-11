@@ -28,14 +28,10 @@ echo "[*] clearing gap before partition"
 dd if=/dev/zero of="$IMG" bs=512 seek=1 count=$((SECTOR_START - 1)) \
     conv=notrunc status=none
 
-# -R 64 reserved sectors: the loader reads its mailbox (LBA 2050), manifest
-# (LBA 2051) and 48-sector stage2 (LBA 2055..2102) from the head of the
-# partition. The default FAT32 reserved count of 32 would place FAT1 at
-# LBA 2080, so writing stage2 would clobber the allocation table and the
-# kernel would later hand the already-allocated kernel.elf clusters back
-# out to the filesystem. Keep FAT1 clear of the loader scratch area.
-echo "[*] formatting FAT32 (label NULLOS, 64 reserved sectors)"
-mkfs.vfat -F 32 -n NULLOS -R 64 --offset "$SECTOR_START" "$IMG"
+echo "[*] formatting FAT32 (label NULLOS)"
+# NullL occupies partition sectors 7..54; reserve 64 sectors so Stage 2
+# never overlaps the FAT tables (mkfs.fat defaults to only 32 reserved sectors).
+mkfs.vfat -F 32 -R 64 -b 62 -n NULLOS --offset "$SECTOR_START" "$IMG"
 
 echo "[*] done: $IMG ready"
 sfdisk -l "$IMG" | sed -n '/Device/,$p'

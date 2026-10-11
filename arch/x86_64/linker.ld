@@ -1,7 +1,9 @@
 ENTRY(kernel_main)
 
-KERNEL_VMA = 0xffffffff80000000;
-KERNEL_LMA = 0x00200000;
+/* NullL maps 0xffffffff80000000 to physical 0, so the 1 MiB kernel LMA
+   must use the matching higher-half VMA at alias + 1 MiB. */
+KERNEL_VMA = 0xffffffff80100000;
+KERNEL_LMA = 0x00100000;
 
 SECTIONS
 {

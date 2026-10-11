@@ -24,7 +24,7 @@ Relative to the active FAT32 partition:
 - sector 3: NLLK kernel extent manifest
 - sector 7: NullL stage2
 - sector 1: FAT32 FSInfo
-- sector 6: FAT32 backup VBR
+- sectors 62–63: FAT32 backup VBR and backup FSInfo
 - partition-1: saved Old Boot Record
 
 The MBR contains only the NullL stage1 code plus the existing partition table.

@@ -1,19 +1,3 @@
-; Copyright (C) 2026 Haitham Al-Nasser
-; This file is part of NullOS.
-;
-; This program is free software: you can redistribute it and/or modify
-; it under the terms of the GNU General Public License as published by
-; the Free Software Foundation, either version 3 of the License, or
-; (at your option) any later version.
-;
-; This program is distributed in the hope that it will be useful,
-; but WITHOUT ANY WARRANTY; without even the implied warranty of
-; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-; See the GNU General Public License for more details.
-;
-; You should have received a copy of the GNU General Public License
-; along with NullOS. If not, see <https://www.gnu.org/licenses/>.
-;
 [BITS 64]
 
 global ISR0
@@ -133,7 +117,9 @@ ISRCommon:
     ; Stash the old stack pointer and switch to the dedicated exception stack
     ; so saving the frame can never fault due to the faulting context.
     mov rbx, rsp
-    mov rsp, ExcStackTop
+    ; RIP-relative LEA is required here: an absolute immediate can resolve to
+    ; the .bss section offset instead of its final higher-half virtual address.
+    lea rsp, [rel ExcStackTop]
 
     ; Rebuild the uniform frame on the exception stack, with rax at rsp+0:
     ;   push rflags, cs, rip, error_code, vector  (vector ends up lowest)
@@ -167,6 +153,7 @@ ISRCommon:
 ; corrupt, which would fault again while saving the frame and triple-fault).
 ; Placed in .bss (after the .text above) so the handler code stays executable.
 section .bss
+align 16
 ExcStack:
     resb 8192
 ExcStackTop:

@@ -1,20 +1,3 @@
-/* Copyright (C) 2026 Haitham Al-Nasser
- * This file is part of NullOS.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with NullOS. If not, see <https://www.gnu.org/licenses/>.
- */
-
 #include <stdint.h>
 #include "drivers/video_framebuffer/framebuffer.h"
 #include "kernel/terminal/terminal.h"
@@ -34,7 +17,7 @@
 #include "include/drivers.h"
 #include "drivers/storage/ide/ide.h"
 #include "arch/x86_64/power/pwr.h"
-#include "../drivers/timer/PIT.h"
+#include "drivers/timer/PIT.h"
 #include "libc/stdlib.h"
 #include "libc/stdio.h"
 #include "bootmonitor/bootmonitor.h"
@@ -48,7 +31,6 @@
 #include "kernel/syscall/syscall.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/registry/registry.h"
-#include "drivers/network/net.h"
 
 volatile NullBootInfo *NullBoot = NULL;
 
@@ -100,49 +82,58 @@ void kernel_main(NullBootInfo *BootInfo)
 
     const NullBootMemoryEntry *MemoryMap =
         (const NullBootMemoryEntry *)(uintptr_t)BootInfo->MemoryMap;
+    const uint64_t IdentityMapLimit = 1ULL << 30;
+    const uint64_t MinimumHeapBase = 0x400000ULL;
+    const uint64_t MaximumHeapSize = 256ULL * 1024ULL * 1024ULL;
     uintptr_t HeapBase = 0;
     uint64_t HeapLength = 0;
     uint64_t HeapType = 0;
+    uint64_t KernelEnd = BootInfo->KernelPhysicalEnd;
+
+    /* Never let the heap overlap the loaded kernel/BSS, and only use RAM
+       covered by NullL's current first-1-GiB identity map. */
+    if (KernelEnd < MinimumHeapBase)
+        KernelEnd = MinimumHeapBase;
+    KernelEnd = (KernelEnd + 0xFFFULL) & ~0xFFFULL;
 
     for (uint32_t i = 0; i < BootInfo->MemoryMapCount; i++)
     {
         const NullBootMemoryEntry *Entry = &MemoryMap[i];
-        if (Entry->Type != NULLBOOT_MEM_USABLE)
+        if (Entry->Type != NULLBOOT_MEM_USABLE || Entry->Length == 0)
             continue;
-        if (Entry->Length <= HeapLength)
+
+        uint64_t EntryBase = Entry->Base;
+        uint64_t EntryEnd = EntryBase + Entry->Length;
+        if (EntryEnd < EntryBase)
             continue;
-        HeapBase = (uintptr_t)Entry->Base;
-        HeapLength = Entry->Length;
-        HeapType = Entry->Type;
-    }
+        if (EntryEnd > IdentityMapLimit)
+            EntryEnd = IdentityMapLimit;
+        if (EntryBase < KernelEnd)
+            EntryBase = KernelEnd;
+        if (EntryBase < MinimumHeapBase)
+            EntryBase = MinimumHeapBase;
 
-    /*
-     * The heap must start above the kernel image itself. A 1 MiB floor alone
-     * is not enough: the kernel's own .bss extends past 1 MiB, so a heap based
-     * there lets the first large allocation (the framebuffer back-buffer)
-     * overwrite live kernel data.
-     */
-    uintptr_t HeapFloor = 0x400000;
-    if (BootInfo->KernelPhysicalEnd > HeapFloor)
-    {
-        HeapFloor = ((uintptr_t)BootInfo->KernelPhysicalEnd + 0xFFF) &
-                    ~(uintptr_t)0xFFF;
-    }
+        EntryBase = (EntryBase + 0xFFFULL) & ~0xFFFULL;
+        EntryEnd &= ~0xFFFULL;
+        if (EntryBase >= EntryEnd)
+            continue;
 
-    if (HeapBase < HeapFloor)
-    {
-        uint64_t Drop = HeapFloor - HeapBase;
-        if (Drop >= HeapLength)
-            HeapLength = 0;
-        else
+        /* Keep at least half of the candidate range available to the PMM,
+           and cap the heap so VMM still has pages to allocate page tables. */
+        uint64_t CandidateLength = (EntryEnd - EntryBase) / 2ULL;
+        if (CandidateLength > MaximumHeapSize)
+            CandidateLength = MaximumHeapSize;
+        CandidateLength &= ~0xFFFULL;
+        if (CandidateLength > HeapLength)
         {
-            HeapBase += Drop;
-            HeapLength -= Drop;
+            HeapBase = (uintptr_t)EntryBase;
+            HeapLength = CandidateLength;
+            HeapType = Entry->Type;
         }
     }
 
-    if (HeapBase == 0)
-        PanicKernel("No Usable Entry Found For Heap", (uintptr_t)HeapInitialize);
+    if (HeapBase == 0 || HeapLength < 0x100000ULL)
+        PanicKernel("No safe usable range for heap", (uintptr_t)HeapInitialize);
 
     PmmInitialize(BootInfo);
     PmmReserveRange(BootInfo->KernelPhysicalBase,
@@ -191,21 +182,13 @@ void kernel_main(NullBootInfo *BootInfo)
      * In particular, PIT IRQ0 can arrive immediately after STI and enter the
      * scheduler before the storage/driver layer and boot path are ready.
      */
-    DbgInfo("Entering driver registry", (uintptr_t)DriversInitAll);
     DriversInitAll();
-    DbgInfo("Driver registry complete", (uintptr_t)DriversInitAll);
 
-    /*
-     * Do not enable IRQ0 while the storage, boot-monitor, registry and shell
-     * bring-up code is still running.  PITTick() immediately feeds the
-     * scheduler, and IRQHandler() can call TaskScheduleFromInterrupt().
-     * Until the first shell loop is ready, that is an asynchronous entry
-     * point into partially initialized state.
-     */
+    __asm__ volatile("sti");
+    TerminalPrintLine32("InterruptSys online", 0xFFFFFFFF);
+
     TerminalClear32(BackSpaceColor);
-    DbgInfo("Mounting filesystem", (uintptr_t)DiskFsMount);
     DiskFsMount();
-    DbgInfo("Filesystem mount complete", (uintptr_t)DiskFsMount);
 
     /*
      * reboot-c stores a one-shot BM1 request on the installed FAT32 disk.
@@ -223,54 +206,18 @@ void kernel_main(NullBootInfo *BootInfo)
     if (BootMonitorShouldEnter())
         BootMonitorRun();
 
-    DbgInfo("Initializing registry", (uintptr_t)RegistryInitialize);
     RegistryInitialize();
-    DbgInfo("Registry initialized", (uintptr_t)RegistryInitialize);
     { uint64_t q = 0; if (RegistryReadU64("/REG/SCHED/QUANTUM.V", &q) && q != 0) SchedulerSetQuantum(q); }
     ShellApplyRegistry();
     ShellBootRunROB();
     ShellApplyDefDir();
-
-    DbgInfo("Initializing shell", (uintptr_t)ShellInitialize);
     ShellInitialize();
-    DbgInfo("Shell initialized; enabling interrupts", (uintptr_t)ShellInitialize);
 
-    /*
-     * Network bring-up, stage 2. The controller and the protocol stack are
-     * already up from the driver registry; only DHCP needs the wire, and
-     * this point is safe for a bounded blocking exchange because the
-     * prompt is already on screen and nothing else depends on it yet.
-     */
-    if (NetLinkIsUp())
-    {
-        if (NetBringUp())
-            TerminalPrintLine32("Network ready", 0x0000FF00);
-        else
-            TerminalPrintLine32("Network link up, no DHCP lease", 0x00FFBF00);
-    }
-
-    /*
-     * Hand IRQ0 back to the PIT now that storage, the registry and the
-     * shell are initialized: PITTick drives the scheduler and the
-     * framebuffer present, so masking it here leaves the display frozen
-     * and the clock dead. IRQ1 (keyboard) is already unmasked by
-     * IRQInitialize().
-     */
-    PICUnmaskIRQ(IRQ_TIMER);
-
-    __asm__ volatile("sti");
-    TerminalPrintLine32("InterruptSys online", 0xFFFFFFFF);
-    DbgInfo("Reached post-STI checkpoint", (uintptr_t)kernel_main);
+    DbgBootLogFlush();
 
     while (1)
     {
         ShellUpdate();
-        /*
-         * The NIC is polled rather than interrupt driven, so drain its
-         * receive ring from the idle path. hlt parks the CPU until the
-         * next PIT tick, which brings us back here ~1000 times a second.
-         */
-        NetService();
         __asm__ volatile("hlt");
     }
 }

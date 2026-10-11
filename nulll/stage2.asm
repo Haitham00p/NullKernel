@@ -1,19 +1,3 @@
-; Copyright (C) 2026 Haitham Al-Nasser
-; This file is part of NullOS.
-;
-; This program is free software: you can redistribute it and/or modify
-; it under the terms of the GNU General Public License as published by
-; the Free Software Foundation, either version 3 of the License, or
-; (at your option) any later version.
-;
-; This program is distributed in the hope that it will be useful,
-; but WITHOUT ANY WARRANTY; without even the implied warranty of
-; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-; See the GNU General Public License for more details.
-;
-; You should have received a copy of the GNU General Public License
-; along with NullOS. If not, see <https://www.gnu.org/licenses/>.
-;
 BITS 16
 ORG 0x8000
 
@@ -33,28 +17,23 @@ ORG 0x8000
 ;   partition + 7 = this stage2
 ;
 STAGE2_LOAD       equ 0x00008000
-MANIFEST_BUF      equ 0x00006800
+MANIFEST_BUF      equ 0x00006000
 BOOTINFO_ADDR     equ 0x00006000
 FBINFO_ADDR       equ 0x00006100
 VBE_CTRL_BUF      equ 0x00006200
 VBE_MODE_BUF      equ 0x00006400
 E820_ADDR         equ 0x00005000
 E820_MAX          equ 128
-KERNEL_STAGING    equ 0x0000E000
-KERNEL_STAGING_END equ 0x000A0000
-KERNEL_STAGING_MAX equ (KERNEL_STAGING_END - KERNEL_STAGING)
-; The four tables are built only after the ELF segments have been copied out
-; to their physical addresses, so they reuse the kernel staging area. They must
-; stay below 1 MiB: the kernel PMM's first allocatable page is exactly
-; 0x100000, so anything at or above that can be handed out by PmmAllocPage and
-; corrupt these tables. Nothing else uses 0x10000-0x1FFFF.
-PAGE_PML4         equ 0x00010000
-PAGE_PDPT         equ 0x00011000
-PAGE_PD_HI        equ 0x00012000
-PAGE_FBPD         equ 0x00013000
+KERNEL_STAGING    equ 0x00010000
+KERNEL_STAGING_END equ 0x0009F000 ; leave the EBDA/VGA boundary untouched
+KERNEL_STAGING_CAPACITY equ KERNEL_STAGING_END - KERNEL_STAGING
+PAGE_PML4         equ 0x00011000
+PAGE_PDPT         equ 0x00012000
+PAGE_PD           equ 0x00013000
+PAGE_FBPD         equ 0x00014000
 FB_VA_LO          equ 0xC0000000
 FB_VA_HI          equ 0xFFFFFFFF
-KERNEL_PHYS_BASE  equ 0x00200000
+KERNEL_PHYS_BASE  equ 0x00100000
 NULLBOOT_MAGIC_LO equ 0x55424F54
 NULLBOOT_MAGIC_HI equ 0x4E554C4C
 BOOTINFO_SIZE     equ 104
@@ -73,17 +52,17 @@ stage2_main:
     mov ds, ax
     mov es, ax
     mov ss, ax
-    ; The stack grows down, so its top must sit below every scratch buffer.
-    ; E820 map is 0x5000, bootinfo 0x6000 and manifest 0x6800; a top of
-    ; 0x7000 put the live stack straight through all of them and corrupted
-    ; the loader's own return state.
-    mov sp, 0x4000
+    mov sp, 0x7000
     sti
     mov [boot_drive], dl
+    call serial_init
+    mov si, serial_entered
+    call serial_puts
 
     call clear_screen
     call check_edd
     jc fatal_disk
+    call enable_a20
 
     call read_partition_start
     jc fatal_disk
@@ -93,29 +72,56 @@ stage2_main:
 
     cmp al, 0
     je menu
-    ; A reboot-c request is intentionally one-shot at the kernel side.
-    ; Native NullL still performs the same real boot path.
+    ; A previously stored mode bypasses the menu. Log this explicitly so
+    ; the serial trace distinguishes auto-boot from a dead keyboard loop.
     mov [requested_mode], al
+    mov si, serial_auto_mode
+    call serial_puts
 
 native_boot:
+    mov si, serial_loading_kernel
+    call serial_puts
     call load_kernel
     jc fatal_kernel
+    mov si, serial_kernel_loaded
+    call serial_puts
 
     call collect_e820
     jc fatal_memory
+    mov si, serial_e820_ok
+    call serial_puts
+    xor ax, ax
+    mov ds, ax
+    mov es, ax
+    call enable_unreal_mode
 
     call find_rsdp
+    mov si, serial_rsdp_done
+    call serial_puts
 
+    ; VBE firmware may need interrupts; DS/ES are conventional segments here.
+    sti
     call setup_vbe
+    cli
     ; VBE is optional. The kernel remains usable without a framebuffer.
+    xor ax, ax
+    mov ds, ax
+    mov es, ax
+    call enable_unreal_mode
+    mov si, serial_vbe_done
+    call serial_puts
 
     call build_bootinfo
     call build_page_tables
+    mov si, serial_long_mode
+    call serial_puts
     call enter_long_mode
 
     jmp $
 
 menu:
+    mov si, serial_menu
+    call serial_puts
     mov si, title
     call puts
     mov si, normal
@@ -131,6 +137,18 @@ menu:
 
 .wait:
     call keyboard_get_menu_key
+    test al, al
+    jz .wait
+    mov [last_key], al
+    mov si, serial_key
+    call serial_puts
+    mov al, [last_key]
+    call serial_putc
+    mov al, 13
+    call serial_putc
+    mov al, 10
+    call serial_putc
+    mov al, [last_key]
     cmp al, '1'
     je .normal
     cmp al, '2'
@@ -143,28 +161,106 @@ menu:
 
 .normal:
     mov al, 1
+    mov [requested_mode], al
+    mov si, serial_select_1
+    call serial_puts
     jmp .select
 .asm:
     mov al, 2
+    mov [requested_mode], al
+    mov si, serial_select_2
+    call serial_puts
     jmp .select
 .npb:
     mov al, 3
+    mov [requested_mode], al
+    mov si, serial_select_3
+    call serial_puts
 
 .select:
+    mov al, [requested_mode]
     call write_mailbox
     jc fatal_disk
-    mov [requested_mode], al
     jmp native_boot
 
 ; ---------------------------------------------------------------------------
+; COM1 diagnostics. Serial output is best-effort: if the UART is absent or
+; disabled, bounded polling ensures it cannot hang the boot path.
+; ---------------------------------------------------------------------------
+serial_init:
+    mov dx, 0x3F9
+    xor al, al
+    out dx, al
+    mov dx, 0x3FB
+    mov al, 0x80
+    out dx, al
+    mov dx, 0x3F8
+    mov al, 0x03
+    out dx, al
+    mov dx, 0x3F9
+    xor al, al
+    out dx, al
+    mov dx, 0x3FB
+    mov al, 0x03
+    out dx, al
+    mov dx, 0x3FA
+    mov al, 0xC7
+    out dx, al
+    mov dx, 0x3FC
+    mov al, 0x0B
+    out dx, al
+    ret
+
+serial_puts:
+.next:
+    lodsb
+    test al, al
+    jz .done
+    call serial_putc
+    jmp .next
+.done:
+    ret
+
+; Input AL=byte. Preserves AX and DX; skips output if the UART never becomes
+; ready, so a missing COM1 cannot freeze NullL.
+serial_putc:
+    push ax
+    push dx
+    push cx
+    mov cx, 0xFFFF
+.wait:
+    mov dx, 0x3FD
+    in al, dx
+    test al, 0x20
+    jnz .ready
+    loop .wait
+    pop cx
+    pop dx
+    pop ax
+    ret
+.ready:
+    pop cx
+    mov dx, 0x3F8
+    pop ax
+    out dx, al
+    pop dx
+    ret
+
+; ---------------------------------------------------------------------------
 ; Menu keyboard input
-; Use the BIOS keyboard service so firmware retains ownership of the
-; keyboard controller and its interrupt path. INT 16h AH=00 blocks until
-; a key is available; AL contains ASCII (including BIOS USB-keyboard emulation).
+; ---------------------------------------------------------------------------
+; Prefer the BIOS keyboard API, but fall back to the 8042 controller when
+; firmware does not expose the key through INT 16h. Return ASCII in AL.
 keyboard_get_menu_key:
+    ; Let the BIOS own the keyboard controller and IRQ path.
+    ; Reading ports 0x60/0x64 behind the BIOS can steal scan codes from
+    ; the BIOS handler, depends on the controller scan-code set, and can
+    ; leave firmware keyboard state inconsistent. INT 16h returns ASCII
+    ; in AL and blocks until a key is available.
 .wait:
     xor ah, ah
     int 0x16
+
     cmp al, '1'
     je .key1
     cmp al, '2'
@@ -173,8 +269,11 @@ keyboard_get_menu_key:
     je .key3
     cmp al, '0'
     je .key0
+
+    ; Unknown keys are ignored by the caller, which re-enters this routine.
     xor al, al
     ret
+
 .key1:
     mov al, '1'
     ret
@@ -189,10 +288,23 @@ keyboard_get_menu_key:
     ret
 
 ; ---------------------------------------------------------------------------
+; A20 gate
+; ---------------------------------------------------------------------------
+enable_a20:
+    ; Fast A20 gate (port 0x92). Preserve the system-reset bit 0.
+    in al, 0x92
+    or al, 0x02
+    and al, 0xFE
+    out 0x92, al
+    ret
+
+; ---------------------------------------------------------------------------
 ; BIOS / disk helpers
 ; ---------------------------------------------------------------------------
 
 check_edd:
+    ; BIOS video/serial helpers may change DL; restore the boot drive.
+    mov dl, [boot_drive]
     mov ah, 0x41
     mov bx, 0x55AA
     int 0x13
@@ -283,6 +395,8 @@ write_mailbox:
 
 load_kernel:
     ; Read the installer-generated NLLK extent manifest.
+    mov si, serial_manifest_read
+    call serial_puts
     mov eax, [partition_start]
     add eax, MANIFEST_SECTOR
     mov dword [manifest_dap.lba_low], eax
@@ -297,6 +411,8 @@ load_kernel:
     mov ah, 0x42
     int 0x13
     jc .fail
+    mov si, serial_manifest_read_ok
+    call serial_puts
 
     cmp dword [MANIFEST_BUF], 0x4B4C4C4E ; NLLK
     jne .fail
@@ -304,6 +420,10 @@ load_kernel:
     jne .fail
 
     mov eax, [MANIFEST_BUF+8]
+    test eax, eax
+    jz .fail
+    cmp eax, KERNEL_STAGING_CAPACITY
+    ja .fail
     mov [kernel_size], eax
     mov eax, [MANIFEST_BUF+12]
     mov [extent_count], eax
@@ -311,14 +431,10 @@ load_kernel:
     je .fail
     cmp eax, MANIFEST_MAX_EXT
     ja .fail
-    ; The BIOS only honours a 16-bit segment:offset buffer, so the kernel has
-    ; to be staged in the low-memory window below the VGA aperture.
-    mov eax, [kernel_size]
-    cmp eax, KERNEL_STAGING_MAX
-    ja .fail
+    mov si, serial_manifest_valid
+    call serial_puts
 
-    ; Load every extent into the contiguous staging buffer.
-    mov dword [loaded_bytes], 0
+    ; Load every extent to the contiguous staging area at 32 MiB.
     xor ebx, ebx
 .extent_loop:
     cmp ebx, [extent_count]
@@ -346,54 +462,55 @@ load_kernel:
     test eax, eax
     jz .next_extent
     cmp eax, 127
-    jbe .chunk_ok
+    jbe .limit_64k
     mov eax, 127
+.limit_64k:
+    ; EDD legacy transfers must not cross a physical 64 KiB boundary.
+    mov edx, [kernel_dest]
+    and edx, 0xFFFF
+    mov ecx, 0x10000
+    sub ecx, edx
+    shr ecx, 9
+    cmp eax, ecx
+    jbe .chunk_ok
+    mov eax, ecx
 .chunk_ok:
-    test eax, eax
-    jz .fail
     mov word [kernel_dap.count], ax
-    ; This firmware ignores the 64-bit flat pointer and silently transfers to
-    ; segment:offset instead, so address the staging buffer that way. Because
-    ; segment*16 has its low four bits clear, the offset can only hold the
-    ; low nibble of the linear address and the segment holds the rest.
-    mov eax, [kernel_dest]
-    mov edx, eax
-    and edx, 0x0F
-    mov word [kernel_dap.offset], dx
-    shr eax, 4
-    mov word [kernel_dap.segment], ax
-    mov dword [kernel_dap.flat_low], 0
-    mov dword [kernel_dap.flat_high], 0
-    mov eax, [extent_remaining]
-    mov eax, [kernel_dap.lba_low]
-    mov ax, [kernel_dap.count]
-    mov ax, [kernel_dap.offset]
-    mov ax, [kernel_dap.segment]
-    mov ax, [boot_drive]
+    ; Preserve the requested count: BIOS may modify the DAP count field.
+    movzx eax, ax
+    mov [chunk_sectors], eax
+    shl eax, 9
+    mov [chunk_bytes], eax
 
+    ; Stage the kernel below 1 MiB using the portable 16-byte EDD DAP.
+    ; Each chunk is <= 127 sectors and begins at a 16-byte boundary, so
+    ; it cannot cross the 64 KiB transfer boundary.
+    mov edx, [kernel_dest]
+    add edx, [chunk_bytes]
+    jc .fail
+    cmp edx, KERNEL_STAGING_END
+    ja .fail
+    mov eax, [kernel_dest]
+    shr eax, 4
+    mov [kernel_dap.segment], ax
+    mov word [kernel_dap.offset], 0
+
+    mov si, serial_chunk_read
+    call serial_puts
     mov si, kernel_dap
     mov dl, [boot_drive]
     mov ah, 0x42
     int 0x13
     jc .fail
-    mov bx, ax
-    movzx eax, word [kernel_dap.count]
-    ; Guard: a zero-length transfer would otherwise spin forever.
-    test eax, eax
-    jz .fail
-    movzx ecx, ax              ; sectors the firmware reports as transferred
-    ; Never let a misbehaving firmware drive the counters past the extent.
-    mov edx, [extent_remaining]
-    cmp ecx, edx
-    jbe .rem_ok
-    mov ecx, edx
-.rem_ok:
-    mov eax, ecx
-    shl eax, 9
+    mov si, serial_chunk_read_ok
+    call serial_puts
+
+    ; The BIOS read completed into the low staging buffer.
+    mov eax, [chunk_bytes]
     add [kernel_dest], eax
     add [loaded_bytes], eax
-    sub [extent_remaining], ecx
-    add [kernel_dap.lba_low], ecx
+    mov eax, [chunk_sectors]
+    sub [extent_remaining], eax
     jmp .read_chunk
 
 .next_extent:
@@ -404,6 +521,14 @@ load_kernel:
     mov eax, [loaded_bytes]
     cmp eax, [kernel_size]
     jb .fail
+    mov si, serial_chunks_done
+    call serial_puts
+
+    ; Enable flat DS/ES limits for ELF parsing and copies to physical memory
+    ; above 1 MiB. The BIOS disk reads themselves used only a 16-byte DAP.
+    call enable_unreal_mode
+    mov si, serial_unreal_ready
+    call serial_puts
 
     ; Parse ELF64 header.
     mov esi, KERNEL_STAGING
@@ -413,6 +538,9 @@ load_kernel:
     jne .fail
     cmp byte [esi+5], 1         ; little endian
     jne .fail
+    mov si, serial_elf_header_ok
+    call serial_puts
+    mov esi, KERNEL_STAGING
 
     mov eax, [esi+32]
     mov [phoff_lo], eax
@@ -496,6 +624,8 @@ load_kernel:
     jmp .ph_loop
 
 .segments_done:
+    mov si, serial_elf_segments_done
+    call serial_puts
     mov eax, [entry_lo]
     mov [kernel_entry_lo], eax
     mov eax, [entry_hi]
@@ -538,37 +668,59 @@ load_kernel:
     ret
 
 ; ---------------------------------------------------------------------------
+; Unreal mode: retain flat 4 GiB DS/ES caches while returning to real mode.
+; BIOS disk I/O stays in real mode; after loading the ELF into low memory,
+; these flat segment limits let the loader parse it and copy PT_LOAD segments
+; to physical addresses above 1 MiB without using EDD 3.0 flat-buffer packets.
+; ---------------------------------------------------------------------------
+enable_unreal_mode:
+    cli
+    lgdt [gdt_unreal_descriptor]
+    mov eax, cr0
+    or eax, 1
+    mov cr0, eax
+    ; Keep 16-bit code semantics while loading 4 GiB data descriptors.
+    jmp 0x08:.pm16
+.pm16:
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov eax, cr0
+    and eax, 0xFFFFFFFE
+    mov cr0, eax
+    jmp 0x0000:.real16
+.real16:
+    ; Keep IRQs disabled while using the cached flat DS/ES limits. A BIOS
+    ; IRQ handler could reload a segment register and destroy unreal mode.
+    ret
+
+; ---------------------------------------------------------------------------
 ; E820 + ACPI
 ; ---------------------------------------------------------------------------
 
 collect_e820:
+    ; E820 is a BIOS real-mode service; use conventional real-mode segments.
+    xor ax, ax
+    mov ds, ax
+    mov es, ax
     mov dword [E820_ADDR], 0
-    mov dword [0x7000], 0xAA000001   ; TEMP DEBUG: entered
     xor ebx, ebx
     xor bp, bp
 .next:
     cmp bp, E820_MAX
     jae .done
+    ; Compute the entry buffer address first. Do not overwrite EAX=E820
+    ; before INT 15h; BIOS uses EAX to select the E820 service.
+    mov di, E820_ADDR
+    ; BP is the 16-bit loop index; zero-extend it explicitly because
+    ; the upper half of EBP is not guaranteed to be zero in real mode.
+    movzx eax, bp
+    imul eax, 24
+    add di, ax
     mov eax, 0xE820
     mov edx, 0x534D4150
     mov ecx, 24
-    mov di, E820_ADDR
-    ; di = E820_ADDR + entry_index*24.
-    ; INT 15h needs AX=0xE820, EDX=0x534D4150, ECX=24 and EBX preserved.
-    ; imul writes only AX, so save/restore AX around the offset math.
-    push ax
-    mov ax, bp
-    imul ax, bp, 24
-    add di, ax
-    pop ax
     int 0x15
-    ; TEMP DEBUG: capture first call result
-    mov [0x7004], eax
-    mov [0x7008], ecx
-    mov [0x700C], ebx
-    pushf
-    pop eax
-    mov [0x7010], eax
     jc .finish
     cmp eax, 0x534D4150
     jne .fail
@@ -597,13 +749,13 @@ find_rsdp:
     mov ax, [0x40E]
     shl eax, 4
     mov [rsdp_scan], eax
-    mov ecx, 1024
+    mov ecx, 64              ; first 1 KiB of the EBDA, in 16-byte steps
     call scan_rsdp
     cmp dword [rsdp_found], 0
     jne .done
 
     mov dword [rsdp_scan], 0x000E0000
-    mov ecx, 0x20000
+    mov ecx, 0x2000           ; 128 KiB BIOS area, in 16-byte steps
     call scan_rsdp
 .done:
     ret
@@ -615,7 +767,9 @@ scan_rsdp:
     mov esi, [rsdp_scan]
     test esi, 0x0F
     jnz .next
-    cmp dword [esi], 0x20524453
+    ; ACPI RSDP signature is the eight-byte ASCII string "RSD PTR ".
+    ; Little-endian first dword is 0x20445352, not 0x20524453.
+    cmp dword [esi], 0x20445352
     jne .next
     cmp dword [esi+4], 0x20525450
     jne .next
@@ -644,6 +798,9 @@ scan_rsdp:
 setup_vbe:
     mov dword [FBINFO_ADDR], 0
     mov dword [FBINFO_ADDR+4], 0
+    ; VBE BIOS calls expect a conventional real-mode ES:DI buffer.
+    xor ax, ax
+    mov es, ax
 
     mov dword [VBE_CTRL_BUF], 0x32454256 ; "VBE2"
     mov ax, 0x4F00
@@ -725,10 +882,7 @@ setup_vbe:
     mov [FBINFO_ADDR+24], eax
     mov ax, [VBE_MODE_BUF+20]
     mov [FBINFO_ADDR+28], eax
-    ; BytesPerScanLine is a 16-bit VBE field. Reading it as a dword also
-    ; swallows XResolution into the high half, producing a pitch of
-    ; (XRes << 16) | pitch and a garbage framebuffer size downstream.
-    movzx eax, word [VBE_MODE_BUF+16]
+    mov eax, [VBE_MODE_BUF+16]
     mov [FBINFO_ADDR+32], eax
     movzx eax, byte [VBE_MODE_BUF+25]
     mov [FBINFO_ADDR+36], ax
@@ -778,6 +932,7 @@ setup_vbe:
 ; ---------------------------------------------------------------------------
 
 build_bootinfo:
+    cld
     ; Clear BootInfo.
     mov di, BOOTINFO_ADDR
     xor eax, eax
@@ -815,8 +970,8 @@ build_bootinfo:
     mov dword [BOOTINFO_ADDR+80], 0
     mov dword [BOOTINFO_ADDR+84], 0
     mov dword [BOOTINFO_ADDR+88], STAGE2_LOAD
-    mov dword [BOOTINFO_ADDR+92], 0
-    mov dword [BOOTINFO_ADDR+96], STAGE2_LOAD + STAGE2_SECTORS*512
+    mov dword [BOOTINFO_ADDR+92], STAGE2_LOAD + STAGE2_SECTORS*512
+    mov dword [BOOTINFO_ADDR+96], 0
     mov dword [BOOTINFO_ADDR+100], 0
 
     ; Give the framebuffer its own higher-half window at
@@ -847,39 +1002,32 @@ build_bootinfo:
 ; ---------------------------------------------------------------------------
 
 build_page_tables:
-    ; Clear all 4 tables. They sit contiguously in the staging area, above
-    ; the 0x4000 stack top and outside every scratch buffer.
+    cld
+    ; Clear 3 pages using 32-bit destination addressing.
     mov edi, PAGE_PML4
     xor eax, eax
-    mov ecx, 4096/4
-    rep stosd
+    mov ecx, 12288/4 ; three full 4 KiB paging structures
+    a32 rep stosd
 
-    ; PML4[0] -> PDPT (lower half), PML4[511] -> PDPT.
+    ; PML4[0] -> PDPT, PML4[511] -> PDPT.
     a32 mov dword [PAGE_PML4+0], PAGE_PDPT | 3
     a32 mov dword [PAGE_PML4+4], 0
     a32 mov dword [PAGE_PML4+511*8], PAGE_PDPT | 3
     a32 mov dword [PAGE_PML4+511*8+4], 0
 
-    ; PDPT[0] -> one 1 GiB identity page (keeps the loader stub reachable),
-    ; PDPT[510] -> higher-half PD, PDPT[511] -> framebuffer PD.
-    a32 mov dword [PAGE_PDPT+0], 0x83
-    a32 mov dword [PAGE_PDPT+4], 0
-    a32 mov dword [PAGE_PDPT+510*8], PAGE_PD_HI | 3
-    a32 mov dword [PAGE_PDPT+510*8+4], 0
+    ; PDPT[0] and [510] and [511] -> PD.
+    a32 mov dword [PAGE_PDPT+0], PAGE_PD | 3
+    a32 mov dword [PAGE_PDPT+510*8], PAGE_PD | 3
     a32 mov dword [PAGE_PDPT+511*8], PAGE_FBPD | 3
-    a32 mov dword [PAGE_PDPT+511*8+4], 0
 
-    ; Higher half: ffffffff80000000 must land on KERNEL_PHYS_BASE, because the
-    ; kernel is linked for KERNEL_VMA but loaded at its LMA. Identity mapping
-    ; the window to physical 0 would jump into low memory instead. The load
-    ; address must be 2 MiB aligned or a PDE would set a reserved bit.
+    ; 2 MiB identity map for the first 1 GiB. The kernel higher-half
+    ; window ffffffff80000000 uses PDPT[510].
     xor ecx, ecx
-.pdhi:
+.pd:
     mov eax, ecx
     shl eax, 21
-    add eax, KERNEL_PHYS_BASE
     or eax, 0x83
-    mov edi, PAGE_PD_HI
+    mov edi, PAGE_PD
     mov edx, ecx
     shl edx, 3
     add edi, edx
@@ -887,9 +1035,13 @@ build_page_tables:
     mov dword [edi+4], 0
     inc ecx
     cmp ecx, 512
-    jb .pdhi
+    jb .pd
 
     ; Separate 2 MiB mappings for the VBE framebuffer window.
+    mov edi, PAGE_FBPD
+    xor eax, eax
+    mov ecx, 4096/4 ; clear all 512 64-bit framebuffer PDEs
+    a32 rep stosd
     mov eax, [FBINFO_ADDR+8]
     test eax, eax
     jz .fb_done
@@ -937,19 +1089,9 @@ enter_long_mode:
     or eax, 1 << 8
     wrmsr
 
-    ; Both PE (bit 0) and PG (bit 31) are required before the far jump.
-    ; Setting only PG leaves the CPU in real mode, where "jmp 0x08:..." is
-    ; interpreted as segment 0x08 (base 0x80) and the 64-bit entry never runs.
-    ; Read the paging structures back immediately before switching them on.
-    a32 mov eax, [PAGE_PML4]
-    a32 mov eax, [PAGE_PDPT+510*8]
-    a32 mov eax, [PAGE_PD_HI]
-    ; Enter protected mode first, then enable paging as a separate step.
     mov eax, cr0
-    or eax, 1
-    mov cr0, eax
-    mov eax, cr0
-    or eax, 1 << 31
+    ; Long mode requires both protected mode (PE) and paging (PG).
+    or eax, 0x80000001
     mov cr0, eax
 
     jmp 0x08:long_mode_entry
@@ -964,8 +1106,19 @@ long_mode_entry:
     mov fs, ax
     mov gs, ax
 
-    mov rsp, 0x0000000000018000
-    and rsp, -16
+    ; Put the initial stack below the EBDA, in memory the PMM reserves.
+    ; The ELF staging buffer is no longer needed after PT_LOAD copies finish.
+    movzx eax, word [abs 0x40E]
+    test eax, eax
+    jz .fallback_stack
+    shl eax, 4
+    sub eax, 0x1000
+    jmp .stack_ready
+.fallback_stack:
+    mov eax, 0x0009D000
+.stack_ready:
+    and eax, 0xFFFFFFF0
+    mov rsp, rax
     sub rsp, 8
 
     mov rdi, BOOTINFO_ADDR
@@ -973,12 +1126,18 @@ long_mode_entry:
     jmp rax
 
 fatal_disk:
+    mov si, serial_fatal_disk
+    call serial_puts
     mov si, msg_disk
     jmp fatal
 fatal_kernel:
+    mov si, serial_fatal_kernel
+    call serial_puts
     mov si, msg_kernel
     jmp fatal
 fatal_memory:
+    mov si, serial_fatal_memory
+    call serial_puts
     mov si, msg_memory
     jmp fatal
 
@@ -1032,9 +1191,12 @@ puts:
 
 boot_drive db 0
 requested_mode db 0
+last_key db 0
 partition_start dd 0
 kernel_size dd 0
 loaded_bytes dd 0
+chunk_sectors dd 0
+chunk_bytes dd 0
 extent_count dd 0
 extent_remaining dd 0
 kernel_dest dd 0
@@ -1070,6 +1232,31 @@ assembly db "  [2] Assembly-Mode",13,10,0
 npb db "  [3] NullOS Pre-Boot",13,10,0
 old_boot db "  [0] Old Boot Record",13,10,0
 prompt db "Command: ",0
+serial_entered db "NullL: stage2 entered",13,10,0
+serial_auto_mode db "NullL: mailbox mode active; bypassing menu",13,10,0
+serial_menu db "NullL: menu displayed; waiting for key",13,10,0
+serial_key db "NullL: key=",0
+serial_select_1 db "NullL: selected mode 1",13,10,0
+serial_select_2 db "NullL: selected mode 2",13,10,0
+serial_select_3 db "NullL: selected mode 3",13,10,0
+serial_loading_kernel db "NullL: loading kernel manifest/extents",13,10,0
+serial_manifest_read db "NullL: reading manifest sector",13,10,0
+serial_manifest_read_ok db "NullL: manifest sector read",13,10,0
+serial_manifest_valid db "NullL: manifest validated",13,10,0
+serial_chunks_done db "NullL: all kernel chunks loaded",13,10,0
+serial_unreal_ready db "NullL: unreal mode enabled",13,10,0
+serial_elf_header_ok db "NullL: ELF64 header accepted",13,10,0
+serial_elf_segments_done db "NullL: ELF PT_LOAD segments copied",13,10,0
+serial_chunk_read db "NullL: reading kernel extent chunk",13,10,0
+serial_chunk_read_ok db "NullL: kernel extent chunk read",13,10,0
+serial_kernel_loaded db "NullL: ELF segments loaded",13,10,0
+serial_e820_ok db "NullL: E820 memory map collected",13,10,0
+serial_rsdp_done db "NullL: RSDP scan complete",13,10,0
+serial_vbe_done db "NullL: VBE setup complete",13,10,0
+serial_long_mode db "NullL: entering long mode",13,10,0
+serial_fatal_disk db "NullL: fatal disk error",13,10,0
+serial_fatal_kernel db "NullL: fatal kernel load/ELF error",13,10,0
+serial_fatal_memory db "NullL: fatal E820 memory map error",13,10,0
 loading_old db 13,10,"Loading Old Boot Record...",13,10,0
 old_fail db "NullL: Old Boot Record invalid",13,10,0
 msg_disk db "NullL: disk error",13,10,0
@@ -1124,9 +1311,19 @@ align 8
 gdt64:
     dq 0
     dq 0x00AF9A000000FFFF
-    dq 0x00AF92000000FFFF
+    dq 0x00CF92000000FFFF
 gdt64_descriptor:
     dw 23
     dd gdt64
+
+align 8
+gdt_unreal:
+    dq 0
+    dq 0x008F9A000000FFFF ; 16-bit code with 4 GiB limit
+    dq 0x00CF92000000FFFF ; 32-bit flat data
+gdt_unreal_end:
+gdt_unreal_descriptor:
+    dw gdt_unreal_end - gdt_unreal - 1
+    dd gdt_unreal
 
 times STAGE2_SECTORS*512-($-$$) db 0
