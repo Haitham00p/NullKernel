@@ -24,11 +24,10 @@ STAGE2="$SCRIPT_DIR/build/nulll/stage2.bin"
 echo "[*] staging NullOS FAT32 filesystem"
 # Do not invoke mtools here.  The installer writes the already-formatted FAT32
 # partition directly, avoiding mtools locking/interactive probing entirely.
-python3 - "$IMG" "$KERNEL" "$SCRIPT_DIR" <<'PY'
-import hashlib, os, re, struct, sys
+python3 - "$IMG" "$KERNEL" <<'PY'
+import os, struct, sys
 
 img_path, kernel_path = sys.argv[1], sys.argv[2]
-script_dir = sys.argv[3] if len(sys.argv) > 3 else "."
 PART = 2048
 SECTOR = 512
 part_off = PART * SECTOR
@@ -41,12 +40,38 @@ with open(img_path, "r+b") as f:
     spc = bpb[13]
     reserved = struct.unpack_from("<H", bpb, 14)[0]
     fats = bpb[16]
+    fsinfo_sector = struct.unpack_from("<H", bpb, 48)[0]
+    backup_boot_sector = struct.unpack_from("<H", bpb, 50)[0]
     fat_size = struct.unpack_from("<I", bpb, 36)[0]
     root = struct.unpack_from("<I", bpb, 44)[0]
     total = struct.unpack_from("<I", bpb, 32)[0]
 
     if bps != 512 or not spc or not fats or not fat_size or root < 2:
         raise SystemExit("invalid FAT32 BPB")
+
+    # NullL Stage 2 occupies partition-relative sectors 7 through 54.
+    # All of those sectors must remain inside FAT32's reserved region.
+    required_reserved = 7 + 48
+    if reserved < required_reserved:
+        raise SystemExit(
+            f"FAT32 reserved area too small for NullL Stage 2: "
+            f"{reserved} sectors; need at least {required_reserved}"
+        )
+
+    stage2_first = 7
+    stage2_end = stage2_first + 48  # exclusive; sectors 7..54
+    backup_fsinfo_sector = (
+        backup_boot_sector + fsinfo_sector if backup_boot_sector else 0
+    )
+    for label, sector in (
+        ("FSInfo", fsinfo_sector),
+        ("backup boot sector", backup_boot_sector),
+        ("backup FSInfo", backup_fsinfo_sector),
+    ):
+        if stage2_first <= sector < stage2_end:
+            raise SystemExit(
+                f"FAT32 {label} at reserved sector {sector} overlaps NullL Stage 2"
+            )
 
     fat_base = part_off + reserved * bps
     data_lba = PART + reserved + fats * fat_size
@@ -113,149 +138,82 @@ with open(img_path, "r+b") as f:
     def first_cluster(e):
         return (struct.unpack_from("<H", e, 20)[0] << 16) | struct.unpack_from("<H", e, 26)[0]
 
-    _next_free = [2]
-
     def alloc_clusters(count):
         free = []
-        c = _next_free[0]
-        seen_wrap = 0
-        while len(free) < count and seen_wrap < 2:
-            if c >= cluster_count + 2:
-                c = 2
-                seen_wrap += 1
-                continue
+        for c in range(2, cluster_count + 2):
             if fat_get(c) == 0:
                 free.append(c)
-            c += 1
+                if len(free) == count:
+                    break
         if len(free) != count:
             raise SystemExit("not enough free FAT32 clusters")
         for i, c in enumerate(free):
             fat_set(c, 0x0fffffff if i + 1 == len(free) else free[i + 1])
-        _next_free[0] = free[-1] + 1
         return free
 
-    def free_chain(start):
-        c, seen = start, set()
-        while 2 <= c < 0x0ffffff8 and c not in seen:
-            seen.add(c)
-            nxt = fat_get(c)
-            fat_set(c, 0)
-            c = nxt
-        _next_free[0] = min(_next_free[0], start)
-
-    _LEGAL = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-$'~`!@#%^&(){}")
-
-    def short_83(name):
-        """Map a source-tree name onto a unique, valid FAT32 8.3 name.
-
-        Names that already fit 8.3 are passed through unchanged. Longer ones
-        are shortened and disambiguated with a hash of the full name, because
-        plain truncation is lossy (KERNEL_DEBUGGING.TXT and
-        KERNEL_DEVELOPMENT.TXT both collapse to KERNEL_D.TXT).
-        """
-        up = name.upper()
-        base, dot, ext = up.rpartition(".")
-        if not dot:
-            base, ext = ext, ""
-        base = "".join(ch if ch in _LEGAL else "_" for ch in base)
-        ext = "".join(ch if ch in _LEGAL else "_" for ch in ext)
-        if 1 <= len(base) <= 8 and len(ext) <= 3:
-            return (base.ljust(8) + ext.ljust(3)).encode("ascii")
-        digest = hashlib.sha1(name.encode("utf-8", "replace")).hexdigest()
-        b = ((base[:2] or "_") + "_" + digest[:3])
-        return (b.ljust(8) + ext[:3].ljust(3)).encode("ascii")
-
-    def dir_slots(parent):
-        """Walk a whole directory chain, yielding (cluster, offset, entry)."""
-        c, seen = parent, set()
-        while 2 <= c < 0x0ffffff8 and c not in seen:
-            seen.add(c)
-            data = read_cluster(c)
-            for off in range(0, cluster_bytes, 32):
-                yield c, off, data[off:off+32]
-            c = fat_get(c)
-
-    def dir_lookup(parent, sname):
-        for c, off, e in dir_slots(parent):
-            if e[0] == 0x00:
-                return None
-            if e[0] == 0xe5 or e[11] == 0x0f:
-                continue
-            if e[:11] == sname:
-                return c, off, e
-        return None
-
-    def dir_ensure_slot(parent):
-        """Find a reusable directory slot, growing the chain if needed."""
-        for c, off, e in dir_slots(parent):
-            if e[0] in (0x00, 0xe5):
-                return c, off
-        last, seen, c = parent, set(), parent
-        while 2 <= c < 0x0ffffff8 and c not in seen:
-            seen.add(c)
-            last = c
-            c = fat_get(c)
-        fresh = alloc_clusters(1)[0]
-        fat_set(last, fresh)
-        write_cluster(fresh, bytes(cluster_bytes))
-        return fresh, 0
-
-    def dir_store(parent, sname, attr, first, size):
-        hit = dir_lookup(parent, sname)
-        if hit:
-            c, off = hit[0], hit[1]
-            entry = bytearray(hit[2])
-        else:
-            c, off = dir_ensure_slot(parent)
-            entry = bytearray(32)
-        entry[:11] = sname
-        entry[11] = attr
-        entry[20:22] = struct.pack("<H", first >> 16)
-        entry[26:28] = struct.pack("<H", first & 0xffff)
-        entry[28:32] = struct.pack("<I", size)
-        data = bytearray(read_cluster(c))
-        data[off:off+32] = entry
-        write_cluster(c, data)
-
     def make_dir(parent, name):
-        sname = short_83(name)
-        hit = dir_lookup(parent, sname)
+        hit = find_short(parent, short_name(name))
         if hit:
             return first_cluster(hit[2])
 
         c = alloc_clusters(1)[0]
         data = bytearray(cluster_bytes)
+
         data[0:11] = b".          "
         data[11] = 0x10
         data[20:22] = struct.pack("<H", c >> 16)
         data[26:28] = struct.pack("<H", c & 0xffff)
+
         data[32:43] = b"..         "
         data[43] = 0x10
         data[52:54] = struct.pack("<H", parent >> 16)
         data[58:60] = struct.pack("<H", parent & 0xffff)
         write_cluster(c, data)
-        dir_store(parent, sname, 0x10, c, 0)
+
+        p = read_cluster(parent)
+        slot = next((off for off in range(0, cluster_bytes, 32)
+                     if p[off] in (0x00, 0xe5)), None)
+        if slot is None:
+            raise SystemExit("root directory cluster full")
+
+        e = bytearray(32)
+        e[:11] = short_name(name)
+        e[11] = 0x10
+        e[20:22] = struct.pack("<H", c >> 16)
+        e[26:28] = struct.pack("<H", c & 0xffff)
+        p[slot:slot+32] = e
+        write_cluster(parent, p)
         return c
 
-    def put_file(parent, name, path=None, data=None):
-        if data is None:
-            data = open(path, "rb").read()
-        sname = short_83(name)
-        hit = dir_lookup(parent, sname)
-        if hit:
-            # Re-installing over a used image: reclaim the old chain first so
-            # a changed file is actually replaced instead of aborting.
-            free_chain(first_cluster(hit[2]))
+    def put_file(parent, name, path):
+        data = open(path, "rb").read()
+        if find_short(parent, short_name(name)):
+            raise SystemExit(f"{name} already exists")
+
         count = max(1, (len(data) + cluster_bytes - 1) // cluster_bytes)
         chain = alloc_clusters(count)
+
         for i, c in enumerate(chain):
             chunk = data[i * cluster_bytes:(i + 1) * cluster_bytes]
             write_cluster(c, chunk.ljust(cluster_bytes, b"\x00"))
-        dir_store(parent, sname, 0x20, chain[0], len(data))
+
+        p = read_cluster(parent)
+        slot = next((off for off in range(0, cluster_bytes, 32)
+                     if p[off] in (0x00, 0xe5)), None)
+        if slot is None:
+            raise SystemExit("directory cluster full")
+
+        e = bytearray(32)
+        e[:11] = short_name(name)
+        e[11] = 0x20
+        e[20:22] = struct.pack("<H", chain[0] >> 16)
+        e[26:28] = struct.pack("<H", chain[0] & 0xffff)
+        e[28:32] = struct.pack("<I", len(data))
+        p[slot:slot+32] = e
+        write_cluster(parent, p)
         return chain
 
     def chain_from_fat(start):
-
         out, seen, c = [], set(), start
         while 2 <= c < 0x0ffffff8 and c not in seen:
             seen.add(c)
@@ -266,44 +224,6 @@ with open(img_path, "r+b") as f:
         if c < 0x0ffffff8:
             raise SystemExit(f"FAT32 chain points to invalid cluster {c}")
         return out
-
-    # Stage the source rootfs/ tree so a fresh install is a usable filesystem
-    # instead of just the kernel. sync_rootfs.sh is the reverse direction.
-    src_root = os.path.join(script_dir, "rootfs")
-    if not os.path.isdir(src_root):
-        src_root = os.environ.get("NULLOS_ROOTFS", "")
-    stats = {"dirs": 0, "files": 0, "bytes": 0}
-
-    def stage_tree(parent, path):
-        for entry in sorted(os.listdir(path)):
-            full = os.path.join(path, entry)
-            if os.path.islink(full) or not os.path.isfile(full):
-                continue
-            try:
-                chain = put_file(parent, entry, path=full)
-            except SystemExit as exc:
-                print(f"[!] skipped /{entry}: {exc}")
-                continue
-            stats["files"] += 1
-            stats["bytes"] += os.path.getsize(full)
-            _ = chain
-        for entry in sorted(os.listdir(path)):
-            full = os.path.join(path, entry)
-            if os.path.islink(full) or not os.path.isdir(full):
-                continue
-            if entry.upper() == "BOOT":
-                # The loader directory holds the build artifact only.
-                continue
-            stage_tree(make_dir(parent, entry), full)
-            stats["dirs"] += 1
-
-    if src_root and os.path.isdir(src_root):
-        print(f"[*] staging rootfs from {src_root}")
-        stage_tree(root, src_root)
-        print(f"[*] rootfs staged: {stats['dirs']} dirs, "
-              f"{stats['files']} files, {stats['bytes']} bytes")
-    else:
-        print("[*] no rootfs/ source tree found; installing kernel only")
 
     boot = find_short(root, b"BOOT       ")
     boot_cluster = first_cluster(boot[2]) if boot else make_dir(root, "BOOT")
