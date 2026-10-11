@@ -17,7 +17,7 @@
 #include "include/drivers.h"
 #include "drivers/storage/ide/ide.h"
 #include "arch/x86_64/power/pwr.h"
-#include "../Kernel/drivers/timer/PIT.h"
+#include "drivers/timer/PIT.h"
 #include "libc/stdlib.h"
 #include "libc/stdio.h"
 #include "bootmonitor/bootmonitor.h"
