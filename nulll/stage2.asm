@@ -1132,8 +1132,11 @@ long_mode_entry:
     mov fs, ax
     mov gs, ax
 
-    mov rsp, 0x0000000000018000
-    and rsp, -16
+    ; Keep the first C stack clear of the ELF staging buffer and page tables.
+    mov eax, [abs kernel_phys_end]
+    add eax, 0x00100000
+    and eax, 0xFFFFFFF0
+    mov rsp, rax
     sub rsp, 8
 
     mov rdi, BOOTINFO_ADDR
