@@ -24,6 +24,7 @@ jobs:
       - name: Inspect kernel entry and exception-stack symbols
         run: |
           nm -an build/kernel.elf | grep -E 'ExcStack|ISRCommon|ISR14|g_IsrStubs|IRQ0|kernel_main' || true
+          objdump -s --start-address=0xffffffff80144220 --stop-address=0xffffffff80144320 build/kernel.elf
           readelf -lW build/kernel.elf
           readelf -SW build/kernel.elf
           objdump -d -Mintel build/kernel.elf | grep -A22 -B4 -E 'lea +rsp|ISRCommon' || true
