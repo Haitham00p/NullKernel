@@ -532,10 +532,14 @@ load_kernel:
     mov eax, [loaded_bytes]
     cmp eax, [kernel_size]
     jb .fail
+    mov si, serial_chunks_done
+    call serial_puts
 
     ; Enable flat DS/ES limits for ELF parsing and copies to physical memory
     ; above 1 MiB. The BIOS disk reads themselves used only a 16-byte DAP.
     call enable_unreal_mode
+    mov si, serial_unreal_ready
+    call serial_puts
 
     ; Parse ELF64 header.
     mov esi, KERNEL_STAGING
@@ -545,6 +549,9 @@ load_kernel:
     jne .fail
     cmp byte [esi+5], 1         ; little endian
     jne .fail
+    mov si, serial_elf_header_ok
+    call serial_puts
+    mov esi, KERNEL_STAGING
 
     mov eax, [esi+32]
     mov [phoff_lo], eax
@@ -628,6 +635,8 @@ load_kernel:
     jmp .ph_loop
 
 .segments_done:
+    mov si, serial_elf_segments_done
+    call serial_puts
     mov eax, [entry_lo]
     mov [kernel_entry_lo], eax
     mov eax, [entry_hi]
@@ -1234,6 +1243,10 @@ serial_loading_kernel db "NullL: loading kernel manifest/extents",13,10,0
 serial_manifest_read db "NullL: reading manifest sector",13,10,0
 serial_manifest_read_ok db "NullL: manifest sector read",13,10,0
 serial_manifest_valid db "NullL: manifest validated",13,10,0
+serial_chunks_done db "NullL: all kernel chunks loaded",13,10,0
+serial_unreal_ready db "NullL: unreal mode enabled",13,10,0
+serial_elf_header_ok db "NullL: ELF64 header accepted",13,10,0
+serial_elf_segments_done db "NullL: ELF PT_LOAD segments copied",13,10,0
 serial_chunk_read db "NullL: reading kernel extent chunk",13,10,0
 serial_chunk_read_ok db "NullL: kernel extent chunk read",13,10,0
 serial_kernel_loaded db "NullL: ELF segments loaded",13,10,0
