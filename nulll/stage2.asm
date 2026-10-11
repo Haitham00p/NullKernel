@@ -996,7 +996,7 @@ build_page_tables:
     ; Clear 3 pages using 32-bit destination addressing.
     mov edi, PAGE_PML4
     xor eax, eax
-    mov ecx, 3072/4
+    mov ecx, 12288/4 ; three full 4 KiB paging structures
     a32 rep stosd
 
     ; PML4[0] -> PDPT, PML4[511] -> PDPT.
@@ -1030,7 +1030,7 @@ build_page_tables:
     ; Separate 2 MiB mappings for the VBE framebuffer window.
     mov edi, PAGE_FBPD
     xor eax, eax
-    mov ecx, 512
+    mov ecx, 4096/4 ; clear all 512 64-bit framebuffer PDEs
     a32 rep stosd
     mov eax, [FBINFO_ADDR+8]
     test eax, eax
