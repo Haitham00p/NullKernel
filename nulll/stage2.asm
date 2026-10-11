@@ -24,7 +24,9 @@ VBE_CTRL_BUF      equ 0x00006200
 VBE_MODE_BUF      equ 0x00006400
 E820_ADDR         equ 0x00005000
 E820_MAX          equ 128
-KERNEL_STAGING    equ 0x02000000
+KERNEL_STAGING    equ 0x00010000
+KERNEL_STAGING_END equ 0x000A0000
+KERNEL_STAGING_CAPACITY equ KERNEL_STAGING_END - KERNEL_STAGING
 PAGE_PML4         equ 0x00011000
 PAGE_PDPT         equ 0x00012000
 PAGE_PD           equ 0x00013000
@@ -417,6 +419,10 @@ load_kernel:
     jne .fail
 
     mov eax, [MANIFEST_BUF+8]
+    test eax, eax
+    jz .fail
+    cmp eax, KERNEL_STAGING_CAPACITY
+    ja .fail
     mov [kernel_size], eax
     mov eax, [MANIFEST_BUF+12]
     mov [extent_count], eax
@@ -457,17 +463,24 @@ load_kernel:
     mov eax, 127
 .chunk_ok:
     mov word [kernel_dap.count], ax
-    ; Preserve the requested count: BIOS is permitted to modify DAP count.
+    ; Preserve the requested count: BIOS may modify the DAP count field.
     movzx eax, ax
     mov [chunk_sectors], eax
+    shl eax, 9
+    mov [chunk_bytes], eax
 
+    ; Stage the kernel below 1 MiB using the portable 16-byte EDD DAP.
+    ; Each chunk is <= 127 sectors and begins at a 16-byte boundary, so
+    ; it cannot cross the 64 KiB transfer boundary.
+    mov edx, [kernel_dest]
+    add edx, [chunk_bytes]
+    jc .fail
+    cmp edx, KERNEL_STAGING_END
+    ja .fail
     mov eax, [kernel_dest]
-    mov dword [kernel_dap.flat_low], eax
-    mov dword [kernel_dap.flat_high], 0
-    ; EDD 3.0 flat-buffer DAP requires FFFF:FFFF in the legacy
-    ; segment:offset fields; the 64-bit linear destination is below.
-    mov word [kernel_dap.offset], 0xFFFF
-    mov word [kernel_dap.segment], 0xFFFF
+    shr eax, 4
+    mov [kernel_dap.segment], ax
+    mov word [kernel_dap.offset], 0
 
     mov si, kernel_dap
     mov dl, [boot_drive]
@@ -475,10 +488,8 @@ load_kernel:
     int 0x13
     jc .fail
 
-    ; DAP count and extent_remaining are both measured in sectors.
-    ; Convert the completed chunk to bytes only for destination accounting.
-    mov eax, [chunk_sectors]
-    shl eax, 9
+    ; The BIOS read completed into the low staging buffer.
+    mov eax, [chunk_bytes]
     add [kernel_dest], eax
     add [loaded_bytes], eax
     mov eax, [chunk_sectors]
@@ -493,6 +504,10 @@ load_kernel:
     mov eax, [loaded_bytes]
     cmp eax, [kernel_size]
     jb .fail
+
+    ; Enable flat DS/ES limits for ELF parsing and copies to physical memory
+    ; above 1 MiB. The BIOS disk reads themselves used only a 16-byte DAP.
+    call enable_unreal_mode
 
     ; Parse ELF64 header.
     mov esi, KERNEL_STAGING
@@ -926,11 +941,11 @@ build_bootinfo:
 ; ---------------------------------------------------------------------------
 
 build_page_tables:
-    ; Clear 3 pages.
+    ; Clear 3 pages using 32-bit destination addressing.
     mov edi, PAGE_PML4
     xor eax, eax
     mov ecx, 3072/4
-    rep stosd
+    a32 rep stosd
 
     ; PML4[0] -> PDPT, PML4[511] -> PDPT.
     a32 mov dword [PAGE_PML4+0], PAGE_PDPT | 3
@@ -964,7 +979,7 @@ build_page_tables:
     mov edi, PAGE_FBPD
     xor eax, eax
     mov ecx, 512
-    rep stosd
+    a32 rep stosd
     mov eax, [FBINFO_ADDR+8]
     test eax, eax
     jz .fb_done
@@ -1013,7 +1028,8 @@ enter_long_mode:
     wrmsr
 
     mov eax, cr0
-    or eax, 1 << 31
+    ; Long mode requires both protected mode (PE) and paging (PG).
+    or eax, 0x80000001
     mov cr0, eax
 
     jmp 0x08:long_mode_entry
@@ -1107,6 +1123,7 @@ partition_start dd 0
 kernel_size dd 0
 loaded_bytes dd 0
 chunk_sectors dd 0
+chunk_bytes dd 0
 extent_count dd 0
 extent_remaining dd 0
 kernel_dest dd 0
@@ -1188,7 +1205,7 @@ manifest_dap:
 
 align 4, db 0
 kernel_dap:
-    db 0x18, 0
+    db 0x10, 0
 .count dw 0
 .offset dw 0
 .segment dw 0
@@ -1212,7 +1229,7 @@ align 8
 gdt64:
     dq 0
     dq 0x00AF9A000000FFFF
-    dq 0x00AF92000000FFFF
+    dq 0x00CF92000000FFFF
 gdt64_descriptor:
     dw 23
     dd gdt64
