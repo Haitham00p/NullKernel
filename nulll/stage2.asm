@@ -924,6 +924,7 @@ setup_vbe:
 ; ---------------------------------------------------------------------------
 
 build_bootinfo:
+    cld
     ; Clear BootInfo.
     mov di, BOOTINFO_ADDR
     xor eax, eax
@@ -993,6 +994,7 @@ build_bootinfo:
 ; ---------------------------------------------------------------------------
 
 build_page_tables:
+    cld
     ; Clear 3 pages using 32-bit destination addressing.
     mov edi, PAGE_PML4
     xor eax, eax
