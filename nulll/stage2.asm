@@ -53,6 +53,9 @@ stage2_main:
     mov sp, 0x7000
     sti
     mov [boot_drive], dl
+    call serial_init
+    mov si, serial_entered
+    call serial_puts
 
     call clear_screen
     call check_edd
@@ -66,9 +69,11 @@ stage2_main:
 
     cmp al, 0
     je menu
-    ; A reboot-c request is intentionally one-shot at the kernel side.
-    ; Native NullL still performs the same real boot path.
+    ; A previously stored mode bypasses the menu. Log this explicitly so
+    ; the serial trace distinguishes auto-boot from a dead keyboard loop.
     mov [requested_mode], al
+    mov si, serial_auto_mode
+    call serial_puts
 
 native_boot:
     call load_kernel
@@ -89,6 +94,8 @@ native_boot:
     jmp $
 
 menu:
+    mov si, serial_menu
+    call serial_puts
     mov si, title
     call puts
     mov si, normal
@@ -104,6 +111,18 @@ menu:
 
 .wait:
     call keyboard_get_menu_key
+    test al, al
+    jz .wait
+    mov [last_key], al
+    mov si, serial_key
+    call serial_puts
+    mov al, [last_key]
+    call serial_putc
+    mov al, 13
+    call serial_putc
+    mov al, 10
+    call serial_putc
+    mov al, [last_key]
     cmp al, '1'
     je .normal
     cmp al, '2'
@@ -116,18 +135,90 @@ menu:
 
 .normal:
     mov al, 1
+    mov [requested_mode], al
+    mov si, serial_select_1
+    call serial_puts
     jmp .select
 .asm:
     mov al, 2
+    mov [requested_mode], al
+    mov si, serial_select_2
+    call serial_puts
     jmp .select
 .npb:
     mov al, 3
+    mov [requested_mode], al
+    mov si, serial_select_3
+    call serial_puts
 
 .select:
+    mov al, [requested_mode]
     call write_mailbox
     jc fatal_disk
-    mov [requested_mode], al
     jmp native_boot
+
+; ---------------------------------------------------------------------------
+; COM1 diagnostics. Serial output is best-effort: if the UART is absent or
+; disabled, bounded polling ensures it cannot hang the boot path.
+; ---------------------------------------------------------------------------
+serial_init:
+    mov dx, 0x3F9
+    xor al, al
+    out dx, al
+    mov dx, 0x3FB
+    mov al, 0x80
+    out dx, al
+    mov dx, 0x3F8
+    mov al, 0x03
+    out dx, al
+    mov dx, 0x3F9
+    xor al, al
+    out dx, al
+    mov dx, 0x3FB
+    mov al, 0x03
+    out dx, al
+    mov dx, 0x3FA
+    mov al, 0xC7
+    out dx, al
+    mov dx, 0x3FC
+    mov al, 0x0B
+    out dx, al
+    ret
+
+serial_puts:
+.next:
+    lodsb
+    test al, al
+    jz .done
+    call serial_putc
+    jmp .next
+.done:
+    ret
+
+; Input AL=byte. Preserves AX and DX; skips output if the UART never becomes
+; ready, so a missing COM1 cannot freeze NullL.
+serial_putc:
+    push ax
+    push dx
+    push cx
+    mov cx, 0xFFFF
+.wait:
+    mov dx, 0x3FD
+    in al, dx
+    test al, 0x20
+    jnz .ready
+    loop .wait
+    pop cx
+    pop dx
+    pop ax
+    ret
+.ready:
+    pop cx
+    mov dx, 0x3F8
+    pop ax
+    out dx, al
+    pop dx
+    ret
 
 ; ---------------------------------------------------------------------------
 ; Menu keyboard input
@@ -987,6 +1078,7 @@ puts:
 
 boot_drive db 0
 requested_mode db 0
+last_key db 0
 partition_start dd 0
 kernel_size dd 0
 loaded_bytes dd 0
@@ -1026,6 +1118,13 @@ assembly db "  [2] Assembly-Mode",13,10,0
 npb db "  [3] NullOS Pre-Boot",13,10,0
 old_boot db "  [0] Old Boot Record",13,10,0
 prompt db "Command: ",0
+serial_entered db "NullL: stage2 entered",13,10,0
+serial_auto_mode db "NullL: mailbox mode active; bypassing menu",13,10,0
+serial_menu db "NullL: menu displayed; waiting for key",13,10,0
+serial_key db "NullL: key=",0
+serial_select_1 db "NullL: selected mode 1",13,10,0
+serial_select_2 db "NullL: selected mode 2",13,10,0
+serial_select_3 db "NullL: selected mode 3",13,10,0
 loading_old db 13,10,"Loading Old Boot Record...",13,10,0
 old_fail db "NullL: Old Boot Record invalid",13,10,0
 msg_disk db "NullL: disk error",13,10,0
