@@ -28,8 +28,7 @@
 section .text
 global RunProgramOnStack
 
-extern RunSavedRsp
-extern RunGuestActive
+; RunSavedRsp and RunGuestActive are defined and exported in this file.
 ; address used by the interrupt abort path - normally unreferenced
 ; (the IRQ stub writes this label's address directly into its iret frame)
 global RunAbortResume
