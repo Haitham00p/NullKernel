@@ -82,36 +82,58 @@ void kernel_main(NullBootInfo *BootInfo)
 
     const NullBootMemoryEntry *MemoryMap =
         (const NullBootMemoryEntry *)(uintptr_t)BootInfo->MemoryMap;
+    const uint64_t IdentityMapLimit = 1ULL << 30;
+    const uint64_t MinimumHeapBase = 0x400000ULL;
+    const uint64_t MaximumHeapSize = 256ULL * 1024ULL * 1024ULL;
     uintptr_t HeapBase = 0;
     uint64_t HeapLength = 0;
     uint64_t HeapType = 0;
+    uint64_t KernelEnd = BootInfo->KernelPhysicalEnd;
+
+    /* Never let the heap overlap the loaded kernel/BSS, and only use RAM
+       covered by NullL's current first-1-GiB identity map. */
+    if (KernelEnd < MinimumHeapBase)
+        KernelEnd = MinimumHeapBase;
+    KernelEnd = (KernelEnd + 0xFFFULL) & ~0xFFFULL;
 
     for (uint32_t i = 0; i < BootInfo->MemoryMapCount; i++)
     {
         const NullBootMemoryEntry *Entry = &MemoryMap[i];
-        if (Entry->Type != NULLBOOT_MEM_USABLE)
+        if (Entry->Type != NULLBOOT_MEM_USABLE || Entry->Length == 0)
             continue;
-        if (Entry->Length <= HeapLength)
-            continue;
-        HeapBase = (uintptr_t)Entry->Base;
-        HeapLength = Entry->Length;
-        HeapType = Entry->Type;
-    }
 
-    if (HeapBase < 0x400000)
-    {
-        uint64_t Drop = 0x400000 - HeapBase;
-        if (Drop >= HeapLength)
-            HeapLength = 0;
-        else
+        uint64_t EntryBase = Entry->Base;
+        uint64_t EntryEnd = EntryBase + Entry->Length;
+        if (EntryEnd < EntryBase)
+            continue;
+        if (EntryEnd > IdentityMapLimit)
+            EntryEnd = IdentityMapLimit;
+        if (EntryBase < KernelEnd)
+            EntryBase = KernelEnd;
+        if (EntryBase < MinimumHeapBase)
+            EntryBase = MinimumHeapBase;
+
+        EntryBase = (EntryBase + 0xFFFULL) & ~0xFFFULL;
+        EntryEnd &= ~0xFFFULL;
+        if (EntryBase >= EntryEnd)
+            continue;
+
+        /* Keep at least half of the candidate range available to the PMM,
+           and cap the heap so VMM still has pages to allocate page tables. */
+        uint64_t CandidateLength = (EntryEnd - EntryBase) / 2ULL;
+        if (CandidateLength > MaximumHeapSize)
+            CandidateLength = MaximumHeapSize;
+        CandidateLength &= ~0xFFFULL;
+        if (CandidateLength > HeapLength)
         {
-            HeapBase += Drop;
-            HeapLength -= Drop;
+            HeapBase = (uintptr_t)EntryBase;
+            HeapLength = CandidateLength;
+            HeapType = Entry->Type;
         }
     }
 
-    if (HeapBase == 0)
-        PanicKernel("No Usable Entry Found For Heap", (uintptr_t)HeapInitialize);
+    if (HeapBase == 0 || HeapLength < 0x100000ULL)
+        PanicKernel("No safe usable range for heap", (uintptr_t)HeapInitialize);
 
     PmmInitialize(BootInfo);
     PmmReserveRange(BootInfo->KernelPhysicalBase,
