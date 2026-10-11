@@ -29,7 +29,9 @@ dd if=/dev/zero of="$IMG" bs=512 seek=1 count=$((SECTOR_START - 1)) \
     conv=notrunc status=none
 
 echo "[*] formatting FAT32 (label NULLOS)"
-mkfs.vfat -F 32 -n NULLOS --offset "$SECTOR_START" "$IMG"
+# NullL occupies partition sectors 7..54; reserve 64 sectors so Stage 2
+# never overlaps the FAT tables (mkfs.fat defaults to only 32 reserved sectors).
+mkfs.vfat -F 32 -R 64 -n NULLOS --offset "$SECTOR_START" "$IMG"
 
 echo "[*] done: $IMG ready"
 sfdisk -l "$IMG" | sed -n '/Device/,$p'
