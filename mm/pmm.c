@@ -4,7 +4,7 @@
 #include <stdbool.h>
 
 #define PAGE_SIZE 4096ULL
-#define MAX_PHYS  (64ULL * 1024ULL * 1024ULL * 1024ULL)
+#define MAX_PHYS  (1ULL * 1024ULL * 1024ULL * 1024ULL) /* NullL currently maps the first 1 GiB */
 #define MAX_PAGES (MAX_PHYS / PAGE_SIZE)
 #define BITMAP_BYTES (MAX_PAGES / 8ULL)
 
