@@ -690,9 +690,9 @@ enable_unreal_mode:
     mov eax, cr0
     or eax, 1
     mov cr0, eax
-    jmp 0x08:.pm32
-[BITS 32]
-.pm32:
+    ; Keep 16-bit code semantics while loading 4 GiB data descriptors.
+    jmp 0x08:.pm16
+.pm16:
     mov ax, 0x10
     mov ds, ax
     mov es, ax
@@ -700,7 +700,6 @@ enable_unreal_mode:
     and eax, 0xFFFFFFFE
     mov cr0, eax
     jmp 0x0000:.real16
-[BITS 16]
 .real16:
     sti
     ret
@@ -1319,7 +1318,7 @@ gdt64_descriptor:
 align 8
 gdt_unreal:
     dq 0
-    dq 0x00CF9A000000FFFF ; 32-bit flat code
+    dq 0x008F9A000000FFFF ; 16-bit code with 4 GiB limit
     dq 0x00CF92000000FFFF ; 32-bit flat data
 gdt_unreal_end:
 gdt_unreal_descriptor:
