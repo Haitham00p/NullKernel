@@ -352,6 +352,9 @@ load_kernel:
     mov eax, 127
 .chunk_ok:
     mov word [kernel_dap.count], ax
+    ; Preserve the requested count: BIOS is permitted to modify DAP count.
+    movzx eax, ax
+    mov [chunk_sectors], eax
 
     mov eax, [kernel_dest]
     mov dword [kernel_dap.flat_low], eax
@@ -369,8 +372,7 @@ load_kernel:
 
     ; DAP count and extent_remaining are both measured in sectors.
     ; Convert the completed chunk to bytes only for destination accounting.
-    movzx eax, word [kernel_dap.count]
-    mov [chunk_sectors], eax
+    mov eax, [chunk_sectors]
     shl eax, 9
     add [kernel_dest], eax
     add [loaded_bytes], eax
