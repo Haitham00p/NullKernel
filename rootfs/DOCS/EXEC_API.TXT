@@ -3,7 +3,7 @@ NullOS Executable API
 exec(path)
  execl(format,...)
  DispatcherTryDiskCommand(command)
- RunProgramOnStack(entry,stack_top)
+ RunProgramOnStack(entry)
 
 Executable resolution:
  bare command -> /BIN/<name>.EXE
