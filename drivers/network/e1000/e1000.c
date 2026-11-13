@@ -340,7 +340,7 @@ bool E1000Initialize(void)
     const uint64_t BarWindow = 0x20000ULL;
     for (uint64_t Offset = 0; Offset < BarWindow; Offset += 0x1000ULL)
     {
-        if (!VmmMapPage(BarPage + Offset, BarPage + Offset, VMM_W | VMM_NX))
+        if (!VmmMapPage(BarPage + Offset, BarPage + Offset, VMM_W | VMM_NX | VMM_PCD | VMM_PWT))
             return false;
     }
     g_Bar = (volatile uint8_t *)(uintptr_t)(BarPage + BarOffset);
