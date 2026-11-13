@@ -171,7 +171,7 @@ try:
     except (TimeoutError, OSError):
         pass
     for key in ("h", "e", "l", "p", "ret"):
-        sock.sendall(f"sendkey {key}\\n".encode())
+        sock.sendall(f"sendkey {key}\n".encode())
         time.sleep(0.08)
 finally:
     sock.close()
