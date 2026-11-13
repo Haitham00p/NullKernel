@@ -212,7 +212,7 @@ PY
 
 for _ in $(seq 1 150); do
     grep -Fq "[EXEC] program returned" "$LOG" 2>/dev/null && break
-    grep -q "\\[elf\\] refuse:" "$LOG" 2>/dev/null &&
+    grep -Fq "[elf] refuse:" "$LOG" 2>/dev/null &&
         fail "ELF loader rejected the built-in hello program"
     sleep 0.1
 done
