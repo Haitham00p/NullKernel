@@ -47,9 +47,8 @@ RunSavedRsp:
 
 ; Dedicated guest stack.  Lives inside the kernel image (higher-half,
 ; always mapped and writable), so a guest program can never depend on the
-; low flat identity-map window reaching 0x300000.  Using a kernel-resident
-; buffer guarantees the stack is valid on every machine regardless of how
-; much low RAM the bootloader identity-maps.  Aligned to 16 so the ABI
+; low physical identity-map window.  The stack is mapped with the kernel
+; image and is independent of the bootloader's low-memory identity mapping.  Aligned to 16 so the ABI
 ; 16-byte stack alignment holds at the guest entry point.
 alignb 16
 GuestStack:
