@@ -148,6 +148,10 @@ for _ in $(seq 1 150); do
 done
 grep -q "NullL native kernel entry" "$LOG" 2>/dev/null ||
     fail "selected mode 1 did not reach kernel_main"
+grep -q "CPU NX support enabled (EFER.NXE)" "$LOG" 2>/dev/null ||
+    fail "kernel did not enable CPU NX support"
+grep -q "E1000 initialized" "$LOG" 2>/dev/null ||
+    fail "E1000 MMIO initialization did not complete"
 
 for _ in $(seq 1 300); do
     grep -q "NullOS: shell ready" "$LOG" 2>/dev/null && break
