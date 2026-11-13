@@ -1,12 +1,12 @@
 ; Runs a raw user-program entry point on a dedicated guest stack.
-; The guest shares the kernel's ring-0 page tables (flat identity map),
-; so it only gets its own stack; the caller-provided RSP is restored on
-; return so a user program can never smash the kernel shell stack.
+; The guest shares the kernel's ring-0 page tables, but runs on a dedicated
+; kernel-resident higher-half stack; the caller RSP is restored on return
+; so a guest program can never smash the kernel shell stack.
 ;
 ; Interrupts stay enabled during the guest run: the IRQ stubs push/pop
 ; every register and iretq, so PIT timing and the keyboard keep working
 ; even if a user program loops forever.  The guest stack (fixed,
-; identity-mapped low RAM) is safe for the kernel handlers.
+; higher-half BSS) is mapped and safe for the kernel handlers.
 ;
 ; Ctrl+C while a guest program is frozen is handled cooperatively:
 ; the keyboard driver sets its abort flag, and on the next PIT tick the
@@ -52,7 +52,7 @@ RunSavedRsp:
 ; buffer guarantees the stack is valid on every machine regardless of how
 ; much low RAM the bootloader identity-maps.  Aligned to 16 so the ABI
 ; 16-byte stack alignment holds at the guest entry point.
-align 16
+alignb 16
 GuestStack:
     resb 0x8000
 GuestStackEnd:
@@ -71,10 +71,10 @@ RunProgramOnStack:
     push r13
     push r14
     push r15
-    mov qword [RunSavedRsp], rsp
-    mov qword [RunAbortArmed], 0
-    mov qword [RunGuestActive], 1
-    mov rsp, GuestStackEnd
+    mov qword [rel RunSavedRsp], rsp
+    mov qword [rel RunAbortArmed], 0
+    mov qword [rel RunGuestActive], 1
+    lea rsp, [rel GuestStackEnd]
     sti
     call rdi
 full_switchless:
