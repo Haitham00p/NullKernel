@@ -7,7 +7,9 @@
 
 #ifndef __NCC__
 
+#ifndef RAND_MAX
 #define RAND_MAX 0x7FFFFFFF
+#endif
 
 void *malloc(size_t size);
 void  free(void *ptr);
