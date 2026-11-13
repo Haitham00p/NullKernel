@@ -4779,7 +4779,7 @@ static void NccParseFunction(NccDeclSpec *ds, NccType *ret, const char *name)
 
     for (uint32_t i = 0; i < f->nparams; i++)
     {
-        if (g_locals_count - (f->nparams - i) >= 0)
+        if (g_locals_count >= (f->nparams - i))
         {
             NccVar *v = &g_locals[g_locals_count - f->nparams + i];
             if (v->kind == VAR_PARAM)
