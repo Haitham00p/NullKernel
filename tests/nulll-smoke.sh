@@ -58,12 +58,10 @@ try:
         "xp /4gx 0x6e00\n"
         "xp /8gx 0x6e40\n"
         "xp /4gx 0x6e60\n"
-        "xp /8gx 0x100000\n"
+        "xp /8gx 0x100000\n"  # reserved NLD executable slot
+        "xp /8gx 0x01000000\n"  # kernel physical load base
         "xp /8gx 0x59900\n"
         f"xp /8gx {sys.argv[2]}\n"
-        "xp /32gx 0x55220\nxp /32gx 0x144220\n"
-        "xp /4gx 0x172060\nxp /2gx 0x176240\n"
-        "xp /2gx 0x176360\nxp /8gx 0x37d7e0\n"
     )
     sock.sendall(commands.encode())
     chunks = []
@@ -189,6 +187,39 @@ for _ in $(seq 1 150); do
 done
 grep -q "NullOS: shell command dispatched" "$LOG" 2>/dev/null ||
     fail "shell did not dispatch the injected help command"
+
+# Execute a real NLD-linked ELF from FAT32. This exercises the ELF validator,
+# fixed program slot, dedicated guest stack, and return-to-shell path.
+python3 - "$MON" <<'PY'
+import socket
+import sys
+import time
+
+sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+sock.settimeout(1.0)
+sock.connect(sys.argv[1])
+try:
+    try:
+        sock.recv(4096)
+    except (TimeoutError, OSError):
+        pass
+    for key in ("h", "e", "l", "l", "o", "ret"):
+        sock.sendall(f"sendkey {key}\\n".encode())
+        time.sleep(0.08)
+finally:
+    sock.close()
+PY
+
+for _ in $(seq 1 150); do
+    grep -q "[EXEC] program returned" "$LOG" 2>/dev/null && break
+    grep -q "\\[elf\\] refuse:" "$LOG" 2>/dev/null &&
+        fail "ELF loader rejected the built-in hello program"
+    sleep 0.1
+done
+grep -q "[EXEC] program returned" "$LOG" 2>/dev/null ||
+    fail "hello ELF did not return to the shell"
+grep -q "Hello from NullOS!" "$LOG" 2>/dev/null ||
+    fail "hello ELF did not print its expected output"
 
 echo "--- NullOS serial trace ---"
 cat "$LOG"
