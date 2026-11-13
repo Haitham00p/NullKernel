@@ -26,6 +26,51 @@
 
 static uint64_t Root;
 static uint64_t KernelRoot;
+static bool g_NxEnabled = false;
+
+bool VmmEnableNX(void)
+{
+    uint32_t MaxExtended, B, C, D;
+    __asm__ volatile("cpuid"
+        : "=a"(MaxExtended), "=b"(B), "=c"(C), "=d"(D)
+        : "a"(0x80000000U), "c"(0));
+
+    if (MaxExtended < 0x80000001U)
+        return false;
+
+    uint32_t Leaf = 0x80000001U;
+    __asm__ volatile("cpuid"
+        : "+a"(Leaf), "=b"(B), "=c"(C), "=d"(D)
+        :
+        : "memory");
+
+    /* Extended feature EDX bit 20 advertises NX support. */
+    if ((D & (1U << 20)) == 0)
+        return false;
+
+    uint32_t EferLow, EferHigh;
+    __asm__ volatile("rdmsr"
+        : "=a"(EferLow), "=d"(EferHigh)
+        : "c"(0xC0000080U));
+
+    uint64_t Efer = ((uint64_t)EferHigh << 32) | EferLow;
+    Efer |= (1ULL << 11); /* EFER.NXE */
+
+    __asm__ volatile("wrmsr"
+        :
+        : "c"(0xC0000080U),
+          "a"((uint32_t)Efer),
+          "d"((uint32_t)(Efer >> 32))
+        : "memory");
+
+    g_NxEnabled = true;
+    return true;
+}
+
+bool VmmNXEnabled(void)
+{
+    return g_NxEnabled;
+}
 
 static inline uint64_t rdcr3(void)
 {
@@ -80,6 +125,9 @@ void VmmInitialize(void)
 
 bool VmmMapPage(uint64_t v, uint64_t phys, uint64_t flags)
 {
+    if ((flags & VMM_NX) && !g_NxEnabled)
+        return false;
+
     if ((v & (PS - 1)) || (phys & (PS - 1)))
         return false;
 
@@ -148,6 +196,9 @@ bool VmmUnmapPage(uint64_t v, bool freep)
 
 bool VmmSetExecutable(uint64_t v, uint64_t length, bool executable)
 {
+    if (!g_NxEnabled && !executable)
+        return false;
+
     const uint64_t page_size = PS;
     if (length == 0)
         return true;
