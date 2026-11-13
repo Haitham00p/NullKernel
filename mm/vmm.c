@@ -46,6 +46,9 @@ bool VmmEnableNX(void)
         : "+a"(Leaf), "=b"(B), "+c"(C), "=d"(D)
         :
         : "memory");
+    (void)B;
+    (void)C;
+    (void)Leaf;
 
     /* Extended feature EDX bit 20 advertises NX support. */
     if ((D & (1U << 20)) == 0)
