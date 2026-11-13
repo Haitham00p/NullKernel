@@ -10,7 +10,9 @@
 #define VMM_X 0x000ULL
 #define VMM_NX (1ULL<<63)
 #define VMM_GLOBAL (1ULL<<8)
-void VmmInitialize(void);\nbool VmmEnableNX(void);\nbool VmmNXEnabled(void);
+void VmmInitialize(void);
+bool VmmEnableNX(void);
+bool VmmNXEnabled(void);
 uint64_t VmmCurrentRoot(void);
 uint64_t VmmKernelRoot(void);
 bool VmmMapPage(uint64_t Virtual,uint64_t Physical,uint64_t Flags);
