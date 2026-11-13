@@ -52,7 +52,7 @@ RunSavedRsp:
 ; 16-byte stack alignment holds at the guest entry point.
 alignb 16
 GuestStack:
-    resb 0x8000
+    resb 0x20000
 GuestStackEnd:
 
 section .text
