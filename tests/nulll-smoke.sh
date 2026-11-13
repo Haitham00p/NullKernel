@@ -4,6 +4,14 @@ set -euo pipefail
 IMG="${1:?usage: bash tests/nulll-smoke.sh <disk-image>}"
 LOG=/tmp/nulll-smoke-serial.log
 MON=/tmp/nulll-smoke-monitor.sock
+ENTRY_PHYS=$(python3 - <<'PY'
+import struct
+with open("build/kernel.elf", "rb") as f:
+    image = f.read(64)
+entry = struct.unpack_from("<Q", image, 24)[0]
+print(hex(entry - 0xffffffff80000000))
+PY
+)
 
 rm -f "$LOG" "$MON"
 
@@ -42,7 +50,17 @@ try:
         sock.recv(4096)
     except OSError:
         pass
-    sock.sendall(b"info registers\ninfo mem\nxp /4gx 0x11000\nxp /4gx 0x12000\nxp /8gx 0x13000\nxp /1gx 0x12ff8\nxp /32gx 0x55220\nxp /32gx 0x144220\nxp /4gx 0x172060\nxp /2gx 0x176240\nxp /2gx 0x176360\nxp /8gx 0x37d7e0\n")
+    commands = (
+        "info registers\ninfo mem\n"
+        "xp /4gx 0x11000\nxp /4gx 0x12000\n"
+        "xp /8gx 0x13000\nxp /1gx 0x12ff8\n"
+        "xp /4gx 0x6000\n"
+        f"xp /8gx {sys.argv[2]}\n"
+        "xp /32gx 0x55220\nxp /32gx 0x144220\n"
+        "xp /4gx 0x172060\nxp /2gx 0x176240\n"
+        "xp /2gx 0x176360\nxp /8gx 0x37d7e0\n"
+    )
+    sock.sendall(commands.encode())
     chunks = []
     deadline = time.monotonic() + 1.0
     while time.monotonic() < deadline:
