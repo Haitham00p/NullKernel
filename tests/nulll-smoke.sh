@@ -147,4 +147,43 @@ done
 grep -q "NullL native kernel entry" "$LOG" 2>/dev/null ||
     fail "selected mode 1 did not reach kernel_main"
 
-echo "PASS: BIOS -> NullL menu -> QEMU key 1 -> ELF load -> E820 -> kernel entry"
+for _ in $(seq 1 300); do
+    grep -q "NullOS: shell ready" "$LOG" 2>/dev/null && break
+    grep -q "=== NULLCONSOLE FAULT REPORT ===" "$LOG" 2>/dev/null &&
+        fail "kernel exception occurred before shell initialization"
+    sleep 0.1
+done
+grep -q "NullOS: shell ready" "$LOG" 2>/dev/null ||
+    fail "kernel did not initialize the shell"
+
+# Exercise the PS/2 -> IRQ1 -> keyboard decoder -> shell parser/dispatcher path.
+python3 - "$MON" <<'PY'
+import socket
+import sys
+import time
+
+sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+sock.settimeout(1.0)
+sock.connect(sys.argv[1])
+try:
+    try:
+        sock.recv(4096)
+    except (TimeoutError, OSError):
+        pass
+    for key in ("h", "e", "l", "p", "ret"):
+        sock.sendall(f"sendkey {key}\\n".encode())
+        time.sleep(0.08)
+finally:
+    sock.close()
+PY
+
+for _ in $(seq 1 150); do
+    grep -q "NullOS: shell command dispatched" "$LOG" 2>/dev/null && break
+    sleep 0.1
+done
+grep -q "NullOS: shell command dispatched" "$LOG" 2>/dev/null ||
+    fail "shell did not dispatch the injected help command"
+
+echo "--- NullOS serial trace ---"
+cat "$LOG"
+echo "PASS: BIOS -> NullL menu -> ELF -> kernel -> shell -> keyboard -> help dispatch"
