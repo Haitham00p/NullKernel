@@ -492,7 +492,7 @@ load_kernel:
     mov si, serial_manifest_valid
     call serial_puts
 
-    ; Load every extent to the contiguous staging area at 32 MiB.
+    ; Load every extent to the contiguous conventional-memory staging buffer.
     xor ebx, ebx
 .extent_loop:
     cmp ebx, [extent_count]
