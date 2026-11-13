@@ -474,6 +474,8 @@ void ShellBootBuild(void)
                 SelfHostExeName(Name, ExeName);
                 TerminalWrite32(ExeName, 0xFFAAAAAA);
 
+                /* Never leave a stale executable runnable if rebuilding fails. */
+                DiskFsRemove(ExeName);
                 Ok = SelfHostCompileOneObject(Name, &Objects[0],
                                               &Sizes[0]);
                 if (Ok)
