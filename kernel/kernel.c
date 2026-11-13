@@ -57,23 +57,20 @@ void kernel_main(NullBootInfo *BootInfo)
         __asm__ volatile("mov %0, %%cr4" :: "r"(cr4));
     }
 
+    /* Bring up the architectural exception path before touching devices,
+       framebuffer state, or other complex kernel subsystems. */
+    GdtInitialize();
+    ISRInitialize();
+    IDTInitialize();
+    DbgInfo("GDT/TSS, IDT and exception handlers online", (uintptr_t)IDTInitialize);
+    DbgIntr("Exception handlers installed (ISRs 0-31)", (uintptr_t)ISRInitialize);
+
     FbInit32();
 
     if (BootInfo->MemoryMap == 0 || BootInfo->MemoryMapCount == 0)
         PanicKernel("NullBoot memory map missing", (uintptr_t)kernel_main);
 
     DbgBoot("NullL native kernel entry", (uintptr_t)kernel_main);
-
-    GdtInitialize();
-    DbgInfo("GDT/TSS and ring descriptors online", (uintptr_t)GdtInitialize);
-
-    IDTInitialize();
-    DbgInfo("Interrupt descriptor table online", (uintptr_t)IDTInitialize);
-    DbgIntr("Interrupt descriptor table online", (uintptr_t)IDTInitialize);
-
-    ISRInitialize();
-    DbgInfo("Exception handlers installed", (uintptr_t)ISRInitialize);
-    DbgIntr("Exception handlers installed (ISRs 0-31)", (uintptr_t)ISRInitialize);
 
     IRQInitialize();
     DbgInfo("Hardware IRQ routing armed", (uintptr_t)IRQInitialize);
@@ -215,6 +212,7 @@ void kernel_main(NullBootInfo *BootInfo)
     ShellBootRunROB();
     ShellApplyDefDir();
     ShellInitialize();
+    DbgSerialWrite("NullOS: shell ready\\n");
 
     DbgBootLogFlush();
 
