@@ -211,14 +211,14 @@ finally:
 PY
 
 for _ in $(seq 1 150); do
-    grep -q "[EXEC] program returned" "$LOG" 2>/dev/null && break
+    grep -Fq "[EXEC] program returned" "$LOG" 2>/dev/null && break
     grep -q "\\[elf\\] refuse:" "$LOG" 2>/dev/null &&
         fail "ELF loader rejected the built-in hello program"
     sleep 0.1
 done
-grep -q "[EXEC] program returned" "$LOG" 2>/dev/null ||
+grep -Fq "[EXEC] program returned" "$LOG" 2>/dev/null ||
     fail "hello ELF did not return to the shell"
-grep -q "Hello from NullOS!" "$LOG" 2>/dev/null ||
+grep -Fq "Hello from NullOS!" "$LOG" 2>/dev/null ||
     fail "hello ELF did not print its expected output"
 
 echo "--- NullOS serial trace ---"
