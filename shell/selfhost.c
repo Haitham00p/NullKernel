@@ -567,6 +567,8 @@ void ShellBootBuild(void)
                             [FAT32_SHORT_NAME_MAX + 1U];
                         uint32_t Count = 0;
                         bool Ok = true;
+                        bool HasCSource = false;
+                        uint32_t Scan = 0;
 
                         if (!DiskFsChdirPath(Name))
                         {
@@ -579,6 +581,34 @@ void ShellBootBuild(void)
                             continue;
                         }
                         DiskFsListNames(Files, SELFHOST_MAX_LIST);
+
+                        /* A project directory is linkable only when it has
+                           a C entry point. Do not try to link ASM-only demo
+                           folders as executables during the boot rebuild. */
+                        while (Files[Scan] != '\0')
+                        {
+                            uint32_t Start = Scan;
+                            char Candidate[FAT32_SHORT_NAME_MAX + 1U];
+                            uint32_t CandidateLength;
+                            while (Files[Scan] != '\0' &&
+                                   Files[Scan] != '\n')
+                                Scan++;
+                            CandidateLength = Scan - Start;
+                            if (CandidateLength > 0 &&
+                                CandidateLength < sizeof(Candidate))
+                            {
+                                memcpy(Candidate, &Files[Start],
+                                       CandidateLength);
+                                Candidate[CandidateLength] = '\0';
+                                if (SelfHostHasExtension(Candidate, ".C"))
+                                    HasCSource = true;
+                            }
+                            if (Files[Scan] == '\n')
+                                Scan++;
+                        }
+
+                        if (HasCSource)
+                        {
                         while (Files[fi] != '\0' && Ok)
                         {
                             uint32_t fStart = fi;
@@ -643,6 +673,7 @@ void ShellBootBuild(void)
                             {
                                 fi++;
                             }
+                        }
                         }
                         kfree(Files);
                         if (Ok && Count != 0U)
