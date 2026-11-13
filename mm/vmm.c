@@ -30,17 +30,20 @@ static bool g_NxEnabled = false;
 
 bool VmmEnableNX(void)
 {
-    uint32_t MaxExtended, B, C, D;
+    uint32_t MaxExtended = 0x80000000U;
+    uint32_t B, C = 0, D;
     __asm__ volatile("cpuid"
-        : "=a"(MaxExtended), "=b"(B), "=c"(C), "=d"(D)
-        : "a"(0x80000000U), "c"(0));
+        : "+a"(MaxExtended), "=b"(B), "+c"(C), "=d"(D)
+        :
+        : "memory");
 
     if (MaxExtended < 0x80000001U)
         return false;
 
     uint32_t Leaf = 0x80000001U;
+    C = 0;
     __asm__ volatile("cpuid"
-        : "+a"(Leaf), "=b"(B), "=c"(C), "=d"(D)
+        : "+a"(Leaf), "=b"(B), "+c"(C), "=d"(D)
         :
         : "memory");
 
