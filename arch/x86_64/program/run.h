@@ -11,9 +11,10 @@
 #define NULLOS_GUEST_ABORTED 0x2BAD0B5EULL
 
 /*
- * Runs a raw user-space entry point on a dedicated stack.
- * Entry-point code runs in ring 0 with the kernel page tables on a
- * dedicated higher-half BSS stack; the caller's stack is restored on return.
+ * Runs a trusted raw program entry point on a dedicated stack.
+ * The current runner executes in ring 0 with the kernel page tables; this is
+ * not process isolation and must only run trusted binaries. The caller's
+ * stack is restored on return.
  * Interrupts remain enabled while the guest runs.
  * Returns the guest's final RAX (its return value), or
  * NULLOS_GUEST_ABORTED when the user pressed Ctrl+C mid-run.
