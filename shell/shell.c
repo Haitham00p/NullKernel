@@ -517,7 +517,7 @@ void ShellUpdate(void)
             PARSED_COMMAND Parsed;
             ParserParse(ActiveContext->Command, &Parsed);
             DispatcherDispatch(&Parsed);
-            DbgSerialWrite("NullOS: shell command dispatched\\n");
+            DbgSerialWrite("NullOS: shell command dispatched\n");
             ParserFree(&Parsed);
             ShellSaveCwd();
             TerminalEndBatch32();
