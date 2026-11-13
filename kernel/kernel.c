@@ -36,6 +36,10 @@ volatile NullBootInfo *NullBoot = NULL;
 
 void kernel_main(NullBootInfo *BootInfo)
 {
+    /* Initialize serial before validating the handoff so even an ABI failure
+       leaves a reliable trace proving that the kernel entry was reached. */
+    DbgSerialInit();
+    DbgSerialWrite("NullOS: kernel_main entered\\n");
     NullBoot = BootInfo;
     if (BootInfo == NULL || BootInfo->Magic != NULLBOOT_MAGIC ||
         BootInfo->Version != NULLBOOT_VERSION)
@@ -53,7 +57,6 @@ void kernel_main(NullBootInfo *BootInfo)
         __asm__ volatile("mov %0, %%cr4" :: "r"(cr4));
     }
 
-    DbgSerialInit();
     FbInit32();
 
     if (BootInfo->MemoryMap == 0 || BootInfo->MemoryMapCount == 0)
