@@ -99,7 +99,12 @@ static uint64_t *table(uint64_t p)
 static uint64_t *next(uint64_t *t, uint64_t i, bool create)
 {
     if (t[i] & VMM_P)
+    {
+        /* A huge-page entry is a leaf, not a pointer to a lower-level table. */
+        if (t[i] & (1ULL << 7))
+            return 0;
         return table(t[i] & MASK);
+    }
 
     if (!create)
         return 0;
@@ -242,20 +247,39 @@ bool VmmSetExecutable(uint64_t v, uint64_t length, bool executable)
 uint64_t VmmGetPhysical(uint64_t v)
 {
     uint64_t active_root = rdcr3();
-
     uint64_t *pml4 = table(active_root);
-    uint64_t *pdpt = next(pml4, (v >> 39) & 511, false);
-    uint64_t *pd   = pdpt ? next(pdpt, (v >> 30) & 511, false) : 0;
-    uint64_t *pt   = pd ? next(pd, (v >> 21) & 511, false) : 0;
-
-    if (!pt)
-        return 0;
-
-    uint64_t e = pt[(v >> 12) & 511];
+    uint64_t Pml4Entry = pml4[(v >> 39) & 511];
 
     Root = active_root;
+    if (!(Pml4Entry & VMM_P))
+        return 0;
 
-    return (e & VMM_P) ? ((e & MASK) | (v & 0xFFFULL)) : 0;
+    uint64_t *pdpt = table(Pml4Entry & MASK);
+    uint64_t PdptEntry = pdpt[(v >> 30) & 511];
+    if (!(PdptEntry & VMM_P))
+        return 0;
+
+    /* 1 GiB PDPTE leaf. */
+    if (PdptEntry & (1ULL << 7))
+        return (PdptEntry & 0x000FFFFFC0000000ULL) |
+               (v & 0x3FFFFFFFULL);
+
+    uint64_t *pd = table(PdptEntry & MASK);
+    uint64_t PdEntry = pd[(v >> 21) & 511];
+    if (!(PdEntry & VMM_P))
+        return 0;
+
+    /* 2 MiB PDE leaf. */
+    if (PdEntry & (1ULL << 7))
+        return (PdEntry & 0x000FFFFFFFE00000ULL) |
+               (v & 0x1FFFFFULL);
+
+    uint64_t *pt = table(PdEntry & MASK);
+    uint64_t PtEntry = pt[(v >> 12) & 511];
+    if (!(PtEntry & VMM_P))
+        return 0;
+
+    return (PtEntry & MASK) | (v & 0xFFFULL);
 }
 
 bool VmmMapUserPage(uint64_t v, uint64_t flags)
