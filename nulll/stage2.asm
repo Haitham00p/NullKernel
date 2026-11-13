@@ -1213,9 +1213,11 @@ long_mode_entry:
     ; Probe the ELF entry through the higher-half mapping before transferring
     ; control. If this read faults, the page-table handoff is still broken.
     mov rcx, [rax]
+    mov r11, rax
     mov dx, 0x3F8
     mov al, 'J'
     out dx, al
+    mov rax, r11
     jmp rax
 
 fatal_paging:
