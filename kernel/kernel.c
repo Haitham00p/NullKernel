@@ -228,7 +228,7 @@ void kernel_main(NullBootInfo *BootInfo)
      * before running any boot programs; copied/prebuilt ELFs may reference
      * stale kernel addresses after a kernel update.
      */
-    DbgSerialWrite("NullOS: rebuilding disk executables against current kernel\\n");
+    DbgSerialWrite("NullOS: rebuilding disk executables against current kernel\n");
     ShellBootBuild();
 
     ShellBootRunROB();
