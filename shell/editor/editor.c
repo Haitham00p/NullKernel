@@ -94,19 +94,6 @@ static void EditorClearSelection(void)
 {
     EditorSelecting = false;
 }
-static uint32_t EditorPrevWord(uint32_t Pos)
-{
-    while (Pos > 0U && !EditorIsIdent(EditorBuffer[Pos - 1U])) Pos--;
-    while (Pos > 0U && EditorIsIdent(EditorBuffer[Pos - 1U])) Pos--;
-    return Pos;
-}
-static uint32_t EditorNextWord(uint32_t Pos)
-{
-    while (Pos < EditorLength && !EditorIsIdent(EditorBuffer[Pos])) Pos++;
-    while (Pos < EditorLength && EditorIsIdent(EditorBuffer[Pos])) Pos++;
-    return Pos;
-}
-
 static uint32_t EditorLineStart(uint32_t Pos)
 {
     while (Pos > 0U && EditorBuffer[Pos - 1U] != '\n')
@@ -928,7 +915,6 @@ void EditorHandleKey(uint8_t Key, bool ControlHeld, bool ShiftHeld)
         {
             uint32_t Line = 0;
             uint32_t Col = 0;
-            uint32_t Start;
             uint32_t End;
 
             if (ShiftHeld)
@@ -971,7 +957,6 @@ void EditorHandleKey(uint8_t Key, bool ControlHeld, bool ShiftHeld)
                 EditorClearSelection();
             }
             EditorLineCol(EditorPos, &Line, &Col);
-            Start = EditorLineStart(EditorPos);
             End = EditorLineEnd(EditorPos);
             Next = EditorLineStartByLine(Line + 1U);
             if (Next > EditorLength)
