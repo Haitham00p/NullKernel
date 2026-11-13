@@ -56,6 +56,8 @@ try:
         "xp /8gx 0x13000\nxp /1gx 0x12ff8\n"
         "xp /4gx 0x6000\n"
         "xp /4gx 0x6e00\n"
+        "xp /8gx 0x6e40\n"
+        "xp /4gx 0x6e60\n"
         "xp /8gx 0x100000\n"
         "xp /8gx 0x59900\n"
         f"xp /8gx {sys.argv[2]}\n"
