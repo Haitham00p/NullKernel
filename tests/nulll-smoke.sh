@@ -148,6 +148,14 @@ grep -q "NullL native kernel entry" "$LOG" 2>/dev/null ||
     fail "selected mode 1 did not reach kernel_main"
 grep -q "CPU NX support enabled (EFER.NXE)" "$LOG" 2>/dev/null ||
     fail "kernel did not enable CPU NX support"
+# Device initialization follows kernel entry; wait for its serial proof
+# instead of racing the asynchronous boot sequence.
+for _ in $(seq 1 300); do
+    grep -q "E1000 initialized" "$LOG" 2>/dev/null && break
+    grep -q "=== NULLCONSOLE FAULT REPORT ===" "$LOG" 2>/dev/null &&
+        fail "kernel exception occurred during device initialization"
+    sleep 0.1
+done
 grep -q "E1000 initialized" "$LOG" 2>/dev/null ||
     fail "E1000 MMIO initialization did not complete"
 
