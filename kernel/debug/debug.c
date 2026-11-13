@@ -113,8 +113,14 @@ void DbgSerialPutChar(char Character)
     {
         return;
     }
+    /* A missing or wedged UART must never hang kernel startup. */
+    uint32_t Spins = 1000000U;
     while ((Inb(COM1_BASE + 5) & 0x20) == 0)
     {
+        if (--Spins == 0)
+        {
+            return;
+        }
     }
     Outb(COM1_BASE, (uint8_t)Character);
 }
