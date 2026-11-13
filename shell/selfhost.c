@@ -1266,15 +1266,15 @@ bool DispatcherTryDiskCommand(const PARSED_COMMAND *Command)
     DbgSerialWrite(Dir);
     DbgSerialWrite("/");
     DbgSerialWrite(ExeName);
-    DbgSerialWrite("\\n");
+    DbgSerialWrite("\n");
     if (!DiskFsFindInPath(Dir, ExeName, &Entry))
     {
-        DbgSerialWrite("[EXEC] executable not found\\n");
+        DbgSerialWrite("[EXEC] executable not found\n");
         return false;
     }
     if (Entry.FileSize == 0 || Entry.FileSize > SELFHOST_MAX_IMAGE)
     {
-        DbgSerialWrite("[EXEC] invalid executable size\\n");
+        DbgSerialWrite("[EXEC] invalid executable size\n");
         return false;
     }
 
@@ -1285,17 +1285,17 @@ bool DispatcherTryDiskCommand(const PARSED_COMMAND *Command)
     }
     if (!DiskFsReadInPath(Dir, ExeName, Image, Entry.FileSize, &Bytes))
     {
-        DbgSerialWrite("[EXEC] disk read failed\\n");
+        DbgSerialWrite("[EXEC] disk read failed\n");
         kfree(Image);
         return false;
     }
     if (!ElfLoadImage(Image, Bytes, &Info))
     {
-        DbgSerialWrite("[EXEC] ELF validation failed\\n");
+        DbgSerialWrite("[EXEC] ELF validation failed\n");
         kfree(Image);
         return false;
     }
-    DbgSerialWrite("[EXEC] ELF validated, entering program\\n");
+    DbgSerialWrite("[EXEC] ELF validated, entering program\n");
 
     Count = Command->ArgCount < SELFHOST_MAX_ARGS
                 ? Command->ArgCount : SELFHOST_MAX_ARGS;
@@ -1309,7 +1309,7 @@ bool DispatcherTryDiskCommand(const PARSED_COMMAND *Command)
 
     KbdAbortClear();
     Result = RunProgramOnStack(Info.Entry);
-    DbgSerialWrite("[EXEC] program returned\\n");
+    DbgSerialWrite("[EXEC] program returned\n");
     kfree(Image);
 
     if (Result == NULLOS_GUEST_ABORTED)
