@@ -12,8 +12,13 @@ VAULT_C   := ncc/vault_gen.c
 VAULT_H   := ncc/vault_gen.h
 NULLL_STAGE1 := $(BUILD_DIR)/nulll/stage1.bin
 NULLL_STAGE2 := $(BUILD_DIR)/nulll/stage2.bin
+# Target the architectural x86-64 baseline explicitly. Do not inherit the
+# build host's ISA features: the kernel must run on generic x86-64 CPUs/QEMU.
 CFLAGS := \
-	-std=c11 -ffreestanding -fno-stack-protector -fno-stack-check -fno-pie -m64 -mcmodel=kernel -mno-red-zone -MMD -MP -Wall -Wextra -I. -Iinclude
+	-std=c11 -ffreestanding -fno-stack-protector -fno-stack-check -fno-pie \
+	-m64 -mcmodel=kernel -mno-red-zone -march=x86-64 -mtune=generic \
+	-mno-bmi -mno-bmi2 -mno-avx -mno-avx2 -mno-avx512f \
+	-MMD -MP -Wall -Wextra -I. -Iinclude
 LDFLAGS := -T arch/x86_64/linker.ld -nostdlib -static -z max-page-size=0x1000
 C_SOURCES := \
 	arch/x86_64/cpu/io.c arch/x86_64/cpu/gdt.c arch/x86_64/acpi/acpi.c arch/x86_64/pci/pci.c \
