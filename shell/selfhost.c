@@ -555,6 +555,13 @@ void ShellBootBuild(void)
                 {
                     memcpy(Name, &DirList[Start], Length);
                     Name[Length] = '\0';
+                    if (strcmp(Name, ".") == 0 ||
+                        strcmp(Name, "..") == 0)
+                    {
+                        if (DirList[di] == '\n')
+                            di++;
+                        continue;
+                    }
                     if (DiskFsIsDirectory(Name))
                     {
                         char ProjectExe[FAT32_SHORT_NAME_MAX + 1U];
@@ -568,6 +575,7 @@ void ShellBootBuild(void)
                         uint32_t Count = 0;
                         bool Ok = true;
                         bool HasCSource = false;
+                        bool HasAsmSource = false;
                         uint32_t Scan = 0;
 
                         if (!DiskFsChdirPath(Name))
@@ -602,12 +610,18 @@ void ShellBootBuild(void)
                                 Candidate[CandidateLength] = '\0';
                                 if (SelfHostHasExtension(Candidate, ".C"))
                                     HasCSource = true;
+                                else if (SelfHostHasExtension(Candidate, ".ASM"))
+                                    HasAsmSource = true;
                             }
                             if (Files[Scan] == '\n')
                                 Scan++;
                         }
 
-                        if (HasCSource)
+                        /* The current N64a assembler still has an unresolved
+                           parser fault on the nested mixed-assembly demo. Keep
+                           boot-time rebuild fail-safe: compile C-only projects
+                           and leave mixed ASM projects for explicit builds. */
+                        if (HasCSource && !HasAsmSource)
                         {
                         while (Files[fi] != '\0' && Ok)
                         {
