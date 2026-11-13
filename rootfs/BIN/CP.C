@@ -50,7 +50,9 @@ static void split_path(const char *path, char *dir, char *name){
             my_cpy(name, path + 1);
         } else {
             uint32_t i;
-            for(i = 0; i < pos && i < MAXP - 1U; i++) dir[i] = path[i];
+            for(i = 0; i < pos && i < MAXP - 1U; i++) {
+                dir[i] = path[i];
+            }
             dir[pos] = '\0';
             my_cpy(name, path + pos + 1);
         }
