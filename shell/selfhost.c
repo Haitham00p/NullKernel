@@ -1017,7 +1017,7 @@ void ShellApplyRegistry(void)
     {
         Buf[N] = '\0';
         StringHexToUInt32((char *)Buf, &Fg);
-        DbgReg(Buf, 0U);
+        DbgReg((const char *)Buf, 0U);
     }
     else
     {
@@ -1030,7 +1030,7 @@ void ShellApplyRegistry(void)
     {
         Buf[N] = '\0';
         StringHexToUInt32((char *)Buf, &Bg);
-        DbgReg(Buf, 0U);
+        DbgReg((const char *)Buf, 0U);
     }
     else
     {
@@ -1050,7 +1050,7 @@ void ShellApplyRegistry(void)
         {
             Buf[N] = '\0';
             StringHexToUInt32((char *)Buf, &Out);
-            DbgReg(Buf, 0U);
+            DbgReg((const char *)Buf, 0U);
         }
         else
         {
@@ -1070,7 +1070,7 @@ void ShellApplyRegistry(void)
             {
                 StringHexToUInt32((char *)Buf, &Prompt);
             }
-            DbgReg(Buf, 0U);
+            DbgReg((const char *)Buf, 0U);
         }
         else
         {
