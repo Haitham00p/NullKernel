@@ -32,6 +32,7 @@
 #include "kernel/sched/scheduler.h"
 #include "kernel/registry/registry.h"
 #include "kernel/elf/elf_loader.h"
+#include "arch/x86_64/program/run.h"
 
 volatile NullBootInfo *NullBoot = NULL;
 
@@ -229,7 +230,11 @@ void kernel_main(NullBootInfo *BootInfo)
      * stale kernel addresses after a kernel update.
      */
     DbgSerialWrite("NullOS: rebuilding disk executables against current kernel\n");
-    ShellBootBuild();
+    if (RunProgramOnStack((uint64_t)(uintptr_t)ShellBootBuild) ==
+        NULLOS_GUEST_ABORTED)
+    {
+        DbgSerialWrite("NullOS: self-host build was aborted\n");
+    }
 
     ShellBootRunROB();
     ShellApplyDefDir();
