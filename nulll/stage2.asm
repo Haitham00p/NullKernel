@@ -563,6 +563,13 @@ load_kernel:
     mov si, serial_chunk_read_ok
     call serial_puts
 
+    ; Advance the disk LBA as well as the destination. Without this,
+    ; every chunk in a multi-chunk extent rereads its first sectors and
+    ; silently duplicates the beginning of the ELF over later file offsets.
+    mov eax, [chunk_sectors]
+    add dword [kernel_dap.lba_low], eax
+    adc dword [kernel_dap.lba_high], 0
+
     ; The BIOS read completed into the low staging buffer.
     mov eax, [chunk_bytes]
     add [kernel_dest], eax
