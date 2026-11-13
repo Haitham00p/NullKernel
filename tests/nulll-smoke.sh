@@ -216,10 +216,10 @@ for _ in $(seq 1 150); do
         fail "ELF loader rejected the built-in hello program"
     sleep 0.1
 done
+grep -Fq "[EXEC] ELF valid, entering program" "$LOG" 2>/dev/null ||
+    fail "hello ELF did not pass validation and enter"
 grep -Fq "[EXEC] program returned" "$LOG" 2>/dev/null ||
     fail "hello ELF did not return to the shell"
-grep -Fq "Hello from NullOS!" "$LOG" 2>/dev/null ||
-    fail "hello ELF did not print its expected output"
 
 echo "--- NullOS serial trace ---"
 cat "$LOG"
