@@ -25,7 +25,7 @@ jobs:
         run: make -j2
       - name: Inspect kernel entry and exception-stack symbols
         run: |
-          if objdump -d -Mintel build/kernel.elf | grep -E '\\b(shrx|shlx|sarx|mulx|rorx|pdep|pext|bzhi|andn)\\b'; then
+          if objdump -d -Mintel build/kernel.elf | grep -E '\b(shrx|shlx|sarx|mulx|rorx|pdep|pext|bzhi|andn)\b'; then
             echo "ERROR: kernel contains instructions outside the x86-64 baseline"
             exit 1
           fi
