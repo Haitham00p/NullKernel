@@ -275,6 +275,10 @@ void DispatcherDispatch(const PARSED_COMMAND *Command){
         TerminalNewLine32(BackSpaceColor);
         return;
     }
+    /* Unknown built-ins may still be disk-backed /BIN executables. */
+    if (DispatcherTryDiskCommand(Command))
+        return;
+
     TerminalWrite32("Kernel/shell/bin/cmd.c: ", PromColor);
     TerminalWrite32("Error: ", 0xFFFF0000);
     TerminalWrite32("Command Not found or Corrupted API: ", PromColor);
