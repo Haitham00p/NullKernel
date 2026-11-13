@@ -113,6 +113,7 @@ native_boot:
 
     call build_bootinfo
     call build_page_tables
+    jc fatal_paging
     mov si, serial_long_mode
     call serial_puts
     call enter_long_mode
@@ -1031,8 +1032,8 @@ build_page_tables:
     mov edx, ecx
     shl edx, 3
     add edi, edx
-    mov [edi], eax
-    mov dword [edi+4], 0
+    a32 mov dword [edi], eax
+    a32 mov dword [edi+4], 0
     inc ecx
     cmp ecx, 512
     jb .pd
@@ -1065,16 +1066,44 @@ build_page_tables:
     mov edx, ecx
     shl edx, 3
     add edi, edx
-    mov [edi], eax
-    mov dword [edi+4], 0
+    a32 mov dword [edi], eax
+    a32 mov dword [edi+4], 0
     inc ecx
     cmp ecx, 512
     jb .fb_map
 .fb_done:
+    ; Validate the critical identity and higher-half mappings before CR0.PG.
+    ; A bad table must fail here, while the real-mode diagnostics still work,
+    ; rather than cascading into an opaque triple fault after the far jump.
+    a32 cmp dword [PAGE_PML4], PAGE_PDPT | 3
+    jne .paging_bad
+    a32 cmp dword [PAGE_PML4+511*8], PAGE_PDPT | 3
+    jne .paging_bad
+    a32 cmp dword [PAGE_PDPT], PAGE_PD | 3
+    jne .paging_bad
+    a32 cmp dword [PAGE_PDPT+510*8], PAGE_PD | 3
+    jne .paging_bad
+    a32 cmp dword [PAGE_PDPT+511*8], PAGE_FBPD | 3
+    jne .paging_bad
+    a32 cmp dword [PAGE_PD], 0x00000083
+    jne .paging_bad
+    a32 cmp dword [PAGE_PD+511*8], 0x3FE00083
+    jne .paging_bad
+    clc
+    ret
+.paging_bad:
+    mov si, serial_page_table_error
+    call serial_puts
+    stc
     ret
 
 enter_long_mode:
     cli
+    ; Establish a known 32-bit stack before paging is enabled. If the first
+    ; long-mode fetch faults, the CPU can still build an exception frame on
+    ; an identity-mapped page instead of using stale real-mode ESP bits.
+    mov esp, 0x0009D000
+    and esp, 0xFFFFFFF0
     lgdt [gdt64_descriptor]
 
     mov eax, PAGE_PML4
@@ -1118,6 +1147,12 @@ long_mode_entry:
     mov rdi, BOOTINFO_ADDR
     mov rax, [abs BOOTINFO_ADDR+72]
     jmp rax
+
+fatal_paging:
+    mov si, serial_fatal_paging
+    call serial_puts
+    mov si, msg_paging
+    jmp fatal
 
 fatal_disk:
     mov si, serial_fatal_disk
@@ -1251,11 +1286,14 @@ serial_long_mode db "NullL: entering long mode",13,10,0
 serial_fatal_disk db "NullL: fatal disk error",13,10,0
 serial_fatal_kernel db "NullL: fatal kernel load/ELF error",13,10,0
 serial_fatal_memory db "NullL: fatal E820 memory map error",13,10,0
+serial_page_table_error db "NullL: page-table verification failed",13,10,0
+serial_fatal_paging db "NullL: fatal paging setup error",13,10,0
 loading_old db 13,10,"Loading Old Boot Record...",13,10,0
 old_fail db "NullL: Old Boot Record invalid",13,10,0
 msg_disk db "NullL: disk error",13,10,0
 msg_kernel db "NullL: kernel load/ELF error",13,10,0
 msg_memory db "NullL: E820 memory map error",13,10,0
+msg_paging db "NullL: page-table construction/verification failed",13,10,0
 
 align 4, db 0
 mailbox_dap:
