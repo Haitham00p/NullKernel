@@ -4,6 +4,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define ELF_PROGRAM_IMAGE_BASE 0x00100000ULL
+#define ELF_PROGRAM_IMAGE_END  0x01000000ULL
+
 typedef struct
 {
     uint64_t Entry;
