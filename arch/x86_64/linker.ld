@@ -1,4 +1,4 @@
-ENTRY(kernel_main)
+ENTRY(kernel_entry)
 
 /* NullL maps 0xffffffff80000000 to physical 0, so the 1 MiB kernel LMA
    must use the matching higher-half VMA at alias + 1 MiB. */
