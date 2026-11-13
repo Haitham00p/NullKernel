@@ -117,6 +117,20 @@ ISRCommon:
     ; Stash the old stack pointer and switch to the dedicated exception stack
     ; so saving the frame can never fault due to the faulting context.
     mov rbx, rsp
+
+    ; Preserve the first exception before switching stacks or entering C.
+    ; Record: vector, error code, faulting RIP, original RSP, magic.
+    cmp dword [0x6E60], 0x49535231
+    je .record_done
+    mov rax, [rbx+0]
+    mov [0x6E40], rax
+    mov rax, [rbx+8]
+    mov [0x6E48], rax
+    mov rax, [rbx+16]
+    mov [0x6E50], rax
+    mov [0x6E58], rbx
+    mov dword [0x6E60], 0x49535231
+.record_done:
     ; RIP-relative LEA is required here: an absolute immediate can resolve to
     ; the .bss section offset instead of its final higher-half virtual address.
     lea rsp, [rel ExcStackTop]
