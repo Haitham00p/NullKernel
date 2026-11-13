@@ -14,7 +14,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <string.h>
+#include "libc/string.h"
 
 #define RSDP_MAGIC "RSD PTR "
 #define ACPI_MAX_TABLE_SIZE (1024U * 1024U)
