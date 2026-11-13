@@ -212,7 +212,7 @@ void kernel_main(NullBootInfo *BootInfo)
     ShellBootRunROB();
     ShellApplyDefDir();
     ShellInitialize();
-    DbgSerialWrite("NullOS: shell ready\\n");
+    DbgSerialWrite("NullOS: shell ready\n");
 
     DbgBootLogFlush();
 
