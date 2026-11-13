@@ -249,8 +249,8 @@ serial_puthex32:
 .digit:
     add dl, '0'
 .emit:
-    mov al, dl
     push eax
+    mov al, dl
     call serial_putc
     pop eax
     loop .hex
