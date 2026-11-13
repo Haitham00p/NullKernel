@@ -112,6 +112,16 @@ native_boot:
     call serial_puts
 
     call build_bootinfo
+    call verify_bootinfo
+    jc fatal_bootinfo
+    mov si, serial_bootinfo_ok
+    call serial_puts
+    mov eax, [BOOTINFO_ADDR+72]
+    call serial_puthex32
+    mov eax, [BOOTINFO_ADDR+76]
+    call serial_puthex32
+    mov si, serial_crlf
+    call serial_puts
     call build_page_tables
     jc fatal_paging
     mov si, serial_long_mode
@@ -224,6 +234,28 @@ serial_puts:
 
 ; Input AL=byte. Preserves AX and DX; skips output if the UART never becomes
 ; ready, so a missing COM1 cannot freeze NullL.
+serial_puthex32:
+    push eax
+    push ecx
+    mov cx, 8
+.hex:
+    rol eax, 4
+    mov dl, al
+    and dl, 0x0F
+    cmp dl, 9
+    jbe .digit
+    add dl, 'A' - 10
+    jmp .emit
+.digit:
+    add dl, '0'
+.emit:
+    mov al, dl
+    call serial_putc
+    loop .hex
+    pop ecx
+    pop eax
+    ret
+
 serial_putc:
     push ax
     push dx
@@ -245,6 +277,29 @@ serial_putc:
     pop ax
     out dx, al
     pop dx
+    ret
+
+verify_bootinfo:
+    cmp dword [BOOTINFO_ADDR+0], NULLBOOT_MAGIC_LO
+    jne .bad
+    cmp dword [BOOTINFO_ADDR+4], NULLBOOT_MAGIC_HI
+    jne .bad
+    cmp dword [BOOTINFO_ADDR+8], 1
+    jne .bad
+    cmp dword [BOOTINFO_ADDR+12], BOOTINFO_SIZE
+    jne .bad
+    mov eax, [BOOTINFO_ADDR+72]
+    test eax, eax
+    jz .bad
+    mov eax, [BOOTINFO_ADDR+76]
+    cmp eax, 0xFFFFFFFF
+    jne .bad
+    clc
+    ret
+.bad:
+    mov si, serial_bootinfo_bad
+    call serial_puts
+    stc
     ret
 
 ; ---------------------------------------------------------------------------
@@ -1154,6 +1209,12 @@ fatal_paging:
     mov si, msg_paging
     jmp fatal
 
+fatal_bootinfo:
+    mov si, serial_fatal_bootinfo
+    call serial_puts
+    mov si, msg_bootinfo
+    jmp fatal
+
 fatal_disk:
     mov si, serial_fatal_disk
     call serial_puts
@@ -1287,13 +1348,18 @@ serial_fatal_disk db "NullL: fatal disk error",13,10,0
 serial_fatal_kernel db "NullL: fatal kernel load/ELF error",13,10,0
 serial_fatal_memory db "NullL: fatal E820 memory map error",13,10,0
 serial_page_table_error db "NullL: page-table verification failed",13,10,0
+serial_bootinfo_ok db "NullL: BootInfo valid; entry=",0
+serial_bootinfo_bad db "NullL: BootInfo verification failed",13,10,0
+serial_crlf db 13,10,0
 serial_fatal_paging db "NullL: fatal paging setup error",13,10,0
+serial_fatal_bootinfo db "NullL: fatal BootInfo ABI error",13,10,0
 loading_old db 13,10,"Loading Old Boot Record...",13,10,0
 old_fail db "NullL: Old Boot Record invalid",13,10,0
 msg_disk db "NullL: disk error",13,10,0
 msg_kernel db "NullL: kernel load/ELF error",13,10,0
 msg_memory db "NullL: E820 memory map error",13,10,0
 msg_paging db "NullL: page-table construction/verification failed",13,10,0
+msg_bootinfo db "NullL: BootInfo ABI verification failed",13,10,0
 
 align 4, db 0
 mailbox_dap:
