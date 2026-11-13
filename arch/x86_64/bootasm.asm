@@ -106,12 +106,12 @@ EARLY_FAULT_STUB 31
 
 early_fault_common:
     cli
-    mov [0x6E00], rax
+    mov [abs 0x6E00], rax
     mov rax, cr2
-    mov [0x6E08], rax
-    mov [0x6E10], rsp
+    mov [abs 0x6E08], rax
+    mov [abs 0x6E10], rsp
     mov rax, [rsp+8]
-    mov [0x6E18], rax
+    mov [abs 0x6E18], rax
 .fault_halt:
     hlt
     jmp .fault_halt
