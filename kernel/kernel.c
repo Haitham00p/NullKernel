@@ -31,6 +31,7 @@
 #include "kernel/syscall/syscall.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/registry/registry.h"
+#include "kernel/elf/elf_loader.h"
 
 volatile NullBootInfo *NullBoot = NULL;
 
@@ -137,6 +138,10 @@ void kernel_main(NullBootInfo *BootInfo)
         PanicKernel("No safe usable range for heap", (uintptr_t)HeapInitialize);
 
     PmmInitialize(BootInfo);
+    /* NLD ET_EXEC images are linked at 1 MiB. Keep their fixed load slot
+       reserved so the PMM/heap can never hand those pages to the kernel. */
+    PmmReserveRange(ELF_PROGRAM_IMAGE_BASE,
+                    ELF_PROGRAM_IMAGE_END - ELF_PROGRAM_IMAGE_BASE);
     PmmReserveRange(BootInfo->KernelPhysicalBase,
                     BootInfo->KernelPhysicalEnd - BootInfo->KernelPhysicalBase);
     PmmReserveRange(BootInfo->LoaderBase,
