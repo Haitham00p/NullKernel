@@ -760,7 +760,7 @@ static bool SelfHostRunExeInDir(const char *Dir, const char *Name)
     DbgSerialWrite("[EXEC] ELF valid, entering program\n");
     g_ArgCount = 0;
     KbdAbortClear();
-    Result = RunProgramOnStack(Info.Entry, NULLOS_GUEST_STACK_TOP);
+    Result = RunProgramOnStack(Info.Entry);
     DbgSerialWrite("[EXEC] program returned\n");
     kfree(Image);
     if (Result == NULLOS_GUEST_ABORTED)
@@ -962,7 +962,7 @@ uint64_t exec(const char *Path)
         return 0;
     }
     KbdAbortClear();
-    Result = RunProgramOnStack(Info.Entry, NULLOS_GUEST_STACK_TOP);
+    Result = RunProgramOnStack(Info.Entry);
     kfree(Image);
     return Result;
 }
@@ -1298,7 +1298,7 @@ bool DispatcherTryDiskCommand(const PARSED_COMMAND *Command)
     }
 
     KbdAbortClear();
-    Result = RunProgramOnStack(Info.Entry, NULLOS_GUEST_STACK_TOP);
+    Result = RunProgramOnStack(Info.Entry);
     kfree(Image);
 
     if (Result == NULLOS_GUEST_ABORTED)
