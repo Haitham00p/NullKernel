@@ -62,15 +62,16 @@ void kernel_main(NullBootInfo *BootInfo)
     GdtInitialize();
     ISRInitialize();
     IDTInitialize();
-    DbgInfo("GDT/TSS, IDT and exception handlers online", (uintptr_t)IDTInitialize);
+    FbInit32();
+    DbgSerialWrite("NullOS: GDT/TSS, IDT and exception handlers online\\n");
     DbgIntr("Exception handlers installed (ISRs 0-31)", (uintptr_t)ISRInitialize);
 
-    FbInit32();
-
     if (BootInfo->MemoryMap == 0 || BootInfo->MemoryMapCount == 0)
-        PanicKernel("NullBoot memory map missing", (uintptr_t)kernel_main);
-
-    DbgBoot("NullL native kernel entry", (uintptr_t)kernel_main);
+    {
+        DbgSerialWrite("FATAL: NullBoot memory map missing\\n");
+        for (;;)
+            __asm__ volatile("cli; hlt");
+    }
 
     IRQInitialize();
     DbgInfo("Hardware IRQ routing armed", (uintptr_t)IRQInitialize);
@@ -161,6 +162,8 @@ void kernel_main(NullBootInfo *BootInfo)
     PciInitialize();
     FbInitDoubleBuffer();
     TerminalInit32();
+    DbgBoot("NullL native kernel entry", (uintptr_t)kernel_main);
+    DbgInfo("GDT/TSS, IDT and exception handlers online", (uintptr_t)IDTInitialize);
     TerminalClear32(0x00000000);
     PITInitialize(Freq);
     DbgInfo("PIT is online", (uintptr_t)PITInitialize);
