@@ -42,6 +42,21 @@
 #define EDITOR_GRAY         0x00808080U
 #define EDITOR_V_COLOR      0x00FF8000U
 
+static bool EditorIsAlpha(char c)
+{
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_';
+}
+
+static bool EditorIsDigit(char c)
+{
+    return c >= '0' && c <= '9';
+}
+
+static bool EditorIsIdent(char c)
+{
+    return EditorIsAlpha(c) || EditorIsDigit(c);
+}
+
 static void EditorDeleteAt(uint32_t Index);
 
 static char EditorPath[EDITOR_PATH_CAPACITY];
@@ -900,6 +915,7 @@ void EditorHandleKey(uint8_t Key, bool ControlHeld, bool ShiftHeld)
         {
             uint32_t Line = 0;
             uint32_t Col = 0;
+            uint32_t Start;
             uint32_t End;
 
             if (ShiftHeld)
