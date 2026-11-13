@@ -16,7 +16,6 @@
  */
 
 #include "idt.h"
-#include "lib/string/string.h"
 #include "arch/x86_64/cpu/gdt.h"
 
 extern void Ring3Int80(void);
@@ -41,8 +40,8 @@ void IDTSetGate(uint8_t Vector,
 
 void IDTInitialize(void)
 {
-    memset(IDT, 0, sizeof(IDT));
-
+    /* ISRInitialize pre-populates exception gates in the zeroed BSS table.
+       Do not clear them here; install the software gates and load the full IDT. */
     IDTP.Limit = sizeof(IDT_ENTRY) * IDT_ENTRIES - 1;
     IDTP.Base = (uint64_t)&IDT;
 
