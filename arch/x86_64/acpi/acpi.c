@@ -79,8 +79,16 @@ static bool AcpiMapPhysicalRange(uint64_t Physical, uint64_t Length)
 
     for (uint64_t Page = FirstPage; Page < End; Page += PAGE_SIZE_4K)
     {
-        if (VmmGetPhysical(Page) == 0 && !VmmMapPage(Page, Page, VMM_P))
+        uint64_t Existing = VmmGetPhysical(Page);
+        if (Existing == 0)
+        {
+            if (!VmmMapPage(Page, Page, VMM_P))
+                return false;
+        }
+        else if (Existing != Page)
+        {
             return false;
+        }
     }
 
     return true;
