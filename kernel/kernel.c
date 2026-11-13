@@ -39,7 +39,7 @@ void kernel_main(NullBootInfo *BootInfo)
     /* Initialize serial before validating the handoff so even an ABI failure
        leaves a reliable trace proving that the kernel entry was reached. */
     DbgSerialInit();
-    DbgSerialWrite("NullOS: kernel_main entered\\n");
+    DbgSerialWrite("NullOS: kernel_main entered\n");
     NullBoot = BootInfo;
     if (BootInfo == NULL || BootInfo->Magic != NULLBOOT_MAGIC ||
         BootInfo->Version != NULLBOOT_VERSION)
