@@ -12,6 +12,7 @@ File: arch/x86_64/program/run.h
  * The guest stack is a kernel-resident higher-half BSS allocation.
  * It is mapped with the kernel image and does not rely on low identity RAM.
  */
+ */
 
 /*
  * Result value used when the user aborts a running program with Ctrl+C.
