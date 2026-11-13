@@ -827,7 +827,7 @@ static bool DirectoryMakeUniqueAlias(const FAT32Directory *Directory,
     return false;
 }
 
-static bool DirectoryFindFreeRun(const FAT32Directory *Directory,
+static bool DirectoryFindFreeRun(FAT32Directory *Directory,
                                  uint32_t Slots, FAT32DirectorySlot *RunStart)
 {
     uint8_t Sector[FAT32_SECTOR_SIZE];
@@ -973,6 +973,7 @@ static bool DirectoryWriteLFNEntry(const FAT32Directory *Directory,
     uint8_t Sector[FAT32_SECTOR_SIZE];
     uint8_t *Entry;
 
+    (void)Directory;
     if (Slot == 0 || Name == 0 || !BlockRead(Slot->LBA, Sector)) return false;
 
     Entry = &Sector[Slot->EntryIndex * FAT32_DIRECTORY_ENTRY_SIZE];
@@ -997,6 +998,7 @@ static bool DirectoryWriteSFNEntry(const FAT32Directory *Directory,
     FAT32DirectoryEntry *Entry;
     FAT32DirectoryEntry NewEntry;
 
+    (void)Directory;
     if (Slot == 0 || !BlockRead(Slot->LBA, Sector)) return false;
 
     memset(&NewEntry, 0, sizeof(NewEntry));
