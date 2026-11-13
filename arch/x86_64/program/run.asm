@@ -17,10 +17,9 @@
 ; The caller RSP is kept in memory, not a register, because the guest is a
 ; normal C function that returns its result in RAX (among other things).
 ;
-; uint64_t RunProgramOnStack(void (*Entry)(void), uint64_t StackTop);
+; uint64_t RunProgramOnStack(void (*Entry)(void));
 ;
 ;   rdi = entry point
-;   rsi = top of the dedicated stack
 ;   returns the guest's RAX at exit (the program's return value),
 ;   or NULLOS_GUEST_ABORTED when the user pressed Ctrl+C
 [bits 64]
@@ -78,13 +77,13 @@ RunProgramOnStack:
     sti
     call rdi
 full_switchless:
-    mov qword [RunAbortArmed], 0
-    mov qword [RunGuestActive], 0
+    mov qword [rel RunAbortArmed], 0
+    mov qword [rel RunGuestActive], 0
     jmp restore_and_return
 
 RunAbortResume:
-    mov qword [RunAbortArmed], 0
-    mov qword [RunGuestActive], 0
+    mov qword [rel RunAbortArmed], 0
+    mov qword [rel RunGuestActive], 0
     mov rax, 0x2BAD0B5E
     ; The Ctrl+C abort resumes here instead of at full_switchless. The guest's
     ; own stack and registers are abandoned; restore the kernel/shell stack and
@@ -95,7 +94,7 @@ RunAbortResume:
 restore_and_return:
     ; A ring-0 iretq does not reload RSP, so restore the saved shell RSP
     ; explicitly, then pop the callee-saved registers the guest never restored.
-    mov rsp, [RunSavedRsp]
+    mov rsp, [rel RunSavedRsp]
     pop r15
     pop r14
     pop r13
