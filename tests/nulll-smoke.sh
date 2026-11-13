@@ -37,7 +37,7 @@ fail() {
     echo "FAIL: $*" >&2
     if [[ -S "$MON" ]]; then
         echo "--- QEMU CPU state / page tables ---" >&2
-        python3 - "$MON" <<'PY' >&2 || true
+        python3 - "$MON" "$ENTRY_PHYS" <<'PY' >&2 || true
 import socket
 import sys
 import time
