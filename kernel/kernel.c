@@ -152,9 +152,9 @@ void kernel_main(NullBootInfo *BootInfo)
     PmmReserveRange(HeapBase, HeapLength);
     VmmInitialize();
     if (VmmEnableNX())
-        DbgSerialWrite("NullOS: CPU NX support enabled (EFER.NXE)\\n");
+        DbgSerialWrite("NullOS: CPU NX support enabled (EFER.NXE)\n");
     else
-        DbgSerialWrite("NullOS: CPU has no NX; NX mappings will be rejected\\n");
+        DbgSerialWrite("NullOS: CPU has no NX; NX mappings will be rejected\n");
     DbgInfo("Physical/virtual memory managers online", (uintptr_t)VmmInitialize);
 
     HeapInitialize(HeapBase, HeapLength);
