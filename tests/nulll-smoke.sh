@@ -159,7 +159,9 @@ done
 grep -q "E1000 initialized" "$LOG" 2>/dev/null ||
     fail "E1000 MMIO initialization did not complete"
 
-for _ in $(seq 1 300); do
+# First boot recompiles /BIN/*.C against the current kernel symbol
+# vault, so allow the self-host build to finish before requiring the shell.
+for _ in $(seq 1 1200); do
     grep -q "NullOS: shell ready" "$LOG" 2>/dev/null && break
     grep -q "=== NULLCONSOLE FAULT REPORT ===" "$LOG" 2>/dev/null &&
         fail "kernel exception occurred before shell initialization"
