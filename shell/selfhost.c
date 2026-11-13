@@ -73,6 +73,10 @@ bool ShellArgGet(uint32_t Index, char *Out, uint32_t MaxOut)
 void SelfHostExeName(const char *SourceName, char *ExeName)
 {
     uint32_t Base = 0;
+    uint32_t Index;
+
+    if (SourceName == NULL || ExeName == NULL)
+        return;
 
     while (SourceName[Base] != '\0' && SourceName[Base] != '.' &&
            Base < 8U)
@@ -80,10 +84,16 @@ void SelfHostExeName(const char *SourceName, char *ExeName)
         Base++;
     }
     if (Base == 0)
-    {
         Base = 1;
+
+    /* FAT32 8.3 short names are stored uppercase on disk. */
+    for (Index = 0; Index < Base; Index++)
+    {
+        char Character = SourceName[Index];
+        if (Character >= 'a' && Character <= 'z')
+            Character = (char)(Character - ('a' - 'A'));
+        ExeName[Index] = Character;
     }
-    memcpy(ExeName, SourceName, Base);
     strcpy(ExeName + Base, ".EXE");
 }
 
