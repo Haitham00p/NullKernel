@@ -267,6 +267,17 @@ with open(img_path, "r+b") as f:
     print(f"[*] NullL kernel manifest: {len(extents)} extent(s), {size} bytes")
 PY
 
+# Populate the FAT32 volume with the actual operating-system root filesystem.
+# The kernel installer above writes BOOT/KERNEL.ELF directly; without this
+# step a freshly formatted disk boots an empty filesystem and has no /BIN,
+# registry defaults, shell data, or user utilities.
+FAT_IMAGE="${IMG}@@$((PARTITION_START * 512))"
+echo "[*] copying rootfs tree into FAT32"
+for ITEM in "$SCRIPT_DIR"/rootfs/*; do
+    [ -e "$ITEM" ] || continue
+    mcopy -s -o -i "$FAT_IMAGE" "$ITEM" ::/
+done
+
 echo "[*] saving Old Boot Record at partition-1"
 dd if="$IMG" of="$IMG" bs=512 skip=0 seek=$((PARTITION_START - 1)) count=1 conv=notrunc status=none
 
