@@ -5,39 +5,188 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with NullOS. If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "acpi.h"
 #include "include/nullboot.h"
 #include "kernel/debug/debug.h"
+#include "mm/vmm.h"
+
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
-#define RSDP_MAGIC "RSD PTR "
-typedef struct __attribute__((packed)){char sig[8];uint8_t checksum;char oem[6];uint8_t rev;uint32_t rsdt;uint32_t len;uint64_t xsdt;uint8_t ext;uint8_t rsv[3];} RSDP2;
-typedef struct __attribute__((packed)){char sig[4];uint32_t len;uint8_t rev;uint8_t csum;char oem[6];char oemtab[8];uint32_t oemrev;uint32_t creator;uint32_t creatorrev;} SDTH;
-static uint64_t XsdtAddr; static bool Ready;
-static bool checksum(void *p,uint32_t n){uint8_t s=0,*b=p;for(uint32_t i=0;i<n;i++)s=(uint8_t)(s+b[i]);return s==0;}
-void AcpiInitialize(void){Ready=false;XsdtAddr=0;if(NullBoot==NULL||NullBoot->RSDP==0)return;RSDP2*r=(RSDP2*)(uintptr_t)NullBoot->RSDP;if(!r||memcmp(r->sig,RSDP_MAGIC,8)!=0)return;if(!checksum(r,20)||r->rev>=2&&!checksum(r,r->len))return;if(r->rev>=2&&r->xsdt)XsdtAddr=r->xsdt;Ready=XsdtAddr!=0;if(Ready)DbgInfo("ACPI XSDT online",(uintptr_t)XsdtAddr);}
-bool AcpiReady(void){return Ready;}uint64_t AcpiXsdt(void){return XsdtAddr;}
-uint64_t AcpiFindTable(const char Sig[4]){if(!Ready)return 0;SDTH*h=(SDTH*)(uintptr_t)XsdtAddr;if(memcmp(h->sig,"XSDT",4)!=0)return 0;uint32_t n=(h->len-sizeof(SDTH))/8;uint64_t*e=(uint64_t*)((uint8_t*)h+sizeof(SDTH));for(uint32_t i=0;i<n;i++){SDTH*t=(SDTH*)(uintptr_t)e[i];if(t&&memcmp(t->sig,Sig,4)==0)return e[i];}return 0;}
 
-uint64_t AcpiLocalApicAddress(void){
-    typedef struct __attribute__((packed)){SDTH h;uint32_t lapic;uint32_t flags;} MADT;
-    MADT*m=(MADT*)(uintptr_t)AcpiFindTable("APIC"); return m?m->lapic:0;
+#define RSDP_MAGIC "RSD PTR "
+#define ACPI_MAX_TABLE_SIZE (1024U * 1024U)
+#define PAGE_SIZE_4K 0x1000ULL
+
+typedef struct __attribute__((packed))
+{
+    char Signature[8];
+    uint8_t Checksum;
+    char OemId[6];
+    uint8_t Revision;
+    uint32_t RsdtAddress;
+    uint32_t Length;
+    uint64_t XsdtAddress;
+    uint8_t ExtendedChecksum;
+    uint8_t Reserved[3];
+} RSDP2;
+
+typedef struct __attribute__((packed))
+{
+    char Signature[4];
+    uint32_t Length;
+    uint8_t Revision;
+    uint8_t Checksum;
+    char OemId[6];
+    char OemTableId[8];
+    uint32_t OemRevision;
+    uint32_t CreatorId;
+    uint32_t CreatorRevision;
+} ACPI_SDT_HEADER;
+
+static uint64_t XsdtAddr;
+static uint32_t XsdtLength;
+static bool Ready;
+
+static bool AcpiChecksumValid(const void *Pointer, uint32_t Length)
+{
+    const uint8_t *Bytes = (const uint8_t *)Pointer;
+    uint8_t Sum = 0;
+
+    if (Pointer == 0 || Length == 0)
+        return false;
+
+    for (uint32_t Index = 0; Index < Length; Index++)
+        Sum = (uint8_t)(Sum + Bytes[Index]);
+
+    return Sum == 0;
 }
-uint64_t AcpiCpuCount(void){
-    typedef struct __attribute__((packed)){uint8_t type,len,acpi_id,apic_id;uint32_t flags;} LAPIC;
-    typedef struct __attribute__((packed)){SDTH h;uint32_t lapic;uint32_t flags;} MADT;
-    MADT*m=(MADT*)(uintptr_t)AcpiFindTable("APIC"); if(!m)return 0;
-    uint64_t n=0;uint8_t*p=(uint8_t*)m+sizeof(MADT);uint8_t*end=(uint8_t*)m+m->h.len;
-    while(p+2<=end&&p[1]>=2&&p+p[1]<=end){if(p[0]==0&&p[1]>=8){LAPIC*l=(LAPIC*)p;if(l->flags&1)n++;}p+=p[1];}return n;
+
+/* ACPI table addresses are physical. Map every page before dereferencing it. */
+static bool AcpiMapPhysicalRange(uint64_t Physical, uint64_t Length)
+{
+    if (Physical == 0 || Length == 0 || Physical + Length < Physical)
+        return false;
+
+    uint64_t FirstPage = Physical & ~(PAGE_SIZE_4K - 1ULL);
+    uint64_t End = Physical + Length;
+    if (End > UINT64_MAX - (PAGE_SIZE_4K - 1ULL))
+        return false;
+
+    End = (End + PAGE_SIZE_4K - 1ULL) & ~(PAGE_SIZE_4K - 1ULL);
+
+    for (uint64_t Page = FirstPage; Page < End; Page += PAGE_SIZE_4K)
+    {
+        if (VmmGetPhysical(Page) == 0 && !VmmMapPage(Page, Page, VMM_P))
+            return false;
+    }
+
+    return true;
+}
+
+void AcpiInitialize(void)
+{
+    Ready = false;
+    XsdtAddr = 0;
+    XsdtLength = 0;
+
+    if (NullBoot == 0 || NullBoot->RSDP == 0)
+        return;
+
+    RSDP2 *Rsdp = (RSDP2 *)(uintptr_t)NullBoot->RSDP;
+    if (memcmp(Rsdp->Signature, RSDP_MAGIC, sizeof(Rsdp->Signature)) != 0)
+        return;
+
+    if (!AcpiChecksumValid(Rsdp, 20U))
+        return;
+
+    if (Rsdp->Revision < 2U || Rsdp->Length < sizeof(RSDP2) ||
+        Rsdp->Length > 4096U || !AcpiChecksumValid(Rsdp, Rsdp->Length) ||
+        Rsdp->XsdtAddress == 0)
+        return;
+
+    if (!AcpiMapPhysicalRange(Rsdp->XsdtAddress, sizeof(ACPI_SDT_HEADER)))
+        return;
+
+    ACPI_SDT_HEADER *Xsdt =
+        (ACPI_SDT_HEADER *)(uintptr_t)Rsdp->XsdtAddress;
+
+    if (memcmp(Xsdt->Signature, "XSDT", 4) != 0 ||
+        Xsdt->Length < sizeof(ACPI_SDT_HEADER) ||
+        Xsdt->Length > ACPI_MAX_TABLE_SIZE ||
+        ((Xsdt->Length - sizeof(ACPI_SDT_HEADER)) % sizeof(uint64_t)) != 0)
+        return;
+
+    if (!AcpiMapPhysicalRange(Rsdp->XsdtAddress, Xsdt->Length) ||
+        !AcpiChecksumValid(Xsdt, Xsdt->Length))
+        return;
+
+    XsdtAddr = Rsdp->XsdtAddress;
+    XsdtLength = Xsdt->Length;
+    Ready = true;
+    DbgInfo("ACPI XSDT online", (uintptr_t)XsdtAddr);
+}
+
+bool AcpiReady(void)
+{
+    return Ready;
+}
+
+uint64_t AcpiXsdt(void)
+{
+    return XsdtAddr;
+}
+
+uint64_t AcpiFindTable(const char Signature[4])
+{
+    if (!Ready || Signature == 0 || XsdtAddr == 0 ||
+        XsdtLength < sizeof(ACPI_SDT_HEADER))
+        return 0;
+
+    ACPI_SDT_HEADER *Xsdt =
+        (ACPI_SDT_HEADER *)(uintptr_t)XsdtAddr;
+    uint32_t EntryCount =
+        (XsdtLength - sizeof(ACPI_SDT_HEADER)) / sizeof(uint64_t);
+    uint64_t *Entries =
+        (uint64_t *)((uint8_t *)Xsdt + sizeof(ACPI_SDT_HEADER));
+
+    for (uint32_t Index = 0; Index < EntryCount; Index++)
+    {
+        uint64_t Address = Entries[Index];
+        if (Address == 0 ||
+            !AcpiMapPhysicalRange(Address, sizeof(ACPI_SDT_HEADER)))
+            continue;
+
+        ACPI_SDT_HEADER *Table = (ACPI_SDT_HEADER *)(uintptr_t)Address;
+        if (Table->Length < sizeof(ACPI_SDT_HEADER) ||
+            Table->Length > ACPI_MAX_TABLE_SIZE ||
+            !AcpiMapPhysicalRange(Address, Table->Length))
+            continue;
+
+        if (memcmp(Table->Signature, Signature, 4) == 0 &&
+            AcpiChecksumValid(Table, Table->Length))
+            return Address;
+    }
+
+    return 0;
+}
+
+uint64_t AcpiLocalApicAddress(void)
+{
+    typedef struct __attribute__((packed))
+    {
+        ACPI_SDT_HEADER Header;
+        uint32_t LocalApicAddress;
+        uint32_t Flags;
+    } MADT_HEADER;
+
+    MADT_HEADER *Madt =
+        (MADT_HEADER *)(uintptr_t)AcpiFindTable("APIC");
+
+    if (Madt == 0 || Madt->Header.Length < sizeof(MADT_HEADER))
+        return 0;
+
+    return Madt->LocalApicAddress;
 }
