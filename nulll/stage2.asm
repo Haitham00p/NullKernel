@@ -250,7 +250,9 @@ serial_puthex32:
     add dl, '0'
 .emit:
     mov al, dl
+    push eax
     call serial_putc
+    pop eax
     loop .hex
     pop ecx
     pop eax
