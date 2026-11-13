@@ -25,6 +25,35 @@ extern kernel_main
 kernel_entry:
     cli
     and rsp, -16
+
+    ; Install a temporary exception IDT before entering C. The permanent
+    ; GDT/IDT are initialized by kernel_main, but any fault before that must
+    ; be recorded rather than cascading into a triple fault.
+    lea r8, [rel early_idt]
+    lea r9, [rel early_fault_table]
+    mov ecx, 32
+.early_idt_loop:
+    mov rax, [r9]
+    mov word [r8], ax
+    mov word [r8+2], 0x08
+    mov byte [r8+4], 0
+    mov byte [r8+5], 0x8E
+    mov rdx, rax
+    shr rdx, 16
+    mov word [r8+6], dx
+    mov rdx, rax
+    shr rdx, 32
+    mov dword [r8+8], edx
+    mov dword [r8+12], 0
+    add r8, 16
+    add r9, 8
+    loop .early_idt_loop
+
+    mov word [rel early_idtr], (32*16)-1
+    lea rax, [rel early_idt]
+    mov [rel early_idtr+2], rax
+    lidt [rel early_idtr]
+
     mov dx, 0x3F8
     mov al, 'K'
     out dx, al
@@ -34,6 +63,69 @@ kernel_entry:
     hlt
     jmp .halt
 
+; Exception stubs push their vector number, then share a non-returning
+; recorder. Record layout at physical 0x6E00: vector, CR2, RSP, stack top.
+%macro EARLY_FAULT_STUB 1
+early_fault_%1:
+    mov eax, %1
+    jmp early_fault_common
+%endmacro
+
+EARLY_FAULT_STUB 0
+EARLY_FAULT_STUB 1
+EARLY_FAULT_STUB 2
+EARLY_FAULT_STUB 3
+EARLY_FAULT_STUB 4
+EARLY_FAULT_STUB 5
+EARLY_FAULT_STUB 6
+EARLY_FAULT_STUB 7
+EARLY_FAULT_STUB 8
+EARLY_FAULT_STUB 9
+EARLY_FAULT_STUB 10
+EARLY_FAULT_STUB 11
+EARLY_FAULT_STUB 12
+EARLY_FAULT_STUB 13
+EARLY_FAULT_STUB 14
+EARLY_FAULT_STUB 15
+EARLY_FAULT_STUB 16
+EARLY_FAULT_STUB 17
+EARLY_FAULT_STUB 18
+EARLY_FAULT_STUB 19
+EARLY_FAULT_STUB 20
+EARLY_FAULT_STUB 21
+EARLY_FAULT_STUB 22
+EARLY_FAULT_STUB 23
+EARLY_FAULT_STUB 24
+EARLY_FAULT_STUB 25
+EARLY_FAULT_STUB 26
+EARLY_FAULT_STUB 27
+EARLY_FAULT_STUB 28
+EARLY_FAULT_STUB 29
+EARLY_FAULT_STUB 30
+EARLY_FAULT_STUB 31
+
+early_fault_common:
+    cli
+    mov [0x6E00], rax
+    mov rax, cr2
+    mov [0x6E08], rax
+    mov [0x6E10], rsp
+    mov rax, [rsp+8]
+    mov [0x6E18], rax
+.fault_halt:
+    hlt
+    jmp .fault_halt
+
+align 8
+early_fault_table:
+    dq early_fault_0, early_fault_1, early_fault_2, early_fault_3
+    dq early_fault_4, early_fault_5, early_fault_6, early_fault_7
+    dq early_fault_8, early_fault_9, early_fault_10, early_fault_11
+    dq early_fault_12, early_fault_13, early_fault_14, early_fault_15
+    dq early_fault_16, early_fault_17, early_fault_18, early_fault_19
+    dq early_fault_20, early_fault_21, early_fault_22, early_fault_23
+    dq early_fault_24, early_fault_25, early_fault_26, early_fault_27
+    dq early_fault_28, early_fault_29, early_fault_30, early_fault_31
 
 ; void BootAsmRun(void *code, BootAsmRegs *regs)
 ; SysV: RDI=code, RSI=regs
@@ -149,3 +241,8 @@ BootAsmRun:
     pop r12
     pop rbx
     ret
+
+section .bss
+align 16
+early_idt:  resb 32*16
+early_idtr: resb 10
