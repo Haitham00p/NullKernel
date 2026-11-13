@@ -63,12 +63,12 @@ void kernel_main(NullBootInfo *BootInfo)
     ISRInitialize();
     IDTInitialize();
     FbInit32();
-    DbgSerialWrite("NullOS: GDT/TSS, IDT and exception handlers online\\n");
+    DbgSerialWrite("NullOS: GDT/TSS, IDT and exception handlers online\n");
     DbgIntr("Exception handlers installed (ISRs 0-31)", (uintptr_t)ISRInitialize);
 
     if (BootInfo->MemoryMap == 0 || BootInfo->MemoryMapCount == 0)
     {
-        DbgSerialWrite("FATAL: NullBoot memory map missing\\n");
+        DbgSerialWrite("FATAL: NullBoot memory map missing\n");
         for (;;)
             __asm__ volatile("cli; hlt");
     }
