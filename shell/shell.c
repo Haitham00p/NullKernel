@@ -95,24 +95,6 @@ static char *ShellCmdDup(const char *Src)
     for (uint32_t i = 0; i <= Len; i++) Out[i] = Src[i];
     return Out;
 }
-/**
- * @brief Reads base text color and applies channel math to generate
- * a harmonized, slightly shifted single color for the whole prompt.
- */
-static uint32_t ComputePromptColor(uint32_t base) {
-    uint32_t a = (base >> 24) ? ((base >> 24) & 0xFF) : 0xFF;
-    uint32_t r = (base >> 16) & 0xFF;
-    uint32_t g = (base >> 8) & 0xFF;
-    uint32_t b = base & 0xFF;
-
-    /* Channel math: scale R slightly, boost G/B channels to give sleek cyan/soft tint */
-    uint32_t r_prompt = (r * 3) / 4;
-    uint32_t g_prompt = ((g * 9) / 10) > 0xDF ? 0xFF : (((g * 9) / 10) + 0x20);
-    uint32_t b_prompt = (b > 0xBF) ? 0xFF : (b + 0x40);
-
-    return (a << 24) | (r_prompt << 16) | (g_prompt << 8) | b_prompt;
-}
-
 static char PromptText[256];
 static uint32_t PromptTextLength = 0;
 
