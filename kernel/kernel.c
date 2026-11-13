@@ -221,6 +221,16 @@ void kernel_main(NullBootInfo *BootInfo)
     RegistryInitialize();
     { uint64_t q = 0; if (RegistryReadU64("/REG/SCHED/QUANTUM.V", &q) && q != 0) SchedulerSetQuantum(q); }
     ShellApplyRegistry();
+
+    /*
+     * Disk executables are linked against kernel API addresses. Rebuild
+     * /BIN/*.C against this kernel's freshly generated Ncc symbol vault
+     * before running any boot programs; copied/prebuilt ELFs may reference
+     * stale kernel addresses after a kernel update.
+     */
+    DbgSerialWrite("NullOS: rebuilding disk executables against current kernel\\n");
+    ShellBootBuild();
+
     ShellBootRunROB();
     ShellApplyDefDir();
     ShellInitialize();
