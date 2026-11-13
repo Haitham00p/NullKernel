@@ -198,3 +198,52 @@ uint64_t AcpiLocalApicAddress(void)
 
     return Madt->LocalApicAddress;
 }
+
+/* Count enabled processors in MADT Local APIC and x2APIC records. */
+uint64_t AcpiCpuCount(void)
+{
+    typedef struct __attribute__((packed))
+    {
+        ACPI_SDT_HEADER Header;
+        uint32_t LocalApicAddress;
+        uint32_t Flags;
+    } MADT_HEADER;
+
+    MADT_HEADER *Madt =
+        (MADT_HEADER *)(uintptr_t)AcpiFindTable("APIC");
+    if (Madt == 0 || Madt->Header.Length < sizeof(MADT_HEADER))
+        return 0;
+
+    const uint8_t *Entry =
+        (const uint8_t *)Madt + sizeof(MADT_HEADER);
+    const uint8_t *End =
+        (const uint8_t *)Madt + Madt->Header.Length;
+    uint64_t Count = 0;
+
+    while ((uintptr_t)(End - Entry) >= 2U)
+    {
+        uint8_t Type = Entry[0];
+        uint8_t Length = Entry[1];
+        if (Length < 2U || (uintptr_t)(End - Entry) < Length)
+            break;
+
+        if (Type == 0U && Length >= 8U)
+        {
+            uint32_t Flags;
+            memcpy(&Flags, Entry + 4U, sizeof(Flags));
+            if (Flags & 1U)
+                Count++;
+        }
+        else if (Type == 9U && Length >= 16U)
+        {
+            uint32_t Flags;
+            memcpy(&Flags, Entry + 8U, sizeof(Flags));
+            if (Flags & 1U)
+                Count++;
+        }
+
+        Entry += Length;
+    }
+
+    return Count;
+}
