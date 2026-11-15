@@ -2,7 +2,7 @@
 # mkdisk.sh — prepare a raw .img as a NullOS install target.
 # Usage: ./mkdisk.sh <image.img> [sizeMiB]
 #   - creates the image if it does not exist (default 64 MiB)
-#   - writes an MBR with one bootable FAT32 (0x0C) partition at LBA 2048
+#   - writes an MBR with one bootable FAT32 EFI System (0xEF) partition at LBA 2048
 #   - formats that partition with FAT32, label NULLOS
 set -euo pipefail
 
@@ -21,7 +21,7 @@ echo "[*] wiping old partition table"
 sfdisk --delete "$IMG" >/dev/null 2>&1 || true
 
 echo "[*] writing MBR with FAT32 (0x0C) partition at sector ${SECTOR_START}"
-printf 'label: dos\nunit: sectors\nstart=%d, type=0c, bootable\n' \
+printf 'label: dos\nunit: sectors\nstart=%d, type=ef, bootable\n' \
     "$SECTOR_START" | sfdisk "$IMG" >/dev/null
 
 echo "[*] clearing gap before partition"
@@ -29,9 +29,9 @@ dd if=/dev/zero of="$IMG" bs=512 seek=1 count=$((SECTOR_START - 1)) \
     conv=notrunc status=none
 
 echo "[*] formatting FAT32 (label NULLOS)"
-# NullL occupies partition sectors 7..54; reserve 64 sectors so Stage 2
-# never overlaps the FAT tables (mkfs.fat defaults to only 32 reserved sectors).
-mkfs.vfat -F 32 -R 64 -b 62 -n NULLOS --offset "$SECTOR_START" "$IMG"
+# Limine stores its BIOS stage outside the FAT filesystem and its UEFI
+# application inside /EFI/BOOT. Keep a conventional FAT32 ESP for both paths.
+mkfs.vfat -F 32 -n NULLOS --offset "$SECTOR_START" "$IMG"
 
 echo "[*] done: $IMG ready"
 sfdisk -l "$IMG" | sed -n '/Device/,$p'
