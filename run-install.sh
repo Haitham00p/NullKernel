@@ -56,7 +56,7 @@ echo "[*] installing kernel and Limine configuration"
 mcopy -o -i "$FAT_IMAGE" "$KERNEL" ::/BOOT/KERNEL.ELF
 mcopy -o -i "$FAT_IMAGE" "$SCRIPT_DIR/boot/limine.conf" ::/BOOT/LIMINE/LIMINE.CONF
 mcopy -o -i "$FAT_IMAGE" "$SCRIPT_DIR/boot/limine.conf" ::/EFI/BOOT/LIMINE.CONF
-mcopy -o -i "$FAT_IMAGE" "$LIMINE_OUT/limine-bios.sys" ::/BOOT/LIMINE/LIMINE-BIOS.SYS
+mcopy -o -i "$FAT_IMAGE" "$LIMINE_OUT/limine-bios.sys" ::/BOOT/LIMINE/limine-bios.sys
 mcopy -o -i "$FAT_IMAGE" "$LIMINE_OUT/BOOTX64.EFI" ::/EFI/BOOT/BOOTX64.EFI
 
 echo "[*] installing Limine BIOS boot code"
