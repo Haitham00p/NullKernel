@@ -44,7 +44,10 @@ void kernel_main(NullBootInfo *BootInfo)
     DbgSerialWrite("NullOS: kernel_main entered\n");
     NullBoot = BootInfo;
     if (BootInfo == NULL || BootInfo->Magic != NULLBOOT_MAGIC ||
-        BootInfo->Version != NULLBOOT_VERSION)
+        BootInfo->Version != NULLBOOT_VERSION ||
+        BootInfo->Size < sizeof(NullBootInfo) ||
+        BootInfo->MemoryMap == 0 || BootInfo->MemoryMapCount == 0 ||
+        BootInfo->HHDMOffset == 0)
     {
         for (;;) __asm__ volatile("cli; hlt");
     }
