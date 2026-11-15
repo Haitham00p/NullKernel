@@ -19,6 +19,7 @@ section .text
 global BootAsmRun
 global kernel_entry
 extern kernel_main
+extern LimineBootPrepare
 
 ; ELF entry point. NullL supplies RDI=NullBootInfo* and a temporary stack.
 ; Normalize the stack for a normal SysV call into C, then transfer control.
@@ -57,6 +58,10 @@ kernel_entry:
     mov dx, 0x3F8
     mov al, 'K'
     out dx, al
+    call LimineBootPrepare
+    test rax, rax
+    jz .halt
+    mov rdi, rax
     call kernel_main
 .halt:
     cli
