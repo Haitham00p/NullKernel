@@ -82,7 +82,7 @@ void FbInitDoubleBuffer(void)
         return;
 
     /*
-     * NullL hands the kernel a stable higher-half framebuffer address.
+     * Limine hands the kernel a stable HHDM framebuffer address.
      */
     if (!FbMapHardwareBuffer())
         return;
