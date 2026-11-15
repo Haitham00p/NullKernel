@@ -36,7 +36,7 @@ kernel_entry:
 .early_idt_loop:
     mov rax, [r9]
     mov word [r8], ax
-    mov word [r8+2], 0x08
+    mov word [r8+2], 0x28 ; Limine's x86-64 code selector
     mov byte [r8+4], 0
     mov byte [r8+5], 0x8E
     mov rdx, rax
