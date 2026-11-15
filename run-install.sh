@@ -10,6 +10,11 @@ PARTITION_START=2048
 KERNEL="$SCRIPT_DIR/build/kernel.elf"
 FAT_IMAGE="$IMG@@$((PARTITION_START * 512))"
 
+if [[ -b "$IMG" ]]; then
+    echo "error: refusing to install onto a physical block device; use a regular image file" >&2
+    exit 1
+fi
+
 # Recreate the partition table and FAT32 ESP every install. This prevents an
 # older NullL type-0x0C image from being mistaken for the new Limine ESP.
 ./mkdisk.sh "$IMG"
