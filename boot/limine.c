@@ -171,6 +171,8 @@ NullBootInfo *LimineBootPrepare(void)
     struct limine_rsdp_response *rsdp = g_rsdp_request.response;
 
     if (!LIMINE_BASE_REVISION_SUPPORTED(g_limine_base_revision) ||
+        !LIMINE_LOADED_BASE_REVISION_VALID(g_limine_base_revision) ||
+        LIMINE_LOADED_BASE_REVISION(g_limine_base_revision) != 0 ||
         executable == NULL || g_hhdm_request.response == NULL ||
         g_memmap_request.response == NULL)
         return NULL;
