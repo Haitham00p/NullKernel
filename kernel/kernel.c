@@ -94,7 +94,7 @@ void kernel_main(NullBootInfo *BootInfo)
     uint64_t KernelEnd = BootInfo->KernelPhysicalEnd;
 
     /* Never let the heap overlap the loaded kernel/BSS, and only use RAM
-       covered by NullL's current first-1-GiB identity map. */
+       covered by the Limine compatibility identity map (first 1 GiB). */
     if (KernelEnd < MinimumHeapBase)
         KernelEnd = MinimumHeapBase;
     KernelEnd = (KernelEnd + 0xFFFULL) & ~0xFFFULL;
@@ -172,7 +172,7 @@ void kernel_main(NullBootInfo *BootInfo)
     PciInitialize();
     FbInitDoubleBuffer();
     TerminalInit32();
-    DbgBoot("NullL native kernel entry", (uintptr_t)kernel_main);
+    DbgBoot("Limine boot entry", (uintptr_t)kernel_main);
     DbgInfo("GDT/TSS, IDT and exception handlers online", (uintptr_t)IDTInitialize);
     TerminalClear32(0x00000000);
     PITInitialize(Freq);
@@ -202,19 +202,6 @@ void kernel_main(NullBootInfo *BootInfo)
 
     TerminalClear32(BackSpaceColor);
     DiskFsMount();
-
-    /*
-     * reboot-c stores a one-shot BM1 request on the installed FAT32 disk.
-     * The request must be consumed before the normal shell starts.
-     */
-    {
-        uint8_t NullLMode = BootMonitorReadMode();
-        if (NullLMode == BOOTMONITOR_MODE_ASM ||
-            NullLMode == BOOTMONITOR_MODE_NPB)
-        {
-            BootMonitorRunMode(NullLMode);
-        }
-    }
 
     if (BootMonitorShouldEnter())
         BootMonitorRun();
