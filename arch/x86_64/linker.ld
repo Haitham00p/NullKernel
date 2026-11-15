@@ -26,6 +26,9 @@ SECTIONS
     .rodata ALIGN(4K) : AT(ADDR(.rodata) - KERNEL_VMA + KERNEL_LMA)
     {
         *(.rodata*)
+        KEEP(*(.limine_requests_start))
+        KEEP(*(.limine_requests))
+        KEEP(*(.limine_requests_end))
     }
 
     .data ALIGN(4K) : AT(ADDR(.data) - KERNEL_VMA + KERNEL_LMA)
@@ -38,4 +41,6 @@ SECTIONS
         *(COMMON)
         *(.bss*)
     }
+
+    __kernel_virtual_end = .;
 }
