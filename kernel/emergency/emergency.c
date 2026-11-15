@@ -47,7 +47,7 @@ bool EmergencyActive(void)
 
 #ifdef RESCUE
 
-/* The embedded kernel is XOR-scrambled at build time (key 0x5A) so NullL's
+/* The embedded kernel is XOR-scrambled at build time (key 0x5A) so Limine's
    request-marker scan cannot see a second kernel buried inside this one. */
 #define EMERGENCY_BLOB_KEY 0x5AU
 
@@ -151,11 +151,11 @@ static void EmergencyCheckKernel(uint32_t ExpectedSize)
     }
 }
 
-/* Native NullL rescue path: the kernel is already loaded by NullL,
+/* Native Limine rescue path: the kernel is already loaded by Limine,
    so there is no external bootloader configuration to inspect. */
-static void EmergencyCheckNullLBoot(void)
+static void EmergencyCheckLimineBoot(void)
 {
-    TerminalPrintLine32("[boot] native NullL boot path active", EMERGENCY_GREEN);
+    TerminalPrintLine32("[boot] Limine boot path active", EMERGENCY_GREEN);
     TerminalPrintLine32("[boot] /BOOT/KERNEL.ELF is the kernel image", 0x00FFFFFF);
 }
 
