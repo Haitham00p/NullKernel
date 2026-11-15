@@ -16,7 +16,7 @@
 #define NULL_LIMINE_MAX_MEMMAP 512U
 #define NULL_LIMINE_STACK_SIZE 0x10000U
 
-_Static_assert(sizeof(NullBootInfo) == 104U, "NullBootInfo ABI size changed");
+_Static_assert(sizeof(NullBootInfo) == 112U, "NullBootInfo ABI size changed");
 
 extern char __kernel_virtual_end;
 extern void kernel_entry(void);
@@ -199,6 +199,7 @@ NullBootInfo *LimineBootPrepare(void)
     /* Bootloader-reclaimable map entries are translated to RESERVED above. */
     g_boot_info.LoaderBase = 0;
     g_boot_info.LoaderEnd = 0;
+    g_boot_info.HHDMOffset = g_hhdm_request.response->offset;
 
     if (g_boot_info.KernelPhysicalEnd <= g_boot_info.KernelPhysicalBase ||
         !build_memory_map())
