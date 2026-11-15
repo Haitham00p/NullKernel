@@ -9,7 +9,6 @@
 #define BOOTMONITOR_MODE_NPB      3U
 
 bool BootMonitorShouldEnter(void);
-uint8_t BootMonitorReadMode(void);
 void BootMonitorRequest(void);
 void BootMonitorClearRequest(void);
 void BootMonitorRun(void);
