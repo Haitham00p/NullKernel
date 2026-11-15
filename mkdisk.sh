@@ -20,7 +20,7 @@ fi
 echo "[*] wiping old partition table"
 sfdisk --delete "$IMG" >/dev/null 2>&1 || true
 
-echo "[*] writing MBR with FAT32 (0x0C) partition at sector ${SECTOR_START}"
+echo "[*] writing MBR with FAT32 EFI System (0xEF) partition at sector ${SECTOR_START}"
 printf 'label: dos\nunit: sectors\nstart=%d, type=ef, bootable\n' \
     "$SECTOR_START" | sfdisk "$IMG" >/dev/null
 
