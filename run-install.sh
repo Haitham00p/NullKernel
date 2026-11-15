@@ -15,21 +15,24 @@ if [[ -b "$IMG" ]]; then
     exit 1
 fi
 
-# Recreate the partition table and FAT32 ESP every install. This prevents an
-# older NullL type-0x0C image from being mistaken for the new Limine ESP.
-./mkdisk.sh "$IMG"
-
-for tool in mcopy mmd mdir; do
+# Check every prerequisite before formatting the target image.
+for tool in mcopy mmd mdir sfdisk mkfs.vfat dd truncate; do
     command -v "$tool" >/dev/null 2>&1 || {
-        echo "error: $tool from mtools is required" >&2
+        echo "error: $tool is required to create and populate the disk image" >&2
         exit 1
     }
 done
 
 [[ -f "$KERNEL" ]] || { echo "error: $KERNEL missing; run make" >&2; exit 1; }
+[[ -f "$SCRIPT_DIR/boot/limine.conf" ]] || { echo "error: boot/limine.conf missing" >&2; exit 1; }
+[[ -d "$SCRIPT_DIR/rootfs" ]] || { echo "error: rootfs directory missing" >&2; exit 1; }
 [[ -x "$LIMINE_OUT/limine" ]] || { echo "error: Limine host tool missing; run make limine" >&2; exit 1; }
 [[ -f "$LIMINE_OUT/limine-bios.sys" ]] || { echo "error: limine-bios.sys missing" >&2; exit 1; }
 [[ -f "$LIMINE_OUT/BOOTX64.EFI" ]] || { echo "error: BOOTX64.EFI missing" >&2; exit 1; }
+
+# Recreate the partition table and FAT32 ESP every install. This prevents an
+# older NullL type-0x0C image from being mistaken for the new Limine ESP.
+./mkdisk.sh "$IMG"
 
 echo "[*] copying NullOS root filesystem"
 for item in "$SCRIPT_DIR"/rootfs/*; do
