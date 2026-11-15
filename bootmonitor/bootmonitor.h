@@ -4,7 +4,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define BOOTMONITOR_MODE_NORMAL   1U
 #define BOOTMONITOR_MODE_ASM      2U
 #define BOOTMONITOR_MODE_NPB      3U
 
