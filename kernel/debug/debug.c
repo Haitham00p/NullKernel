@@ -220,7 +220,7 @@ void DbgBoot(const char *Message, uintptr_t Address)
         TerminalPrintLine32("                    EARLY BOOT TELEMETRY", DBG_INFO);
         DbgDivider();
         TerminalPrintLine32(" ARCHITECTURE  : x86_64 long mode", DBG_TEXT);
-        TerminalPrintLine32(" BOOT PROTOCOL: NullL BIOS/MBR stage2 + VBE", DBG_TEXT);
+        TerminalPrintLine32(" BOOT PROTOCOL: Limine BIOS/UEFI", DBG_TEXT);
         TerminalPrintLine32(" CONSOLE      : graphical terminal online", DBG_TEXT);
         TerminalPrintLine32(" TRACE        : early kernel diagnostics enabled", DBG_TEXT);
         TerminalPrintLine32(" MEMORY       : E820, PMM and VMM online", DBG_TEXT);
