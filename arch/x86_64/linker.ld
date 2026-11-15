@@ -29,6 +29,12 @@ SECTIONS
         *(.eh_frame_hdr*)
         *(.eh_frame*)
         *(.gcc_except_table*)
+    }
+
+    /* Keep Limine's mutable request/response structures in their own
+       writable ELF section, and retain the marker-delimited request range. */
+    .limine_requests ALIGN(8) : AT(ADDR(.limine_requests) - KERNEL_VMA + KERNEL_LMA)
+    {
         KEEP(*(.limine_requests_start))
         KEEP(*(.limine_requests))
         KEEP(*(.limine_requests_end))
