@@ -17,7 +17,7 @@ sets `timeout: 0`, so Limine boots it immediately without displaying a menu.
 
 The kernel still consumes the existing `NullBootInfo` ABI. The adapter in
 `boot/limine.c` translates Limine's memory map, HHDM framebuffer, RSDP, and
-executable-address responses into that structure.
+executable-address responses and HHDM offset into that structure.
 
 ### Paging compatibility note
 
