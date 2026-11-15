@@ -17,6 +17,7 @@
 
 #include "vmm.h"
 #include "pmm.h"
+#include "include/nullboot.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -26,6 +27,7 @@
 
 static uint64_t Root;
 static uint64_t KernelRoot;
+static uint64_t HhdmOffset;
 static bool g_NxEnabled = false;
 
 bool VmmEnableNX(void)
@@ -90,13 +92,10 @@ static inline void wrcr3(uint64_t x)
     __asm__ volatile("mov %0,%%cr3" :: "r"(x) : "memory");
 }
 
-/*
- * Page-table pages are currently accessed through the low/identity mapping
- * established by the boot environment. Keep that assumption isolated here.
- */
+/* Page-table physical addresses are accessed through Limine's HHDM. */
 static uint64_t *table(uint64_t p)
 {
-    return (uint64_t *)(uintptr_t)p;
+    return (uint64_t *)(uintptr_t)(HhdmOffset + p);
 }
 
 static uint64_t *next(uint64_t *t, uint64_t i, bool create)
@@ -122,12 +121,17 @@ static uint64_t *next(uint64_t *t, uint64_t i, bool create)
 
 void VmmInitialize(void)
 {
+    if (NullBoot == NULL || NullBoot->HHDMOffset == 0)
+        return;
+
+    HhdmOffset = NullBoot->HHDMOffset;
     uint64_t old = rdcr3();
     uint64_t p = PmmAllocPage();
     if (!p)
         return;
 
-    memcpy((void *)(uintptr_t)p, (void *)(uintptr_t)old, PS);
+    memcpy((void *)(uintptr_t)(HhdmOffset + p),
+           (const void *)(uintptr_t)(HhdmOffset + old), PS);
 
     Root = p;
     KernelRoot = p;
