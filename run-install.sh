@@ -10,9 +10,9 @@ PARTITION_START=2048
 KERNEL="$SCRIPT_DIR/build/kernel.elf"
 FAT_IMAGE="$IMG@@$((PARTITION_START * 512))"
 
-if [[ ! -f "$IMG" ]]; then
-    ./mkdisk.sh "$IMG"
-fi
+# Recreate the partition table and FAT32 ESP every install. This prevents an
+# older NullL type-0x0C image from being mistaken for the new Limine ESP.
+./mkdisk.sh "$IMG"
 
 for tool in mcopy mmd mdir; do
     command -v "$tool" >/dev/null 2>&1 || {
