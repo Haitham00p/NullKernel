@@ -210,7 +210,7 @@ void EmergencyRun(void)
     }
     TerminalNewLine32(0x00000000);
 
-    EmergencyCheckNullLBoot();
+    EmergencyCheckLimineBoot();
     TerminalNewLine32(0x00000000);
 
     ShellInitialize();
