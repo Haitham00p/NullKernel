@@ -8,10 +8,10 @@ ISO_DIR   := $(BUILD_DIR)/iso
 KERNEL    := $(BUILD_DIR)/kernel.elf
 ISO       := $(BUILD_DIR)/NullOS.iso
 DISK      ?= nullos.img
+LIMINE_DIR := $(BUILD_DIR)/limine
+LIMINE_OUT := $(LIMINE_DIR)/out
 VAULT_C   := ncc/vault_gen.c
 VAULT_H   := ncc/vault_gen.h
-NULLL_STAGE1 := $(BUILD_DIR)/nulll/stage1.bin
-NULLL_STAGE2 := $(BUILD_DIR)/nulll/stage2.bin
 # Target the architectural x86-64 baseline explicitly. Do not inherit the
 # build host's ISA features: the kernel must run on generic x86-64 CPUs/QEMU.
 CFLAGS := \
@@ -37,19 +37,18 @@ C_SOURCES := \
 	n64a/n64a_enc.c n64a/n64a_asm.c n64a/n64a_parse.c n64a/n64a_obj.c nld/link_core.c \
 	shell/commands/cmd.c shell/commands/lowlevel.c shell/dispatcher.c shell/diskfs.c shell/editor/editor.c shell/parser.c \
 	shell/highlight.c shell/selfhost.c shell/shell.c arch/x86_64/power/pwr.c fs/ISO9660/iso9660.c drivers/timer/PIT.c \
-	kernel/time/time.c source/kchar.c source/kstring.c source/kterminal.c source/kshell.c lib/sound/sndbeep.c Graphic/graphic.c bootmonitor/bootmonitor.c
+	kernel/time/time.c source/kchar.c source/kstring.c source/kterminal.c source/kshell.c lib/sound/sndbeep.c Graphic/graphic.c bootmonitor/bootmonitor.c boot/limine.c
 ASM_OBJECTS := $(BUILD_DIR)/arch/x86_64/interrupts/isr_asm.o $(BUILD_DIR)/arch/x86_64/interrupts/irq_asm.o $(BUILD_DIR)/arch/x86_64/program/run_asm.o $(BUILD_DIR)/arch/x86_64/bootasm.o $(BUILD_DIR)/arch/x86_64/cpu/ring3.o $(BUILD_DIR)/arch/x86_64/cpu/context.o $(BUILD_DIR)/kernel/LTSMT/ltsmt.o $(BUILD_DIR)/drivers/timer/RTC.o
 OBJECTS := $(C_SOURCES:%.c=$(BUILD_DIR)/%.o) $(ASM_OBJECTS)
 -include $(C_SOURCES:%.c=$(BUILD_DIR)/%.d)
-.PHONY: all clean vault run boot install nulll
+.PHONY: all clean vault run boot install limine
 .NOTPARALLEL:
-all: vault nulll
-nulll: $(NULLL_STAGE1) $(NULLL_STAGE2)
+all: vault
 $(KERNEL): $(OBJECTS) | arch/x86_64/linker.ld
 	@mkdir -p $(@D)
 	$(LD) $(LDFLAGS) -o $@ $^
 vault: $(KERNEL)
-	@if [ ! -f .vault-stamp ] || [ "$(KERNEL)" -nt .vault-stamp ] || [ -n "$$(find shell ncc n64a nld libc kernel lib drivers fs arch source include -name '*.c' -newer .vault-stamp -print -quit 2>/dev/null)" ]; then \
+	@if [ ! -f .vault-stamp ] || [ "$(KERNEL)" -nt .vault-stamp ] || [ -n "$$(find shell ncc n64a nld libc kernel lib drivers fs arch source include boot -name '*.c' -newer .vault-stamp -print -quit 2>/dev/null)" ]; then \
 		bash $(GENVAULT) $(KERNEL) $(VAULT_C) $(VAULT_H) && $(MAKE) --no-print-directory $(KERNEL) && \
 		bash $(GENVAULT) $(KERNEL) $(VAULT_C) $(VAULT_H) && $(MAKE) --no-print-directory $(KERNEL) && touch .vault-stamp; fi
 $(BUILD_DIR)/%.o: %.c
@@ -71,12 +70,10 @@ $(BUILD_DIR)/kernel/LTSMT/ltsmt.o: kernel/LTSMT/ltsmt.asm
 	@mkdir -p $(@D); $(NASM) -f elf64 $< -o $@
 $(BUILD_DIR)/drivers/timer/RTC.o: drivers/timer/RTC.asm
 	@mkdir -p $(@D); $(NASM) -f elf64 $< -o $@
-$(NULLL_STAGE1): nulll/stage1.asm
-	@mkdir -p $(@D); $(NASM) -f bin $< -o $@
-$(NULLL_STAGE2): nulll/stage2.asm
-	@mkdir -p $(@D); $(NASM) -f bin $< -o $@
-install: $(KERNEL) $(NULLL_STAGE1) $(NULLL_STAGE2)
-	./run-install.sh $(DISK)
+limine:
+	bash tools/fetch-limine.sh $(LIMINE_OUT)
+install: $(KERNEL) limine
+	./run-install.sh $(DISK) $(LIMINE_OUT)
 boot: install
 	qemu-system-x86_64 -m 512 -boot order=c -drive "file=$(DISK),format=raw,if=ide,index=0" -netdev user,id=n1 -device e1000,netdev=n1 -serial stdio -display gtk
 run: install
