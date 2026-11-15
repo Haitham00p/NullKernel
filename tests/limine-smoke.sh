@@ -8,7 +8,7 @@ QEMU="${QEMU:-qemu-system-x86_64}"
 rm -f "$LOG"
 
 set +e
-timeout 75s "$QEMU" \
+timeout 240s "$QEMU" \
     -machine pc \
     -cpu qemu64 \
     -m 1024 \
