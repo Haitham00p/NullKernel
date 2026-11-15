@@ -22,8 +22,9 @@ executable-address responses and HHDM offset into that structure.
 ### Paging compatibility note
 
 The first migration intentionally requests Limine base revision 0. The current
-PMM page clearing, the physical heap window, and the early exception recorder
-still use low identity-mapped addresses. VMM page-table access uses HHDM. Limine base revision 0 preserves that
+PMM page clearing, the physical heap window, DMA/process page buffers, and
+the early exception recorder still use low identity-mapped addresses. VMM
+page-table access itself uses HHDM. Limine base revision 0 preserves that
 mapping while the boot protocol integration is brought online. Base revision 0
 is deprecated by the current protocol; do not change the requested revision
 until those kernel subsystems have been migrated to HHDM-only physical access
