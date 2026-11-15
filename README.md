@@ -12,8 +12,10 @@ installs both:
 - BIOS/MBR boot code plus `limine-bios.sys`.
 - UEFI x86-64 fallback application at `/EFI/BOOT/BOOTX64.EFI`.
 
-The configuration in `boot/limine.conf` selects the Normal kernel entry and
-sets `timeout: 0`, so Limine boots it immediately without displaying a menu.
+The configuration in `boot/limine.conf` selects the Normal kernel entry,
+sets `timeout: 0` and disables remembered-entry selection, so Limine boots it
+immediately without displaying a menu. It also forces four-level paging to
+match the kernel's current x86-64 VMM.
 
 The kernel consumes `NullBootInfo` ABI version 2. The adapter in
 `boot/limine.c` translates Limine's memory map, framebuffer, RSDP, executable
