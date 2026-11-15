@@ -27,7 +27,7 @@ if [[ ! -d "$SOURCE_DIR" ]]; then
     tar -xzf "$ARCHIVE" -C "$SOURCE_DIR"
 fi
 
-MAKEFILE="$(find "$SOURCE_DIR" -type f -name Makefile -print -quit)"
+MAKEFILE="$(find "$SOURCE_DIR" -type f \\( -name Makefile -o -name GNUmakefile \\) -print -quit)"
 if [[ -n "$MAKEFILE" ]]; then
     make -C "$(dirname "$MAKEFILE")"
 fi
