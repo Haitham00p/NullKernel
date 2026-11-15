@@ -42,7 +42,7 @@ jobs:
           grep -qx 'timeout: 0' boot/limine.conf
           sfdisk --dump /tmp/nullos-limine.img | grep -qi 'type=ef'
           mcopy -i /tmp/nullos-limine.img@@1048576 ::/EFI/BOOT/BOOTX64.EFI /tmp/BOOTX64.EFI
-          mcopy -i /tmp/nullos-limine.img@@1048576 ::/BOOT/LIMINE/LIMINE-BIOS.SYS /tmp/limine-bios.sys
+          mcopy -i /tmp/nullos-limine.img@@1048576 ::/BOOT/LIMINE/limine-bios.sys /tmp/limine-bios.sys
           test -s /tmp/BOOTX64.EFI
           test -s /tmp/limine-bios.sys
       - name: QEMU BIOS handoff and Normal shell smoke test
