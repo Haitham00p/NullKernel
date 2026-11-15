@@ -16,8 +16,8 @@ The configuration in `boot/limine.conf` selects the Normal kernel entry and
 sets `timeout: 0`, so Limine boots it immediately without displaying a menu.
 
 The kernel consumes `NullBootInfo` ABI version 2. The adapter in
-`boot/limine.c` translates Limine's memory map, HHDM framebuffer, RSDP, and
-executable-address responses and HHDM offset into that structure.
+`boot/limine.c` translates Limine's memory map, framebuffer, RSDP, executable
+address, and HHDM offset into that structure.
 
 ### Paging compatibility note
 
