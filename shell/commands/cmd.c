@@ -241,7 +241,7 @@ void CmdAbout(void){
     TerminalWrite32("Architecture: ", 0xFFFFFFFF);
     TerminalPrintLine32("x86_64 Long Mode", 0x00FF00FF);
     TerminalWrite32("Bootloader: ", 0xFFFFFFFF);
-    TerminalPrintLine32("NullL native BIOS", 0x00FF00FF);
+    TerminalPrintLine32("Limine BIOS/UEFI", 0x00FF00FF);
 }
 
 static void RegFormatHex(char *Out, uint32_t V)
