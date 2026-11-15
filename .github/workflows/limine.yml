@@ -31,7 +31,7 @@ jobs:
           objdump -d -Mintel --disassemble=kernel_entry build/kernel.elf
           nm -an build/kernel.elf | grep -E 'LimineBootPrepare|kernel_entry|kernel_main'
           readelf -SW build/kernel.elf | grep -E 'limine_requests'
-          if objdump -d -Mintel build/kernel.elf | grep -E '\\b(shrx|shlx|sarx|mulx|rorx|pdep|pext|bzhi|andn)\\b'; then
+          if objdump -d -Mintel build/kernel.elf | grep -E '\b(shrx|shlx|sarx|mulx|rorx|pdep|pext|bzhi|andn)\b'; then
             echo "ERROR: kernel contains instructions outside the x86-64 baseline"
             exit 1
           fi
