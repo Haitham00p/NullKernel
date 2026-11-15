@@ -1,9 +1,9 @@
 BITS 16
 ORG 0x8000
 
-; NullL BIOS stage2.
+; NullL BIOS stage2 - automatic Normal-mode boot.
 ; Responsibilities:
-;   1. keyboard boot menu
+;   1. boot Normal mode automatically (no interactive boot menu)
 ;   2. load the kernel using a small installer-written FAT32 extent manifest
 ;   3. parse ELF64 PT_LOAD segments
 ;   4. collect E820 memory map and BIOS RSDP
@@ -67,16 +67,14 @@ stage2_main:
     call read_partition_start
     jc fatal_disk
 
-    call read_mailbox
-    jc fatal_disk
-
-    cmp al, 0
-    je menu
-    ; A previously stored mode bypasses the menu. Log this explicitly so
-    ; the serial trace distinguishes auto-boot from a dead keyboard loop.
+    ; Fixed boot policy: always start the standard Normal mode.
+    ; Ignore any old mailbox value so previous mode selections cannot
+    ; send this build into Assembly, NPB, or the legacy boot path.
+    mov al, 1
     mov [requested_mode], al
     mov si, serial_auto_mode
     call serial_puts
+    jmp native_boot
 
 native_boot:
     mov si, serial_loading_kernel
@@ -1340,7 +1338,7 @@ npb db "  [3] NullOS Pre-Boot",13,10,0
 old_boot db "  [0] Old Boot Record",13,10,0
 prompt db "Command: ",0
 serial_entered db "NullL: stage2 entered",13,10,0
-serial_auto_mode db "NullL: mailbox mode active; bypassing menu",13,10,0
+serial_auto_mode db "NullL: automatic Normal mode; boot menu disabled",13,10,0
 serial_menu db "NullL: menu displayed; waiting for key",13,10,0
 serial_key db "NullL: key=",0
 serial_select_1 db "NullL: selected mode 1",13,10,0
