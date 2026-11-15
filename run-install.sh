@@ -16,7 +16,7 @@ if [[ -b "$IMG" ]]; then
 fi
 
 # Check every prerequisite before formatting the target image.
-for tool in mcopy mmd mdir sfdisk mkfs.vfat dd truncate; do
+for tool in mcopy mmd mdir sfdisk mkfs.vfat dd truncate stat; do
     command -v "$tool" >/dev/null 2>&1 || {
         echo "error: $tool is required to create and populate the disk image" >&2
         exit 1
