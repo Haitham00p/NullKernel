@@ -70,7 +70,7 @@ void FbInit32(void)
    directly mapped kernel virtual addresses. */
 uint64_t FbGetHhdmOffset32(void)
 {
-    return 0;
+    return NullBoot != NULL ? NullBoot->HHDMOffset : 0;
 }
 
 /* Allocate the off-screen back buffer and switch compositing to it. Must be
