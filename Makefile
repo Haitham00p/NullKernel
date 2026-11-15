@@ -72,7 +72,7 @@ $(BUILD_DIR)/drivers/timer/RTC.o: drivers/timer/RTC.asm
 	@mkdir -p $(@D); $(NASM) -f elf64 $< -o $@
 limine:
 	bash tools/fetch-limine.sh $(LIMINE_OUT)
-install: $(KERNEL) limine
+install: vault limine
 	./run-install.sh $(DISK) $(LIMINE_OUT)
 boot: install
 	qemu-system-x86_64 -m 512 -boot order=c -drive "file=$(DISK),format=raw,if=ide,index=0" -netdev user,id=n1 -device e1000,netdev=n1 -serial stdio -display gtk
