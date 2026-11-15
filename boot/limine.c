@@ -14,6 +14,9 @@
 #include "include/limine.h"
 
 #define NULL_LIMINE_MAX_MEMMAP 512U
+#define NULL_LIMINE_STACK_SIZE 0x10000U
+
+_Static_assert(sizeof(NullBootInfo) == 104U, "NullBootInfo ABI size changed");
 
 extern char __kernel_virtual_end;
 extern void kernel_entry(void);
@@ -29,6 +32,13 @@ static volatile uint64_t g_limine_requests_start[4] =
 __attribute__((used, section(".limine_requests")))
 static volatile uint64_t g_limine_base_revision[3] =
     LIMINE_BASE_REVISION(0);
+
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_stack_size_request g_stack_request = {
+    .id = LIMINE_STACK_SIZE_REQUEST_ID,
+    .revision = 0,
+    .stack_size = NULL_LIMINE_STACK_SIZE
+};
 
 __attribute__((used, section(".limine_requests")))
 static volatile struct limine_memmap_request g_memmap_request = {
@@ -125,7 +135,8 @@ static void build_framebuffer(void)
     if (fb == NULL || fb->address == NULL || fb->width == 0 ||
         fb->height == 0 || fb->pitch == 0 || fb->bpp != 32 ||
         fb->memory_model != LIMINE_FRAMEBUFFER_RGB ||
-        fb->pitch > UINT64_MAX / fb->height)
+        fb->width > UINT32_MAX || fb->height > UINT32_MAX ||
+        fb->pitch > UINT32_MAX || fb->pitch > UINT64_MAX / fb->height)
         return;
 
     uint64_t address = (uint64_t)(uintptr_t)fb->address;
@@ -159,7 +170,8 @@ NullBootInfo *LimineBootPrepare(void)
         g_executable_request.response;
     struct limine_rsdp_response *rsdp = g_rsdp_request.response;
 
-    if (executable == NULL || g_hhdm_request.response == NULL ||
+    if (!LIMINE_BASE_REVISION_SUPPORTED(g_limine_base_revision) ||
+        executable == NULL || g_hhdm_request.response == NULL ||
         g_memmap_request.response == NULL)
         return NULL;
 
@@ -173,12 +185,15 @@ NullBootInfo *LimineBootPrepare(void)
     g_boot_info.MemoryMap = 0;
     g_boot_info.MemoryMapCount = 0;
     g_boot_info.Framebuffer = 0;
-    g_boot_info.RSDP = rsdp != NULL ? (uint64_t)(uintptr_t)rsdp->address : 0;
+    g_boot_info.RSDP = (rsdp != NULL && rsdp->address != NULL)
+        ? (uint64_t)(uintptr_t)rsdp->address : 0;
     g_boot_info.BootDrive = 0; /* Firmware-neutral: BIOS drive numbers do not exist on UEFI. */
     g_boot_info.KernelPhysicalBase = executable->physical_base;
-    g_boot_info.KernelPhysicalEnd =
-        executable->physical_base +
-        ((uint64_t)(uintptr_t)&__kernel_virtual_end - executable->virtual_base);
+    uint64_t kernel_span =
+        (uint64_t)(uintptr_t)&__kernel_virtual_end - executable->virtual_base;
+    if (executable->physical_base > UINT64_MAX - kernel_span)
+        return NULL;
+    g_boot_info.KernelPhysicalEnd = executable->physical_base + kernel_span;
     g_boot_info.KernelEntry = (uint64_t)(uintptr_t)kernel_entry;
     g_boot_info.CommandLine = 0;
     /* Bootloader-reclaimable map entries are translated to RESERVED above. */
