@@ -321,7 +321,7 @@ static void PrintStatus(void)
     else TerminalPrintLine32("not granted",NPB_YELLOW);
     TerminalWrite32("  entry         : ",NPB_DIM);TerminalPrintHex64Compact(g_image?g_entry:0);TerminalNewLine32(0);
     TerminalWrite32("  boot source   : ",NPB_DIM);
-    TerminalPrintLine32("NullL native /BOOT/kernel.elf",NPB_CYAN);
+    TerminalPrintLine32("Limine /BOOT/KERNEL.ELF",NPB_CYAN);
 }
 
 static void PrintDanger(void)
