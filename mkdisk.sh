@@ -10,6 +10,11 @@ IMG="${1:?usage: $0 <image.img> [sizeMiB]}"
 SIZE_M="${2:-64}"
 SECTOR_START=2048
 
+if [[ -b "$IMG" ]]; then
+    echo "error: refusing to format a block device; use a regular disk-image file" >&2
+    exit 1
+fi
+
 if [ ! -f "$IMG" ]; then
     echo "[*] creating $IMG (${SIZE_M} MiB)"
     truncate -s "${SIZE_M}M" "$IMG"
