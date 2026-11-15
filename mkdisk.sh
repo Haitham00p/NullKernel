@@ -20,6 +20,12 @@ if [ ! -f "$IMG" ]; then
     truncate -s "${SIZE_M}M" "$IMG"
 else
     echo "[*] reusing existing $IMG"
+    CURRENT_BYTES="$(stat -c '%s' "$IMG")"
+    REQUIRED_BYTES=$((SIZE_M * 1024 * 1024))
+    if (( CURRENT_BYTES < REQUIRED_BYTES )); then
+        echo "[*] extending image to ${SIZE_M} MiB"
+        truncate -s "${SIZE_M}M" "$IMG"
+    fi
 fi
 
 echo "[*] wiping old partition table"
