@@ -21,11 +21,6 @@
 #include "include/diskfs.h"
 #include "kernel/terminal/terminal.h"
 #include "drivers/input/keyboard/keyboard.h"
-#include "drivers/storage/block/block.h"
-#include "fs/partition/mbr/mbr.h"
-#include "fs/fat32/directory/directory.h"
-#include "fs/fat32/fat/fat.h"
-#include "fs/fat32/vbr/vbr.h"
 #include "mm/heap/heap.h"
 #include "mm/vmm.h"
 #include "lib/string/string.h"
@@ -35,7 +30,6 @@
 
 #define BM_DIR "/BOOT"
 #define BM_REQ "BOOTMON.CFG"
-#define BM_SEL "BOOTSEL.CFG"
 #define BM_MAX 192U
 #define BM_MAX_IMAGE (8U * 1024U * 1024U)
 #define BM_ID_PREFIX "KRNL1.0:0x"
@@ -68,7 +62,6 @@ static bool g_control_granted;
 static char g_control_name[96];
 
 /* Forward declarations for functions used before their definitions. */
-static bool UpdateNativeKernelManifest(void);
 static bool ReadBootConfig(char *out, uint32_t cap);
 
 static uint32_t Len(const char *s) { uint32_t n=0; while(s && s[n]) n++; return n; }
@@ -293,10 +286,6 @@ static bool GrantControl(const char *name)
     }
     kfree(check);
 
-    if (!UpdateNativeKernelManifest()){
-        P("gc: committed kernel.elf but native NullL manifest update failed");
-        return false;
-    }
     strcpy(g_control_name,"kernel.elf");
     g_control_granted=true;
 
@@ -332,128 +321,6 @@ static void PrintDanger(void)
     PC("RSP/RIP remain monitor-owned in jmp-a.",NPB_DIM);
 }
 
-static bool RequestNormalBootOnce(void)
-{
-    uint8_t mbr_buf[512];
-    uint8_t mailbox[512];
-    const MBR *table;
-    const MBRPartitionEntry *part = NULL;
-
-    if (!BlockRead(0, mbr_buf)) return false;
-    table = (const MBR *)mbr_buf;
-    if (!MBRIsValid(table)) return false;
-
-    for (uint32_t i = 0; i < 4U; i++)
-    {
-        const MBRPartitionEntry *candidate = MBRGetPartition(table, i);
-        if (candidate != NULL && candidate->BootIndicator == 0x80U)
-        {
-            part = candidate;
-            break;
-        }
-    }
-    if (part == NULL) part = MBRGetPartition(table, 0);
-    if (part == NULL || part->StartLBA < 2U) return false;
-
-    for (uint32_t i = 0; i < sizeof(mailbox); i++) mailbox[i] = 0;
-    mailbox[0] = 'N'; mailbox[1] = 'L'; mailbox[2] = 'M'; mailbox[3] = '1';
-    mailbox[4] = BOOTMONITOR_MODE_NORMAL;
-    return BlockWrite((uint64_t)part->StartLBA + 2U, mailbox);
-}
-
-static bool UpdateNativeKernelManifest(void)
-{
-    uint8_t Sector[512];
-    MBR Table;
-    const MBRPartitionEntry *Part;
-    FAT32BootSector Boot;
-    FAT32Directory Root, BootDir;
-    FAT32DirectoryEntry Kernel;
-    uint32_t Cluster;
-    uint32_t Remaining;
-    uint32_t Extents = 0;
-    uint64_t ExtentLBA[30];
-    uint32_t ExtentCount[30];
-
-    if (!BlockRead(0, Sector))
-        return false;
-    memcpy(&Table, Sector, sizeof(Table));
-    if (!MBRIsValid(&Table))
-        return false;
-
-    Part = MBRGetPartition(&Table, 0);
-    if (Part == NULL)
-        return false;
-
-    if (!BlockRead(Part->StartLBA, Sector))
-        return false;
-    memcpy(&Boot, Sector, sizeof(Boot));
-    if (!FAT32IsValid(&Boot))
-        return false;
-    if (!FAT32DirectoryOpenRoot(&Root, &Boot, Part->StartLBA))
-        return false;
-    if (!FAT32DirectoryFind(&Root, "BOOT", &Kernel))
-        return false;
-    if (!(Kernel.Attributes & FAT32_ATTRIBUTE_DIRECTORY))
-        return false;
-    if (!FAT32DirectoryOpen(&BootDir, &Boot, Part->StartLBA,
-                            FAT32DirectoryEntryFirstCluster(&Kernel)))
-        return false;
-    if (!FAT32DirectoryFind(&BootDir, "KERNEL.ELF", &Kernel))
-        return false;
-
-    Remaining = (Kernel.FileSize + 511U) / 512U;
-    Cluster = FAT32DirectoryEntryFirstCluster(&Kernel);
-    memset(Sector, 0, sizeof(Sector));
-    *(uint32_t *)(Sector + 0) = 0x4B4C4C4E; /* NLLK */
-    *(uint32_t *)(Sector + 4) = 1U;
-    *(uint32_t *)(Sector + 8) = Kernel.FileSize;
-
-    while (Remaining != 0U && Cluster >= 2U && !FATIsEndOfChain(Cluster))
-    {
-        uint32_t LBA = FAT32ClusterToLBA(&Boot, Part->StartLBA, Cluster);
-        uint32_t Count = Boot.SectorsPerCluster;
-        if (Count > Remaining)
-            Count = Remaining;
-
-        if (Extents != 0U &&
-            ExtentLBA[Extents - 1U] + ExtentCount[Extents - 1U] == LBA)
-        {
-            ExtentCount[Extents - 1U] += Count;
-        }
-        else
-        {
-            if (Extents >= 30U)
-                return false;
-            ExtentLBA[Extents] = LBA;
-            ExtentCount[Extents] = Count;
-            Extents++;
-        }
-
-        Remaining -= Count;
-        if (Remaining == 0U)
-            break;
-
-        uint32_t Next = 0;
-        if (!FATReadEntry(&Boot, Part->StartLBA, Cluster, &Next))
-            return false;
-        Cluster = Next;
-    }
-
-    if (Remaining != 0U)
-        return false;
-
-    *(uint32_t *)(Sector + 12) = Extents;
-    for (uint32_t i = 0; i < Extents; i++)
-    {
-        uint32_t Off = 16U + i * 16U;
-        *(uint64_t *)(Sector + Off) = ExtentLBA[i];
-        *(uint32_t *)(Sector + Off + 8U) = ExtentCount[i];
-    }
-
-    return BlockWrite((uint64_t)Part->StartLBA + 3U, Sector);
-}
-
 static void ContinueBoot(void){
     if(!g_image||!g_name[0]){
         P("jmp: no kernel loaded");
@@ -472,12 +339,7 @@ static void ContinueBoot(void){
     const char *name=g_control_name;
     if(!SafeName(name)){P("continue: invalid kernel name");return;}
     if(!VerifyLoaded()) return;
-    if(!DiskFsWriteInPath(BM_DIR,BM_SEL,name,Len(name))){P("jmp: cannot save selection");return;}
-    /* jmp arms the native NullL one-shot normal mode and reboots. */
-    if(!RequestNormalBootOnce()){
-        P("jmp: cannot arm one-shot normal boot");
-        return;
-    }
+    /* Limine always loads the canonical /BOOT/KERNEL.ELF entry. */
     TerminalWrite32("JMP -> ",NPB_ORANGE);TerminalPrintLine32(name,NPB_GREEN);
     Reboot();
 }
@@ -494,7 +356,7 @@ static void Help(void){
     P("  meminfo                 show staged image size");
     P("  status                  show NPB state");
     P("  verify                  revalidate staged ELF");
-    P("  config                  show native NullL boot source");
+    P("  config                  show Limine boot source");
     P("  kernels                 alias for ShowKernels");
     P("  danger                  show dangerous-mode warning");
     P("  ids                     explain kernel IDs");
@@ -702,59 +564,6 @@ static void ReadLine(char *line,uint32_t cap){
     }
 }
 
-uint8_t BootMonitorReadMode(void)
-{
-    uint8_t MBRBuffer[512];
-    uint8_t Mailbox[512];
-    uint32_t PartitionStart = 0;
-    const MBR *Table;
-    const MBRPartitionEntry *Part = NULL;
-
-    if (!DiskFsIsMounted() || !BlockRead(0, MBRBuffer))
-        return 0;
-
-    Table = (const MBR *)MBRBuffer;
-    if (!MBRIsValid(Table))
-        return 0;
-
-    for (uint32_t i = 0; i < 4U; i++)
-    {
-        const MBRPartitionEntry *Candidate = MBRGetPartition(Table, i);
-        if (Candidate != NULL && Candidate->BootIndicator == 0x80U)
-        {
-            Part = Candidate;
-            break;
-        }
-    }
-    if (Part == NULL)
-        Part = MBRGetPartition(Table, 0);
-
-    if (Part == NULL || Part->StartLBA < 2U)
-        return 0;
-
-    PartitionStart = Part->StartLBA;
-    if (!BlockRead(PartitionStart + 2U, Mailbox))
-        return 0;
-
-    if (Mailbox[0] != 'N' || Mailbox[1] != 'L' ||
-        Mailbox[2] != 'M' || Mailbox[3] != '1')
-        return 0;
-
-    uint8_t Mode = Mailbox[4];
-    if (Mode < BOOTMONITOR_MODE_NORMAL || Mode > BOOTMONITOR_MODE_NPB)
-        Mode = 0;
-
-    /* One-shot mailbox: consume it before entering any requested mode. */
-    if (Mode != 0)
-    {
-        for (uint32_t i = 0; i < sizeof(Mailbox); i++)
-            Mailbox[i] = 0;
-        BlockWrite(PartitionStart + 2U, Mailbox);
-    }
-
-    return Mode;
-}
-
 bool BootMonitorShouldEnter(void){
     uint8_t m[8];uint32_t got=0;
     return DiskFsIsMounted()&&DiskFsReadInPath(BM_DIR,BM_REQ,m,sizeof(m),&got)&&
@@ -785,7 +594,7 @@ void BootMonitorRunMode(uint8_t Mode){
     if (Mode == BOOTMONITOR_MODE_ASM)
     {
         PC("",NPB_DIM);
-        PC("NULLLOADER -> ASSEMBLY MODE",NPB_ORANGE);
+        PC("PRE-BOOT MONITOR -> ASSEMBLY MODE",NPB_ORANGE);
         PC("DIRECT MODE REQUEST ACCEPTED.",NPB_GREEN);
         PC("RAW x86-64 INSTRUCTION CONSOLE.",0x00FFFFFFU);
         PC("",NPB_DIM);
@@ -794,10 +603,10 @@ void BootMonitorRunMode(uint8_t Mode){
     }
 
     PC("",NPB_DIM);
-    PC("NULLLOADER -> NULL OS PRE-BOOT",NPB_ORANGE);
+    PC("NULLOS -> PRE-BOOT MONITOR",NPB_ORANGE);
     PC("BOOT CONTROL TERMINAL ONLINE.",0x00FFFFFFU);
     PC("SELECT KERNEL IMAGE.",NPB_YELLOW);
-    PC("NORMAL BOOT IS MANAGED BY NPB.",0x00FFFFFFU);
+    PC("NORMAL BOOT IS MANAGED BY LIMINE.",0x00FFFFFFU);
     PC("",NPB_DIM);
     ShowKernels();
     PC("",NPB_DIM);
