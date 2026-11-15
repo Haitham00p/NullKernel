@@ -1,7 +1,7 @@
 ENTRY(kernel_entry)
 
-/* NullL maps 0xffffffff80000000 to physical 0. Keep the kernel at 16 MiB
-   so the legacy NLD executable slot at physical 1-16 MiB cannot overwrite it. */
+/* Keep the kernel at 16 MiB so the legacy NLD executable slot at physical
+   1-16 MiB cannot overwrite the higher-half kernel image. */
 KERNEL_VMA = 0xffffffff81000000;
 KERNEL_LMA = 0x01000000;
 
