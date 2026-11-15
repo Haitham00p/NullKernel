@@ -92,7 +92,7 @@ void CmdHelp(const char *Category)
         TerminalPrintLine32("  theme <name>                    Set color theme (cyberpunk/matrix/hacker/gold)", PromColor);
         TerminalPrintLine32("  calc <n1> <op> <n2>             Evaluate arithmetic & bitwise math", PromColor);
         TerminalPrintLine32("  reboot                          Reboot the system", PromColor);
-        TerminalPrintLine32("  reboot-c                        Reboot into Null Boot Monitor", PromColor);
+        TerminalPrintLine32("  reboot-c                        Reboot into the NullOS Pre-Boot Monitor", PromColor);
         TerminalPrintLine32("  shutdown                        Shutdown the system (QEMU ACPI)", PromColor);
         return;
     }
