@@ -21,8 +21,8 @@ global kernel_entry
 extern kernel_main
 extern LimineBootPrepare
 
-; ELF entry point. NullL supplies RDI=NullBootInfo* and a temporary stack.
-; Normalize the stack for a normal SysV call into C, then transfer control.
+; ELF entry point from Limine. Build the legacy NullBootInfo ABI before
+; entering kernel_main, and normalize the supplied stack for SysV calls.
 kernel_entry:
     cli
     and rsp, -16
