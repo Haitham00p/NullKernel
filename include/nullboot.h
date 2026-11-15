@@ -10,7 +10,6 @@
 #define NULLBOOT_MEM_ACPI_RECLAIM 3U
 #define NULLBOOT_MEM_ACPI_NVS 4U
 #define NULLBOOT_MEM_BAD 5U
-#define NULLBOOT_FB_VA 0xFFFFFFFFC0000000ULL
 
 typedef struct __attribute__((packed)) { uint64_t Base; uint64_t Length; uint32_t Type; uint32_t Flags; } NullBootMemoryEntry;
 typedef struct __attribute__((packed)) { uint64_t Address; uint64_t PhysicalAddress; uint64_t Size; uint32_t Width; uint32_t Height; uint32_t Pitch; uint16_t Bpp; uint16_t MemoryModel; uint8_t RedMask; uint8_t RedPosition; uint8_t GreenMask; uint8_t GreenPosition; uint8_t BlueMask; uint8_t BluePosition; uint8_t ReservedMask; uint8_t ReservedPosition; } NullBootFramebuffer;
