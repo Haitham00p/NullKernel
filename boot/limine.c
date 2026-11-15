@@ -4,9 +4,10 @@
  * The current kernel consumes the stable NullBootInfo ABI. This file translates
  * Limine's firmware-neutral boot responses into that ABI before kernel_main.
  * Limine base revision 0 is intentionally requested for this first migration
- * because the existing PMM/VMM and early fault recorder require low identity
- * mappings. Moving those subsystems to HHDM-only access is a separate ABI-safe
- * follow-up; do not raise this revision without that work.
+ * because the current PMM page clearing, physical heap window, and early fault
+ * recorder still require low identity mappings. VMM page-table access itself
+ * uses HHDM. Do not raise this revision until the remaining physical-pointer
+ * paths are migrated and tested.
  */
 #include <stdint.h>
 #include <stddef.h>
